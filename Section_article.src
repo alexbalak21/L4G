@@ -25,6 +25,6 @@ Return
 $MOD_STATUS_ART
 If !clalev ([F:ZITM]) : Local File ITM[F:ZITM] :  Endif
 If [F:ZITM]ITMSTA = 2 and [M:ITM0]ITMSTA <> 2
-Infbox "Vous avez modifié le Statut de l'Article." + chr$(10) +  "N'oublez pas à verifier le champ " + '"Soumis à contrôle"' + chr$(10) + "dans les Articles Sites!"
+Infbox "Vous avez modifié le Statut de l'Article." + chr$(10) +  "N'oublez pas à verifier  le champ " + '"Soumis à contrôle"' + chr$(10) + "dans les Articles Sites!"
 Endif
 Return
