@@ -1,0 +1,670 @@
+# Gestion du masque SOH4 (Spécifique)
+End
+# ACAH lz 15/11/24 : 3003854 : Ajout champs SOH4
+# JCS le 03/08/23 : 268546 - Ajout d'un message d'avertissement lors de la coche de la case 'BP' si des lignes nulles sont présentes
+# SSW le 29/06/22 : 255550 : Modifier la règle de calcul d'un champ
+# SSW le 14/06/22 : 255357 : Ne pas bloquer la saisie du client si catégorie = 'PRO'
+# SSW le 13/06/22 : 255234 : Ajout du transporteur Franco
+# SSW le 13/06/22 : 255330 : Forcer le paramètre GSOHTYP avec la valeur [F:SLT]YSOHTYP en création de commandes de ventes
+# SSW le 27/04/22 : 253535 : Initialiser l'affaire (entête et lignes) sur les commandes inter-sites générées depuis le plan de regroupement
+# SSW le 14/02/22 : 250975 : Rendre le champ CHORUS obligatoire sur commandes AC et ACE
+# SSW lz 08/11/21 : 247582 : Ne pas afficher l'écran de saisie de la quantité par unité
+
+######################################################################################
+$ACTION
+    Case ACTION
+        When "LIENS"     : Gosub LIENS
+        When "RAZCRE"    : Gosub RAZCRE
+        When "VERIF_CRE" : Gosub VERIF_CRE
+        When "CREATION"  : Gosub CREATION
+        When "VERIF_MOD" : Gosub VERIF_MOD
+        When "MODIF"     : Gosub MODIF
+        When "SETBOUT"   : Gosub SETBOUT #CAK 2017-05-29
+        When "AVANTBOUT" : Gosub AVANTBOUT #CAK 2017-05-29
+        When "INICRE_LIG" : Gosub INICRE_LIG
+    Endcase
+    # DLC migration V12 : ajout redirection Kardol
+    Gosub KARDOL_DEV From SPEUTIL
+Return
+
+
+######################################################################################
+$LIENS
+# ACAH lz 15/11/24 : 3003854 : Ajout champs SOH4
+
+    Gosub ACTION From SUBSOH
+    GPE=1
+
+    If !clalev([F:ITS]) : Local File ITMSALES [ITS] : Endif
+    For II=0 To [M:SOH4]NBLIG-1
+        Read [ITS]ITS0=[M]ITMREF(II)
+        If !fstat
+            [M]ZDETAILCONDI(II)=[F:ITS]ZDETAILCONDI
+            [M]ZMINQTY(II)=[F:ITS]MINQTY
+        Endif
+    Next
+    If !GIMPORT : Affzo [M]ZDETAILCONDI : Endif
+    If !GIMPORT : Affzo [M]ZMINQTY : Endif
+
+    If !clalev([F:ITM]) : Local File ITMMASTER [ITM] : Endif
+    For ZI=0 To [M:SOH4]NBLIG-1
+        Read [F:ITM]ITM0=[M:SOH4]ITMREF(ZI)
+        If !fstat
+            [M:SOH4]ZCONDCAR(ZI)=[F:ITM]YCOND
+        Endif
+    Next
+
+Return
+
+
+######################################################################################
+#CAK 2017-05-29
+$SETBOUT
+    CHMEN+=")£"
+    Gosub SET_BOUT_SPE From GSAISIE
+Return
+
+
+######################################################################################
+#CAK 2017-05-29
+$AVANTBOUT
+    Case BOUT
+        When ")" : GBCRMFLGNEW = 1
+        When "£" : GBCRMFLGNEW = 1
+        When "1" : call CONFIRMATION_ALLOCATION
+    Endcase
+Return
+######################################################################################
+$RAZCRE
+
+    # SSW le 13/06/22 : 255330 : Forcer le paramètre GSOHTYP avec la valeur [F:SLT]YSOHTYP en création de commandes de ventes
+    # On appelle le module KARDOL qui appelle le standard
+#    Gosub ACTION From SUBSOH
+#    GPE=1
+    Gosub ACTION From SPESOHKAR
+
+    If clalev([F:SLT])=0 Local File SALTRS [SLT] Endif
+    Read [SLT]SLT0=2;GFLAG
+    If !fstat & [F:SLT]YSOHTYP<>""
+        [M:SOH0]SOHTYP=[F:SLT]YSOHTYP
+
+	    Call CONTTSO([M:SOH0]SOHTYP,GCURLEG,"SOH0","SOHTYP",GFCY,"",GSOCIETE) From SUBTSO
+
+#        Read [TSO]TSO0=[F:SLT]YSOHTYP
+#        If fstat : Raz [F:TSO] : Return : Endif
+
+        Call C_SOHTYP([F:SLT]YSOHTYP) From SUBSOH     :        If mkstat : Return : Endif
+        Call AP_SOHTYP([F:SLT]YSOHTYP) From SUBSOH    :        If mkstat : Return : Endif
+        Call AM_SOHTYP([F:SLT]YSOHTYP) From SUBSOH    :        If mkstat : Return : Endif
+        Affzo [M:SOH0]SOHTYP
+
+    Endif
+    # SSW le 13/06/22 : 255330 : Forcer le paramètre GSOHTYP avec la valeur [F:SLT]YSOHTYP en création de commandes de ventes
+#   On bloque l'appel au module et standard
+    ZGPE=1
+    ZGPECLI=1
+    GPE=1
+
+Return
+
+
+#########################################################################
+$VERIF_CRE
+# SSW le 14/02/22 : 250975 : Rendre le champ CHORUS obligatoire sur commandes AC et ACE
+	If !GIMPORT and ((GFLAG='AC') or (GFLAG='ACE')) and (vireblc([M:SOH0]YCHORUS,2)='') Then
+		# 6199 : 1 : CHORUS : zone obligatoire
+		Call ERREUR(mess(1,6199,1)) From GESECRAN
+		OK=0
+		GPE=1
+		ZGPE=1
+	Endif
+	If OK=0 : Return : Endif
+# Fin SSW le 14/02/22 : 250975
+
+    # Recherche tarif transporteur
+    If GFRENUM<>0 & [M:SOH2]BPTNUM<>""
+        Gosub RECH_TARIF_TRSP
+    Endif
+Return
+
+
+######################################################################################
+$CREATION
+    Gosub ACTION From SUBSOH
+    GPE=1
+
+    Gosub WEI_COL
+    Gosub MAJ_BP
+Return
+
+
+$WEI_COL
+    Local Decimal WEI_TOT , COL_TOT
+    Raz WEI_TOT , COL_TOT
+    For [SOQ]SOQ0 Where [SOQ]SOHNUM=[F:SOH]SOHNUM
+        Read [ITM]ITM0=[F:SOQ]ITMREF
+        If !fstat
+           Y_COND=[F:ITM]YCOND
+           For II=0 To dim([F:ITM]PCU)-1
+              If [F:ITM]PCU(II)="CAR" : Y_COND=[F:ITM]PCUSTUCOE(II) : Break : Endif
+              If [F:ITM]PCU(II)="CA1" : Y_COND=[F:ITM]PCUSTUCOE(II) : Break : Endif
+           Next
+
+           If Y_COND<>0 : WEI_TOT+=([F:SOQ]ALLQTYSTU/Y_COND*[F:ITM]ZCOLPOIDS) : Endif
+           If Y_COND<>0 : COL_TOT+=([F:SOQ]ALLQTYSTU/Y_COND) : Endif
+        Endif
+    Next
+
+    Read [SOH]SOH0=[F:SOH]SOHNUM
+    If !fstat
+        [F:SOH]YWEITOT=WEI_TOT
+        [F:SOH]YCOLTOT=COL_TOT
+        # SSW le 27/04/22 : 253535 : Initialiser l'affaire (entête et lignes) sur les commandes inter-sites générées depuis le plan de regroupement
+        If ACTION='CREATION' Then
+          # Si commande inter-site
+          If [F:SOH]BETFCY=2 : [F:SOH]PJT=[F:SOH]SOHNUM : Endif
+        Endif
+        Rewrite [SOH]
+        If fstat : Call FSTA("SOH") From GLOCK : GOK=0 : Endif
+    Endif
+Return
+
+
+$MAJ_BP
+    If !clalev([F:BPC]) : Local File BPCUSTOMER [BPC] : Endif
+
+    Read [BPC]BPC0=[F:SOH]BPCORD
+    If fstat : Return : Endif     :# client inconnu, on ne touche pas au statut
+
+    If [BPC]ACCCOD="BPIFRA" | [BPC]OSTCTL = 2
+        [F:SOH]YSTABP=4
+        Rewrite [SOH]
+        If fstat : Call FSTA("SOH") From GLOCK : GOK=0 : Endif
+        Return
+    Endif
+
+    ####
+    If !clalev([F:MVC]) : Local File BPCUSTMVT [MVC] : Endif
+    Local Decimal MNT_TOT
+
+    Raz MNT_TOT
+    For [MVC]MVC0 Where [MVC]BPCRSK=[F:SOH]BPCORD
+        MNT_TOT+=[MVC]DLVOSTC
+        MNT_TOT+=[MVC]NIVDLVC
+        MNT_TOT+=[MVC]NPTINVC
+    Next
+    If MNT_TOT>[BPC]CDTISR
+        [F:SOH]YSTABP=2 :# dépassement encours
+        Rewrite [SOH]
+        If fstat : Call FSTA("SOH") From GLOCK : GOK=0 : Endif
+        Return
+    Endif
+
+    ####
+    If !clalev([F:DUD]) : Local File GACCDUDATE [DUD] : Endif
+
+    [F:SOH]YSTABP=4 :# Ok
+# SSW le 29/06/22 : 255550 : Modifier la règle de calcul d'un champ
+#	Modifier le statut à J-1 au lieu de J-30
+#    For [DUD]DUD4 Where [DUD]BPR=[F:SOH]BPCORD & [DUD]DUDDAT<date$-30 & [DUD]AMTCUR>[DUD]PAYCUR & [DUD]SNS = 1 & [DUD]TYP <> "RAN"
+    For [DUD]DUD4 Where [DUD]BPR=[F:SOH]BPCORD & [DUD]DUDDAT<date$-1 & [DUD]AMTCUR>[DUD]PAYCUR & [DUD]SNS = 1 & [DUD]TYP <> "RAN"
+        [F:SOH]YSTABP=3 :# retard échéance
+        Break
+    Next
+    Rewrite [SOH]
+    If fstat : Call FSTA("SOH") From GLOCK : GOK=0 : Endif
+Return
+
+
+#########################################################################
+$VERIF_MOD
+# SSW le 14/02/22 : 250975 : Rendre le champ CHORUS obligatoire sur commandes AC et ACE
+	If ((GFLAG='AC') or (GFLAG='ACE')) and (vireblc([M:SOH0]YCHORUS,2)='') Then
+		# 6199 : 1 : CHORUS : zone obligatoire
+		Call ERREUR(mess(1,6199,1)) From GESECRAN
+		OK=0
+		GPE=1
+		ZGPE=1
+	Endif
+	If OK=0 : Return : Endif
+# Fin SSW le 14/02/22 : 250975
+
+    # Recherche tarif transporteur
+    If GFRENUM<>0 & [M:SOH2]BPTNUM<>""
+#       If [M:SOH4]NETWEI<>[F:SOH]NETWEI | [M:SOH4]ORDNOT <> [F:SOH]ORDNOT
+#&       | [M:SOH2]BPTNUM<>[F:SOH]BPTNUM
+#&       | [M:ADB2]POSCOD<>[F:SOH]BPDPOSCOD | [M:ADB2]CTY<>[F:SOH]BPDCTY | [M:ADB2]CRY <> [F:SOH]BPDCRY
+          OK = 2
+          If !GIMPORT
+              SVMESSAGE=GMESSAGE
+              Call OUINON(mess(161,196,1),OK) From GESECRAN
+              GMESSAGE=SVMESSAGE
+          Endif
+          If OK = 2
+             Gosub RECH_TARIF_TRSP
+          Endif
+#       Endif
+    Endif
+Return
+
+
+#########################################################################
+$RECH_TARIF_TRSP
+    #-----------------------------------------------------------------------#
+    # Recherche tarif transporteur pour alimentation élément de facturation #
+    #-----------------------------------------------------------------------#
+    Local  Integer WDACDLV
+    Local  Char    WCRY
+    Local  Char    WCTY
+    Local  Char    WPOSCOD
+    Local  Char    LBPTARE
+    Local  Decimal LAMTFRE
+    Local  Char    FRELIB (1)
+    Local  Integer STAT, WOUV, WOUV2
+    Local  Integer WPOINT_ENTREE : WPOINT_ENTREE = 0
+
+    If !clalev([F:SFI]) : Local File SFOOTINV   [SFI] : Endif
+    Read [SFI]SFI0=GFRENUM
+    If !fstat WDACDLV = [F:SFI]DACDLV Endif
+
+    If WDACDLV <> 0
+       If [M:ADB2]BPRNAM(1)="" & [M:ADB2]BPAADDLIG(0)="" & [M:ADB2]POSCOD="" &
+&         [M:ADB2]CTY="" & [M:ADB2]SAT="" & [M:ADB2]CRY=""
+          Read [BPA]BPA0=1;[M:SOH0]BPCORD;[M:SOH1]BPAADD
+          If ! fstat
+             WCRY    = [F:BPA]CRY
+             WCTY    = [F:BPA]CTY
+             WPOSCOD = [F:BPA]POSCOD
+          Endif
+       Else
+          WCRY    = [M:ADB2]CRY
+          WCTY    = [M:ADB2]CTY
+          WPOSCOD = [M:ADB2]POSCOD
+       Endif
+
+       Gosub CALC_WEI
+
+       #---------------------------------------------------------------------#
+       # Point d'entree calcul port                                          #
+       #---------------------------------------------------------------------#
+       GPOINT="CALPORT" : Gosub ENTREE From EXEFNC
+       If WPOINT_ENTREE = 0
+
+           Call TRANSPORT([M:SOH2]BPTNUM,[M:SOH0]BPCORD,[M:SOH2]STOFCY,WCRY,WCTY,WPOSCOD,
+&                         [M:SOH0]CUR,[M:SOH0]CHGTYP,date$,[M:SOH4]ORDNOT,Y_WEU,
+&                         Y_NETWEI,"",0,LBPTARE,LAMTFRE,FRELIB,STAT)
+&                         From TRTPRICE
+       Endif
+       If find(STAT,0,3,4,5)
+          OK=2
+          If find(GREP,"C","D") & [M:SOH3]INVDTAAMT(WDACDLV-1)<>0
+             Call OUINON (mess(116,191,1),OK) From GESECRAN
+          Endif
+          If OK=2
+             [M:SOH3]INVDTAAMT(WDACDLV-1)=LAMTFRE
+             Affzo [M:SOH3]15
+          Endif
+       Endif
+    Endif
+Return
+
+$CALC_WEI
+    Local Char    Y_WEU(10)
+    Local Decimal Y_NETWEI
+
+    For JJ=0 To [M]NBLIG
+        If Y_WEU="" & [M:SOH4]UNTWEU(JJ)<>"" : Y_WEU=[M:SOH4]UNTWEU(JJ) : Endif
+
+        WLINWEI = [M]UNTWEI(JJ)*[M]QTY(JJ)
+        If [M:SOH4]UNTWEU(JJ)<>Y_WEU
+            Gosub CONVERSION
+        Endif
+
+        Y_NETWEI +=WLINWEI
+    Next
+Return
+
+$CONVERSION
+    # Conversion poids en unité de l'entête de livraison  #
+    Local Decimal  COEF
+    Local Integer  WOUV
+
+    If !clalev([F:TCO]) : Local File TABCOEFF [TCO] : Endif
+
+    Read [TCO]TCO0=[M:SOH4]UNTWEU(JJ);Y_WEU
+    If fstat=0
+       COEF = [F:TCO]COEUOM
+    Else
+       Read [TCO]TCO0=Y_WEU;[M:SOH4]UNTWEU(JJ)
+       If fstat=0 & [F:TCO]COEUOM<>0
+          COEF = 1/[F:TCO]COEUOM
+       Endif
+    Endif
+
+    If COEF<>1
+        WLINWEI = WLINWEI*COEF
+        Call QTEARR(WLINWEI, Y_WEU) From TRTDIV
+    Endif
+Return
+
+
+######################################################################################
+$MODIF
+    Gosub ACTION From SUBSOH
+    GPE=1
+
+    Gosub WEI_COL
+    Gosub MAJ_BP
+Return
+
+######################################################################################
+# SSW le 27/04/22 : 253535 : Initialiser l'affaire (entête et lignes) sur les commandes inter-sites générées depuis le plan de regroupement
+######################################################################################
+$INICRE_LIG
+# SI COMMANDE Inter-SITE
+If [F:SOH]BETFCY=2 Then
+  # ON initialise l'affaire sur les lignes de l'écran
+  Local Integer ZI
+  For ZI=0 To [M:SOH4]NBLIG-1
+    [M:SOH4]DPJT(ZI)=[F:SOH]SOHNUM
+  Next ZI
+Endif
+Return
+
+######################################################################################
+##
+##    action sur champs
+##
+######################################################################################
+Subprog C_BPCORD(VALEUR)
+    Variable Char    VALEUR()
+
+    ## ABS 22/02/2017
+    If [M]SOHTYP="AC"     :# controle que pour les commandes AC
+        If !clalev([F:BPC]) : Local File BPCUSTOMER  [BPC] : Endif
+        Read [BPC]BPC0=VALEUR
+# SSW le 14/06/22 : 255357 : Ne pas bloquer la saisie du client si catégorie = 'PRO'
+#        If !fstat & [BPC]YVALIDECPT<>2
+        If !fstat & [BPC]YVALIDECPT<>2 & [BPC]BCGCOD<>'PRO'
+            mkstat=2 : GERR=1
+            GMESSAGE=VALEUR-"Client non validé en compta"
+        Endif
+    Endif
+End
+
+
+######################################################################################
+Subprog AS_YBP(VALEUR)
+    Variable Integer VALEUR
+
+    If [M:SOH0]SOHTYP="ACE" & YCHORUS=""
+        GMESSAGE="Le champ 'Chorus' doit être renseigné"
+        mkstat=2 : End
+    Elsif [M:SOH1]YSTABP=4
+        # statut OK => modif autorisée
+    Elsif [M:SOH0]SOHTYP="ECH"
+        # modif autorisée pour les ECH
+    Elsif [M:SOH0]SOHTYP="ECHAO"
+        # modif autorisée pour les ECH
+    Else
+        # statut KO & pas le profil fonction => pas de modif
+        GBIDC2="y" : Gosub AUTORIS_OPT From CONTX3
+        If !GBIDI2 : mkstat=2 : End : Endif
+    Endif
+End
+
+
+######################################################################################
+Subprog AM_ITMREF(VALEUR)
+    Variable Char    VALEUR()
+
+    ## Sauvegarde de l'article qui a été remplacé
+    #Local File ITMMASTER [OLD]
+    #Read [OLD]ITM0=[M]ITMREF(nolign-1)
+    #If !fstat
+    #   If find(VALEUR,[F:OLD]YRPLITM)
+    #       [M:SOH4]YITMORIG(nolign-1)=[M]ITMREF(nolign-1)
+    #   Endif
+    #Endif
+
+    [M]UNTWEI(nolign-1)=[F:ITM]ITMWEI
+    [M]UNTWEU(nolign-1)=[F:ITM]WEU
+
+    If !clalev([F:ITS]) : Local File ITMSALES [ITS] : Endif
+    Read [ITS]ITS0=VALEUR
+    If !fstat
+        [M]ZDETAILCONDI(nolign-1)=[F:ITS]ZDETAILCONDI
+    Endif
+
+    If !clalev([F:ITM]) : Local File ITMMASTER [ITM] : Endif
+      Read [ITM]ITM0=VALEUR
+      If !fstat
+          [M:SOH4]ZCONDCAR(nolign-1)=[F:ITM]YCOND
+      Endif
+
+End
+
+
+######################################################################################
+Subprog AS_SAU(VALEUR)
+    Variable Char    VALEUR()
+
+    If !GIMPORT
+        #If VALEUR="CAR" : End : Endif
+        #If VALEUR=[F:ITM]STU : End : Endif
+
+        N_PCU=0
+        If !clalev([F:STO9]) : Local File STOCK [STO9] : Endif
+        For [STO9]STO3 Where [STO9]ITMREF=[M:SOH4]ITMREF(nolign-1) & [STO9]STOFCY=[M:SOH4]DSTOFCY(nolign-1)
+            If [STO9]PCU<>"CAR" & [STO9]PCU<>[F:ITM]STU
+                N_PCU+=1
+            Endif
+        Next
+        If N_PCU=0 : End : Endif
+
+        ## Action VISUUOM
+        Local Char    PARMSK(250)(1..20) , SAVACT(20)
+        SAVACT = GACTION : GACTION = "VISUUOM"
+        PARMSK(1) = [M:SOH4]DSTOFCY(nolign-1)
+        PARMSK(2) = [M:SOH4]ITMREF(nolign-1)
+        PARMSK(3) = ""
+        PARMSK(4) = ""
+        Call SAISIE_CHAR(VALEUR,PARMSK,"YIVISUUOM","YVISUUOM","") From GSAISIE
+        GACTION = SAVACT
+    Endif
+End
+
+
+######################################################################################
+Subprog AM_QTY(VALEUR)
+    Variable Decimal VALEUR
+    #ABS 22/02/17
+    If !clalev([F:ITM]) : Local File ITMMASTER  [ITM] : Endif
+    #If !clalev([F:ITS]) : Local File ITMSALES   [ITS] : Endif
+    #Read [ITS]ITS0=[M]ITMREF(nolign-1)
+    #If !fstat & VALEUR>=[ITS]MINQTY    :# pour éviter de faire doublon avec la qte min de cde
+        Read [ITM]ITM0=[M]ITMREF(nolign-1)
+        If !fstat & mod(VALEUR,[ITM]YCOND)<>0
+            GERR=1
+            GMESSAGE=num$(VALEUR)-[M]SAU(nolign-1)-"n'est pas un multiple du conditionnement carton ("+num$([ITM]YCOND)+")"
+            For II=0 To dim([ITM]PCU)-1
+                If [ITM]PCU(II)<>""
+                    GMESSAGE+="\     "+[ITM]PCU(II)-"="-num$([ITM]PCUSTUCOE(II))
+                Endif
+            Next
+        Endif
+    #Endif
+End
+
+
+
+######################################################################################
+
+######################################################################################
+# SSW lz 08/11/21 : 247582 : Ne pas afficher l'écran de saisie de la quantité par unité
+#	Reprise du module fait dans cette ation traitement SPESOHKAR
+######################################################################################
+Subprog AS_QTY(VALEUR)
+Variable Decimal VALEUR
+
+Local Integer NOL : NOL=nolign-1
+Raz mkstat
+Local Libelle VALPAR
+If GX07 and type(GXXSOHSESA)<>-1 Then
+  VALPAR=GXXSOHSESA  #variable globale associée au paramètre
+Else # variable inexistante
+  VALPAR=0
+Endif
+If VALPAR=2 & ([M]LINTYP(NOL) > 2 & [M]LINTYP(NOL) < 6) Then mkstat=2 Endif
+
+If GAVASTOCOD<>2 : Goto FIN_AS_QTY Endif
+
+If VALPAR=2 Then
+  Local Decimal VIRTUEL
+  Local Decimal VIRTUELSTU
+  Local Decimal WSTUDISSTU, WSTUDIS, WCOE
+
+  If [M]STOMGTCOD(NOL)=1 Then Goto FIN_AS_QTY Endif
+
+  # Recherche du et du disponible virtuel Kardol
+  Raz WSTUDISSTU
+  If clalev([F:ITV])  = 0 Local File ITMMVT [ITV] : Endif
+  Read [ITV]ITV0=[M]ITMREF(NOL);[M]DSTOFCY(NOL)
+  If fstat Raz [F:ITV]: Endif
+  Local Decimal REG_QTY
+  If clalev([F:XWOQ])=0 : Local File SORDERQ [XWOQ] : Endif
+  Filter [XWOQ] Where SOHNUM=[M:SOH0]SOHNUM and SOPLIN=[M:SOH4]SOPLIN(NOL)
+  If rowcount([XWOQ])
+    Read [XWOQ] Last
+    If !fstat: REG_QTY = [F:XWOQ]QTYSTU: Endif
+  Endif
+  Filter [XWOQ]
+
+  WSTUDISSTU=[F:ITV]PHYSTO-[F:ITV]BESSTO-[M:SOH4]QTYSTU(NOL)+REG_QTY #disponible KARDOL : stock physique - besoins - qté affichée + qté enregistrée
+  VIRTUELSTU=WSTUDISSTU+[F:ITV]ORDSTO #virtuel KARDOL : stock physique - besoins + en commande
+  Call SCAL_QUS(0,[M]ITMREF(NOL),[M]BPCORD,[M]SAU(NOL),[M]STU(NOL),WSTUDIS,WCOE) From TRTVENQTE
+  #Conversion en unité de vente
+  VIRTUEL=VIRTUELSTU*(1/WCOE)
+
+  # --> Calcul de la qtée cdée en UV
+  If WSTUDISSTU >= 0
+  #Disponible positif ou nul
+    #Conversion en unité de vente
+    WSTUDIS=WSTUDISSTU*(1/WCOE)
+    #On affiche le disponible et le virtuel
+    GERR=4
+    GMESSAGE = mess(57,1046,1)-num$(WSTUDIS)-[M]SAU(NOL)-"-"+mess(54,1046,1)-num$(VIRTUEL)-[M]SAU(NOL)
+  Else
+    #affichage du disponible virtuel
+    Local Date WFIRAVADAT
+    Local Decimal WFIRAVAQTY
+    Local Decimal WFIRAVAQTYUV
+    Call FIRAVADAT([M]DSTOFCY(NOL),[M]ITMREF(NOL), WFIRAVADAT, WFIRAVAQTY) From CNSSDISTD
+    If WFIRAVADAT <> [0/0/0]
+        WFIRAVAQTYUV=WFIRAVAQTY*(1/WCOE)
+        GERR=4
+        GMESSAGE=mess(54,1046,1)-num$(VIRTUEL)-[M]SAU(NOL)-"-"-mess(55,1046,1)
+&                       -format$(GFMDAT,WFIRAVADAT)+" : "+num$(WFIRAVAQTYUV)-[M]SAU(NOL)-mess(56,1046,1)+"."
+    Else
+        GERR=4:GMESSAGE=mess(409,197,1) # Indisponible
+    Endif
+  Endif
+  # PPI le 26/03/2015 K0008668 : les messages affichés avec GERR=4 et GMESSAGE ne sont plus visibles
+  [M:SOH4]X4ETASTO = GMESSAGE
+  If !GIMPORT Then Affzo [M:SOH4]X4ETASTO Endif
+Endif
+
+$FIN_AS_QTY
+End
+
+
+######################################################################################
+######################################################################################
+# SSW le 13/06/22 : 255234 : Ajout du transporteur Franco
+#	Initialisation avec le transporteur Franco du client livré
+######################################################################################
+Subprog AM_BPCORD(VALEUR)
+Variable Char    VALEUR()
+If !clalev([F:ZBPD]) : Local File BPDLVCUST [ZBPD] : Endif
+Read [F:ZBPD]BPD0=VALEUR;[M:SOH1]BPAADD
+If fstat<>0 : Raz [F:ZBPD] : Endif
+[M:SOH2]YBPTNUM=[F:ZBPD]YBPTNUM
+Affzo [M:SOH2]YBPTNUM
+End
+
+
+######################################################################################
+
+######################################################################################
+# SSW le 13/06/22 : 255234 : Ajout du transporteur Franco
+#	Initialisation avec le transporteur Franco du client livré
+######################################################################################
+Subprog AM_BPAADD(VALEUR)
+Variable Char    VALEUR()
+If !clalev([F:ZBPD]) : Local File BPDLVCUST [ZBPD] : Endif
+Read [F:ZBPD]BPD0=[M:SOH0]BPCORD;VALEUR
+If fstat<>0 : Raz [F:ZBPD] : Endif
+[M:SOH2]YBPTNUM=[F:ZBPD]YBPTNUM
+Affzo [M:SOH2]YBPTNUM
+End
+
+
+######################################################################################
+
+######################################################################################
+# JCS le 03/08/23 : 268546 - Ajout d'un message d'avertissement lors de la coche de la case 'BP' si des lignes nulles sont présentes
+## Etiquette ajoutée par le superviseur (écran SOH0) 03/08/2023 10:44:17 (ADMIN)
+######################################################################################
+Subprog AM_YBP(VALEUR)
+Variable Integer VALEUR
+  If VALEUR=2 and [M:SOH0]SOHTYP<>'ECHAO' and [M:SOH0]SOHTYP<>'ECH'
+    Local Integer ZI : ZI=0
+    For ZI=0 To [M:SOH4]NBLIG-1
+      If [M:SOH4]GROPRI(ZI)=0 and vireblc([M:SOH4]ITMREF(ZI),2) <> ''
+        Infbox "Ligne "+num$(ZI+1)+", prix nul pour l'article "+[M:SOH4]ITMREF(ZI)
+      Endif
+    Next
+  Endif
+End
+
+
+######################################################################################
+
+func controle_avant_allocation
+If [M:SOH0]YBP=2 and [M:SOH0]SOHTYP<>'ECHAO' and [M:SOH0]SOHTYP<>'ECH'
+    Local Integer ZI : ZI=0
+    Local Char message_erreur(250) : message_erreur = ""
+    For ZI=0 To [M:SOH4]NBLIG-1
+      If [M:SOH4]GROPRI(ZI)=0 and vireblc([M:SOH4]ITMREF(ZI),2) <> ''
+        message_erreur = "Ligne "+num$(ZI+1)+", prix nul pour l'article "+[M:SOH4]ITMREF(ZI) + chr$(10)
+      Endif
+    Next
+    If message_erreur <> "" 
+        Infbox message_erreur
+        return 1
+    endif
+  Endif
+  return 0
+
+
+
+
+ Local Shortint QBOX
+    Qstbox "Error Do you want to continue ?"
+&   Titled "Title" Using QBOX Sleep 60
+    If QBOX = 1
+      Infbox "Cotinue"
+    Else
+    Infbox "Quit"
+    Endif
+
+Subprog CONFIRMATION_ALLOCATION
+    Local Shortint QBOX
+    Qstbox "Continuer"
+&   Titled "Message" Using QBOX Sleep 60
+    If QBOX = 1
+    Infbox "Ok"
+    else
+    OK = 0
+    Endif
+    end

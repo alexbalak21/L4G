@@ -1,0 +1,54 @@
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+Return
+########################################
+Subprog C_ITMREF(VALEUR)
+Variable Char    VALEUR()
+End
+
+########################################
+Subprog AM_ITMREF(VALEUR)
+Variable Char    VALEUR()
+End
+
+
+
+
+
+######################################################################################
+# BKV 12/11/24 : 3004261 Autocompletion des champs "Centre coût', "Produit" et "Sub-project" à partir du "Code Budget"
+######################################################################################
+Subprog AM_CCE4(VALEUR)
+Variable Char    VALEUR()
+
+# Vérifier si VALEUR est vide
+If VALEUR = ""
+    End
+Endif
+
+# OUVRE LA TABLE ZAXE SI ELLE EST NON OUVERTE
+If !clalev ([F:ZAXES]) :  Local File ZAXE[F:ZAXES] :  Endif
+
+# VA CHERCHER SI VALEUR EST DANS COLONE AXE0 DE LA TABLE ZAXE
+Read [F:ZAXES]ZAXE0=VALEUR
+If [S]fstat=0
+    # Si la lecture est réussie, récupérer la valeur de AXE1
+
+    [M:POH2]CCE1([S]nolign-1) = [F:ZAXES]AX1
+    affzo [M:POH2]CCE1([S]nolign-1)
+
+    [M:POH2]CCE2([S]nolign-1) = [F:ZAXES]AX2
+    affzo [M:POH2]CCE2([S]nolign-1)
+
+    [M:POH2]CCE5([S]nolign-1) = [F:ZAXES]AX5
+    affzo [M:POH2]CCE5([S]nolign-1)
+
+   
+Else
+    # Si la valeur n'est pas trouvée, afficher un message d'erreur
+    Infbox "Valeur non trouvée dans la correspondance Code budget"
+    mkstat=2
+Endif
+
+End
+######################################################################################

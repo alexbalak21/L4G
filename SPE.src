@@ -1,0 +1,139 @@
+# Gestion du masque SMO1 (Spécifique)
+# OP le 28/10/2021 : cf chrono 247420
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SMO1) 28/10/2021 10:03:12 (ADMIN)
+######################################################################################
+$ACTION
+#if guser='ADMIN' or GUSER='KAR1' : infbox action : endif
+# when "LIENS" : Gosub LIENS From TABLEAUX
+Case ACTION
+ When "LIENS_LIG" : gosub LIENS_LIG
+ When default
+Endcase
+Return
+
+$LIENS_LIG
+Gosub LIENS_LIG from SUBSMOA
+
+#If clalev([F:ZAX]) = 0 : Local File ATEXTRA    [ZAX] : Endif
+#filter [ZAX]
+#read [ZAX]AXX0="GACCCODE";"DESTRA";"FRA";"1";[F:ITM]ACCCOD
+#if fstat=0 then
+#  [M:SMO1]ZACCCODDES(nolign-1)=[F:ZAX]TEXTE
+#endif
+Call LECTEXTRA([M:SMO1]ZACCCODDES(nolign-1),"GACCCODE","DESTRA","1",[F:ITM]ACCCOD) from ATEXTRA
+
+GPE=1
+return
+
+Subprog AM_ITMREF(VALEUR)
+Variable Char    VALEUR()
+
+If clalev([F:ZITM]) = 0 : Local File ITMMASTER    [ZITM] : Endif
+#If clalev([F:ZAX]) = 0 : Local File ATEXTRA    [ZAX] : Endif
+filter [ZITM]
+read [ZITM]ITM0=VALEUR
+if fstat=0 then
+#  filter [ZAX]
+#  read [ZAX]AXX0="GACCCODE";"DESTRA";"FRA";"1";[F:ZITM]ACCCOD
+#  if fstat=0 then
+#    [M:SMO1]ZACCCODDES(nolign-1)=[F:ZAX]TEXTE
+    Call LECTEXTRA([M:SMO1]ZACCCODDES(nolign-1),"GACCCODE","DESTRA","1",[F:ZITM]ACCCOD) from ATEXTRA
+    affzo [M:SMO1]ZACCCODDES(nolign-1)
+#  endif
+endif
+
+# OP le 02/08/22 : ajout d'un contrôle code fonctionnel aqrticle selon code affaire renseigner !
+local integer YYOK
+raz YYOK
+If !clalev([F:YCAC]) : Local File GACCCODE [YCAC] : Endif
+Filter [YCAC]
+Read [YCAC]CAC0=1;[F:ZITM]ACCCOD;GCOA
+if GUSER='ADMIN' : Call ECR_TRACE("[F:ZITM]ACCCOD="+[F:ZITM]ACCCOD+", GCOA="+GCOA,0) from GESECRAN : endif
+If fstat=0 Then
+  if GUSER='ADMIN' : Call ECR_TRACE("lecture YCAC ok",0) from GESECRAN : endif
+  if [F:YCAC]YCODFONC=1 then
+    # dans ce cas, l'affaire doit être FR999999999
+	if [M:SMO0]PJT<>"FR999999999" then
+	  raz YYOK
+	  Call ECR_TRACE("Le code de fonctionnement A de l'article impose une affaire autre que FR999999999",0) from GESECRAN
+	else
+	  YYOK=1
+	endif
+  else
+	  if [F:YCAC]YCODFONC=3 or [F:YCAC]YCODFONC=3 then
+		# dans ce cas, l'affaire doit être FR999999999
+		if [M:SMO0]PJT<>"FR999999999" then
+		  YYOK=1
+		else
+		  Call ECR_TRACE("Le code fonctionnement C ou D de l'article interdit avec l'affaire FR999999999",0) from GESECRAN
+		  raz YYOK
+		endif
+	  else
+	    # cas non géré : on laisse ? A PRIORI les articles d'autres code fonctionnels ne sont pas gérés en stock
+		YYOK=1
+	  endif
+  endif
+else
+  Call ECR_TRACE("Le code fonctionnement de l'article n'a pas pu être déterminé",0) from GESECRAN
+  raz YYOK
+endif
+if YYOK=0 then
+  mkstat=2
+endif
+
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SMO1) 03/06/2022 14:24:00 (ADMIN)
+######################################################################################
+Subprog D_CCE1(VALEUR)
+Variable Char    VALEUR()
+call INIT_PJT_CCE(GFONCTION,zoncou,[M]ITMREF(nolign-1),VALEUR) from YSACH007
+End
+
+Subprog C_CCE1(VALEUR)
+Variable Char    VALEUR()
+local integer YYOK
+raz YYOK
+call CTRL_PJT_CCE(GFONCTION,zoncou,[M]ITMREF(nolign-1),VALEUR,YYOK) from YSACH007
+if YYOK=0 then
+  mkstat=2
+endif
+End
+
+Subprog D_CCE2(VALEUR)
+Variable Char    VALEUR()
+call INIT_PJT_CCE(GFONCTION,zoncou,[M]ITMREF(nolign-1),VALEUR) from YSACH007
+End
+
+Subprog C_CCE2(VALEUR)
+Variable Char    VALEUR()
+local integer YYOK
+raz YYOK
+call CTRL_PJT_CCE(GFONCTION,zoncou,[M]ITMREF(nolign-1),VALEUR,YYOK) from YSACH007
+if YYOK=0 then
+  mkstat=2
+endif
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SMO0) 12/07/2022 14:42:41 (ADMIN)
+######################################################################################
+Subprog D_PJT(VALEUR)
+Variable Char    VALEUR()
+End
+
+Subprog C_PJT(VALEUR)
+Variable Char    VALEUR()
+End
+
+
+######################################################################################
+

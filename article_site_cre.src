@@ -1,0 +1,14 @@
+$ACTION
+Case ACTION
+When "AVANT_CHOI" : Infbox "Initalisation"
+When Default
+Endcase
+Return
+
+$VERIF_STAT_ART
+If !clalev ([F:ZITM]) : Local File ITMMASTER[F:ZITM] :  Endif
+Read [F:ZITM]ITMREF = [M:ITF0]ITMREF
+If [S]fstat <> 0 : Return
+endif
+Update [F:ZITM] Where ITMREF 
+

@@ -1,0 +1,21 @@
+$ACTION
+Case ACTION
+When "APRES_MOD" : Gosub MOD_SOUMIS_CONTROLE
+When Default
+Endcase
+Return
+
+
+# 
+$MOD_SOUMIS_CONTROLE
+If !clalev ([F:ZITF]) : Local File ITMFACILIT[F:ZITF] :  Endif
+#VA CHERCHER DANS ITF
+If [M:ITM0]ITMSTA = 2
+# MODIFIE LE CHAMP "Soumis à Controle" à "Controle non modifiable" M = 2
+    Update [F:ZITF] Where ITMREF = [M:ITM0]ITMREF With QUAFLG = 2
+    for [F:ZITF] Where ITMREF = [M:ITM0]ITMREF 
+    if [F:ZITF]QUAFLG <> 2
+    Infbox "Erreur de mise à jour de l'article Site " + [F:ZITF]STOFCY
+    endif
+Endif
+Return
