@@ -1,0 +1,13 @@
+$ACTION
+Case ACTION
+When "AVANT_CHOI" : Gosub ZTEST
+When Default
+Endcase
+Return
+
+$ZTEST
+Local Tinyint ANSWER: ANSWER = 0
+#PAR DEFAULT A OUI
+Qstbox "Question" Using ANSWER Sleep 15
+If ANSWER = 1 : Infbox "Oui" : Else Infbox "Non" : Endif
+Return

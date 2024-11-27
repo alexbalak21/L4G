@@ -1,0 +1,14 @@
+$ACTION
+Case ACTION
+When "AVANT_CHOI" : call 
+Return
+
+
+$ZTEST
+Local Integer qst
+Qstbox "Question"
+if ANSWER = 1 : Infbox 'Yes' : else Infbox "No" : Endif
+Infbox "Vous avez modifié le Statut de l'Article. ~nN'oublez pas à verifier le champ ~"Soumis à contrôle~" dans les Articles Sites !"
+
+Infbox 'Vous avez modifié le Statut de l'ARTICLE. "oublez pas à verifier le champ "SOUMIS À CONTRÔLE" dans les Articles Sites !'
+
