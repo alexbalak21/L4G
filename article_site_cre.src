@@ -1,16 +1,38 @@
 $ACTION
+Case ACTION
+When "APRES_MOD" : Gosub MOD_SOUMIS_CONTROLE
+When "AVANT_MODFIC" : Gosub MOD_STATUS_ART
+When Default
+Endcase
 Return
-######################################################################################
-## Etiquette ajoutée par le superviseur (écran ITF0) 27/11/2024 09:15:47 (ABAL)
-######################################################################################
-Subprog AM_ITMREF(VALEUR)
-Variable Char VALEUR()
+
+$MOD_SOUMIS_CONTROLE
+# OUVRE LES TABLES
+If !clalev ([F:ZITF]) : Local File ITMFACILIT[F:ZITF] :  Endif
 If !clalev ([F:ZITM]) : Local File ITMMASTER[F:ZITM] :  Endif
-Read [F:ZITM]ITM0 = VALEUR
-If [S]fstat <> 0 : End : Endif
-If [F:ZITM]ITMSTA = 2
-Infbox "Soumis à contrôle : Controle non modifiable"
-[M:ITF1]QUAFLG = 2
+# VA CHERCHER LA LIGNE DE LA RFERANCE
+Read [F:ZITM]ITM0 = [M:ITM0]ITMREF
+If [S]fstat <> 0 : Return : Endif 
+# SI LA VALEUR A ETE MODIFE A 2
+If [M:ITM0]ITMSTA = 2 and [F:ZITM]ITMSTA <> 2
+# MODIFIE LE CHAMP "Soumis à Controle" à "Controle non modifiable" M = 2
+    Update [F:ZITF] Where ITMREF = [M:ITM0]ITMREF With QUAFLG = 2
+    # CONTROLE DE L'UPDATE
+    For [F:ZITF] Where ITMREF = [M:ITM0]ITMREF
+        If [F:ZITF]QUAFLG <> 2
+        Infbox "Erreur de mise à jour de l'article Site " + [F:ZITF]STOFCY
+        Endif
+    Next
 Endif
-End
-######################################################################################
+Return
+
+
+
+$MOD_STATUS_ART
+If !clalev ([F:ZITM]) : Local File ITMMASTER[F:ZITM] :  Endif
+Read [F:ZITM]ITM0 = [M:ITM0]ITMREF
+If [S]fstat <> 0 : Return : Endif 
+    If [F:ZITM]ITMSTA = 2 and [M:ITM0]ITMSTA = 1
+    Infbox "Vous avez modifié le Statut de l'Article." + chr$(10) +  "N'oublez pas à verifier le champ " + '"Soumis à contrôle" dans' + chr$(10) + "les Articles Sites!"Endif
+Endif
+Return

@@ -1,0 +1,16 @@
+$ACTION
+Return
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran ITF0) 27/11/2024 09:15:47 (ABAL)
+######################################################################################
+Subprog AM_ITMREF(VALEUR)
+Variable Char VALEUR()
+If !clalev ([F:ZITM]) : Local File ITMMASTER[F:ZITM] :  Endif
+Read [F:ZITM]ITM0 = VALEUR
+If [S]fstat <> 0 : End : Endif
+If [F:ZITM]ITMSTA = 2
+[M:ITF1]QUAFLG = 2
+Affzo [M:ITF1]QUAFLG 
+Endif
+End
+######################################################################################
