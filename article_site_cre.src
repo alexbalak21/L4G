@@ -1,7 +1,8 @@
 $ACTION
 Case ACTION
-When "APRES_MOD" : Gosub MOD_SOUMIS_CONTROLE
-When "AVANT_MODFIC" : Gosub MOD_STATUS_ART
+When "AVANT_MODFIC" 
+    Gosub MOD_SOUMIS_CONTROLE 
+    Gosub MOD_STATUS_ART
 When Default
 Endcase
 Return
@@ -25,7 +26,6 @@ If [M:ITM0]ITMSTA = 2 and [F:ZITM]ITMSTA <> 2
     Next
 Endif
 Return
-
 
 
 $MOD_STATUS_ART
