@@ -1,5 +1,5 @@
 ############################################################################################################################
-## BKV - 2024/12/04 - 3004585 : change "Soumis à contrôle" des articles sites si "Statut article" est passé à "Elaboration"
+# BKV - 2024/12/04 - 3004585 : change "Soumis à contrôle" des articles sites si "Statut article" est passé à "Elaboration"
 ############################################################################################################################
 
 $ACTION
