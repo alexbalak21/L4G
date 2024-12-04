@@ -1,6 +1,10 @@
+############################################################################################################################
+## BKV - 2024/12/04 - 3004585 : change "Soumis à contrôle" des articles sites si "Statut article" est passé à "Elaboration"
+############################################################################################################################
+
 $ACTION
 Case ACTION
-When "AVANT_MODFIC" : AVANT_MODFIC
+When "AVANT_MODFIC" : Gosub AVANT_MODFIC
 When Default
 Endcase
 Return
@@ -11,65 +15,25 @@ If !clalev ([F:ZITM]) : Local File ITMMASTER[F:ZITM] :  Endif
 # SI STATUT ARTICLE = Elaboration
 If [M:ITM0]ITMSTA = 2
 # VA CHERCHER LA LIGNE DE LA RFERANCE
-Read [F:ZITM]ITM0 = [M:ITM0]ITMREF
-If [S]fstat = 0
-    #SI L'ARTICLE N'EST PAS EN ELABORATION DANS LA DB
-    If [F:ZITM]ITMSTA <> 2
-        Update [F:ZITF] Where ITMREF = [M:ITM0]ITMREF With QUAFLG = 2
-        # CONTROLE DE L'UPDATE
-        For [F:ZITF] Where ITMREF = [M:ITM0]ITMREF
-            If [F:ZITF]QUAFLG <> 2
-                Infbox "Erreur de mise à jour de l'article Site " + [F:ZITF]STOFCY
-            Endif
-        Next
+    Read [F:ZITM]ITM0 = [M:ITM0]ITMREF
+    If [S]fstat = 0
+        #SI L'ARTICLE N'EST PAS EN Elaboration DANS LA DB
+        If [F:ZITM]ITMSTA = 1
+            Update [F:ZITF] Where ITMREF = [M:ITM0]ITMREF With QUAFLG = 2
+            # CONTROLE DE L'UPDATE
+            For [F:ZITF] Where ITMREF = [M:ITM0]ITMREF
+                If [F:ZITF]QUAFLG <> 2 :Infbox "Erreur de mise à jour de l'article Site " + [F:ZITF]STOFCY : Endif
+            Next
+        Endif
     Endif
+# SI STATUT ARTICLE <> Elaboration
 Else
     Read [F:ZITM]ITM0 = [M:ITM0]ITMREF
     If [S]fstat = 0
-         If [F:ZITM]ITMSTA = 2
-            Infbox "Vous avez modifié le Statut de l'Article." + chr$(10) + "N'oubliez pas à vérifier le champ " + '"Soumis à contrôle" dans' + chr$(10) + "les Articles Sites!"
-        Endif
-    Endif
-return
-
-
-$MOD_SOUMIS_CONTROLE
-# OUVRE LES TABLES
-If !clalev ([F:ZITF]) : Local File ITMFACILIT[F:ZITF] : Endif
-If !clalev ([F:ZITM]) : Local File ITMMASTER[F:ZITM] : Endif
-# VA CHERCHER LA LIGNE DE LA RÉFÉRENCE
-Read [F:ZITM]ITM0 = [M:ITM0]ITMREF
-If [S]fstat = 0 
-
-    # SI LA VALEUR A ÉTÉ MODIFIÉE À 2
-    If [M:ITM0]ITMSTA = 2 and [F:ZITM]ITMSTA <> 2
-
-        # MODIFIE LE CHAMP "Soumis à Controle" à "Controle non modifiable" M = 2
-        Update [F:ZITF] Where ITMREF = [M:ITM0]ITMREF With QUAFLG = 2
-
-        # CONTRÔLE DE L'UPDATE
-        For [F:ZITF] Where ITMREF = [M:ITM0]ITMREF
-            If [F:ZITF]QUAFLG <> 2
-                Infbox "Erreur de mise à jour de l'article Site " + [F:ZITF]STOFCY
-            Endif
-        Next
-
-        Read [F:ZITM]ITM0 = [M:ITM0]ITMREF
-        If [S]fstat = 0
-
-        If [F:ZITM]ITMSTA = 2 and [M:ITM0]ITMSTA = 1
+        #CONTROLE SI L'ARTICLE EN Elaboration prcedament
+        If [F:ZITM]ITMSTA = 2
             Infbox "Vous avez modifié le Statut de l'Article." + chr$(10) + "N'oubliez pas à vérifier le champ " + '"Soumis à contrôle" dans' + chr$(10) + "les Articles Sites!"
         Endif
     Endif
 Endif
-Return
-
-
-$MOD_STATUS_ART
-If !clalev ([F:ZITM]) : Local File ITMMASTER[F:ZITM] :  Endif
-Read [F:ZITM]ITM0 = [M:ITM0]ITMREF
-If [S]fstat <> 0 : Return : Endif
-    If [F:ZITM]ITMSTA = 2 and [M:ITM0]ITMSTA = 1
-    Infbox "Vous avez modifié le Statut de l'Article." + chr$(10) +  "N'oublez pas à verifier le champ " + '"Soumis à contrôle" dans' + chr$(10) + "les Articles Sites!"
-    Endif
 Return
