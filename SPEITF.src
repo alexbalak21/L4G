@@ -1,0 +1,18 @@
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+Return
+
+###########################################################################################################################################################
+# BKV - 2024/12/04 - 3004585 : Change le champ "Soumis à contrôle" par default à "Contrôle non modifiable" si Article : "Statut article" -> "Elaboration" #
+###########################################################################################################################################################
+Subprog AM_ITMREF(VALEUR)
+Variable Char VALEUR()
+If !clalev ([F:ZITM]) : Local File ITMMASTER[F:ZITM] :  Endif
+Read [F:ZITM]ITM0 = VALEUR
+If [S]fstat <> 0 : End : Endif
+If [F:ZITM]ITMSTA = 2
+[M:ITF1]QUAFLG = 2
+Affzo [M:ITF1]QUAFLG 
+Endif
+End
+######################################################################################
