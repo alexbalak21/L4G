@@ -1,0 +1,203 @@
+#<AdxTL>@(#)9.0.0.0 $Revision$
+# Intégration des écritures de type paie
+######################################################################################
+# Création le 05/06/2018 NJ
+######################################################################################
+$ACTION
+ Case ACTION
+   When "OUVRE"       : Gosub OUVRE
+   When "DEBUT"       : Gosub DEBUT
+   When "AVANT_OK"    : Gosub AVANT_OK
+   When "OK"          : Gosub OK
+   When default
+ Endcase
+Return
+
+$OUVRE
+
+Return
+
+$DEBUT
+    Raz [M:Yimp]
+  
+
+Return
+
+$AVANT_OK
+# reconstitution chemin fichier
+Local Char    YVOL(50), YFILES(250), YPTH(250)
+Local Char    YVAL (250)
+[l]yval=[m]ynomfic
+If len([L]YVAL) & instr(1,[L]YVAL,"]")>0 Then
+        [L]YVOL   =  mid$(YVAL,2,  instr(1,YVAL,"]")-2)
+        [L]YFILES = right$(YVAL,instr(1,YVAL,"]")+2)
+        [L]YPTH   = func ASYRSTO.GETFULLPATH([L]YVOL, [L]YFILES)
+Endif
+[m]ynomfic=[l]ypth
+
+    If [M]Ynomfic=""
+       Call MESSAGE("Sélection d'un fichier écriture obligatoire.") From GESECRAN
+       FOK=0
+       WERR=1
+       FIN=0
+    Endif
+
+    If filinfo([m]Ynomfic,7) = 0
+       Call MESSAGE("Fichier inexistant ou vide ?") From GESECRAN
+       FOK=0
+       WERR=1
+       FIN=0
+    Endif
+Return
+
+$OK
+   Local Char WFILE_IMPORT(250),W_TEXTE(250)
+   Local Char WFILE_EXPORT(250),WFILE_COPIE(250)
+   Local Char W_LX,W_JOU,W_FCY,W_CPY,W_CUR,W_PIECE,w_tra
+   local char w_acc, w_lib,w_mont,w_sens,w_lig
+   Local Decimal W_MTB
+   Local Integer W_ERR,W_SNS,W_LIGNE,W_LIN,I,IA
+   Local Char R(30)(26)
+   local char cce(15)(200)    #pour stocket la ventilation analytique
+   local char mta(15)(200)
+   local integer yi
+        
+        WFILE_IMPORT = [m]Ynomfic
+        [L]WFILE_EXPORT=filpath("ZGECKO_CPT","IMPODP"+date$+mid$(time$,1,2)+mid$(time$,4,2)+mid$(time$,7,2),"csv")
+      
+
+        W_CCNCRM = 10000
+
+       If GSERVEUR = 0 
+           Call OUVRE_TRACE("Intégration des écritures type Paie")   From LECFIC
+           Call ECR_TRACE  ("| Traitement du fichier origine : "+WFILE_IMPORT,0) From GESECRAN
+       Endif
+       Openi WFILE_IMPORT              Using [W_I]
+       Iomode adxium 50                Using [W_I]
+       Iomode adxirs chr$(13)+chr$(10) Using [W_I]
+       Iomode adxifs ';'               Using [W_I]
+       
+       
+       Openo WFILE_EXPORT              Using [W_E] 
+       
+       Iomode adxium 50                Using [W_E]
+       Iomode adxirs chr$(13)+chr$(10) Using [W_E]
+       Iomode adxifs ';'               Using [W_E]
+       
+       
+
+       [L]W_ERR=0
+       [L]W_MTB=0
+       [L]W_LIGNE=0
+       Repeat
+            Rdseq R(0),R(1),R(2),R(3),R(4),R(5),R(6),R(7),R(8),R(9),R(10),R(11) Using [W_I]
+            If fstat : Break : Endif
+            [L]W_LIGNE +=1
+            [L]W_LX="(LIGNE "+num$(W_LIGNE)+" )"
+            
+			
+
+             
+            
+
+            
+            If [L]r(0)="G"
+              
+				if [m]ysite=""
+					W_FCY="FRP01"
+				else 
+					w_fcy=[m]ysite
+				endif
+
+                Wrseq "G",[L]r(1),[L]W_FCY,r(3),[L]r(4),R(5),r(6),r(7),r(8),r(9)  Using [W_E]
+            Elsif [L]r(0)="D"
+				if ia=2   #traitement groupe ligne D precedente
+				    gosub lig_rep
+					ia=0
+					yi=0
+					raz cce(0..199)
+					raz mta(0..199)
+				endif
+				if r(2)="1"     #ligne social
+					Wrseq "D",r(1),r(2),r(3),R(4),r(5),r(6),r(7),r(8),R(9),[L]r(10)   Using [W_E]
+            
+					[L]W_LIN +=1
+				else          #ligne detail analytique
+				    #stockage des infos pour créer la ligne D pour le plan REP groupe
+					w_lig   =r(1)
+					w_acc   =r(5)
+					w_lib   =r(7)
+					w_sens  =r(8)
+					w_mont  =r(9)
+					w_cur   =r(10)
+					Ia=2
+					### Ecriture ligne detail analytique #########
+					Wrseq "D",r(1),r(2),r(3),R(4),r(5),r(6),r(7),r(8),R(9),[L]r(10)   Using [W_E]
+				endif
+            elsif r(0)="A"  ### Traitement analytique
+				 
+                   
+                    Wrseq "A",r(1),"2",r(3),"AX1",r(5),"AX2","ZZNA","AX3","FRP01",ctrans(R(10),"-"," ")   Using [W_E]
+					#stockage dans le tableau pour le plan groupe Rep
+					mta(yi)=ctrans(R(10),"-"," ")
+					cce(yi)=r(5)
+					yi+=1
+                
+            Endif
+       Until 1<>1                                                     # Fin du fichier d'import #
+	   if ia=2
+	     gosub lig_rep
+	   endif
+       Openi Using [W_I]
+       Openo Using [W_E]
+       
+       
+          Call IMPORT_SILENCIEUX("YGASPAI",[L]WFILE_EXPORT,[L]W_ERR)  ### Importation des écritures
+       
+           
+     
+       If GSERVEUR = 0 Then
+          Call FERME_TRACE From LECFIC
+          Call LEC_TRACE   From LECFIC
+       Endif
+
+Return
+$lig_rep
+	### Ecriture ligne detail groupe #########
+	Wrseq "D",w_lig,"4"," "," ",w_acc," ",w_lib,w_sens,w_mont,w_cur   Using [W_E]
+	# ecriture ventilation analytique sur le plan groupe
+	local integer zi
+	for zi=0 to yi-1
+		Wrseq "A",w_lig,"4",zi+1,"AX1",cce(zi),"AX2","ZZNA","AX3","FRP01",mta(zi)   Using [W_E]
+	next
+return
+######################################################################################
+
+Subprog IMPORT_SILENCIEUX(ZMODELE,ZNOMFIC,ZOK)
+Value Char ZMODELE
+Value Char ZNOMFIC    
+Variable Integer ZOK
+Local Char ZSAVADXIFS
+Local Char ZSAVADXIRS
+Local Integer ZSAVGERRTRACE
+    # Le sous-programme IMPORTSIL remet à blanc (???) les séparateurs en cas de plantage
+    [L]ZSAVADXIFS=adxifs
+    [L]ZSAVADXIRS=adxirs
+    [L]ZSAVGERRTRACE=GERRTRACE
+    Onerrgo PB_IMPORT
+    Call IMPORTSIL([L]ZMODELE,[L]ZNOMFIC) From GIMPOBJ
+    If GERRTRACE<>[L]ZSAVGERRTRACE
+        Goto PB_IMPORT
+    Endif
+    [L]ZOK=2
+    Goto FIN_IMPORT
+$PB_IMPORT
+    # Malgré le fait que des erreurs puissent se produire lors de l'import, il est possible que
+    # la création/modification soit correcte (d'ou le code 0 pour l'erreur)
+    # Le test de création/modification devra être réalisé au retour de ce sous-programme
+    [L]ZOK=1
+    Call ERREUR("Erreur lors de l'import de"-[L]ZMODELE-"Fichier :"-ctrans([L]ZNOMFIC,"\","/")) From GESECRAN
+$FIN_IMPORT
+    adxifs=[L]ZSAVADXIFS
+    adxirs=[L]ZSAVADXIRS
+End
