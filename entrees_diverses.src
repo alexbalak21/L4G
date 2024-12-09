@@ -1,0 +1,63 @@
+# Gestion du masque STOENT
+# JCS le 22/06/21 - F6-01370 : Ajout d'un menu pour initialiser le compteur à l'aide du prochain YSER1
+# JCS le 28/11/19 - 217901 : Réception lot, initialisation du numéro de lot lors de la création d'une nouvelle ligne
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran STOENT) 09/02/2005 16:25:09 (GDV)
+######################################################################################
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+Return
+
+Subprog C_SERNUM(VALEUR)
+Variable Char    VALEUR()
+End
+
+######################################################################################
+# JCS le 28/11/19 - 217901 : Réception lot, initialisation du numéro de lot lors de la création d'une nouvelle ligne
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran STOENT) 13/11/2018 17:51:36 (ADMIN)
+######################################################################################
+Subprog AVANT_NBLIG
+  If GFONCTION="GESPTH" # uniquement pour les réceptions fournisseur
+    If dim([M:ENT]LOTAFF)>0 and dim(nolign)>0 and dim(NBLIG)>0 # Uniquement si les champs existent
+      If varmode([M:ENT]LOTAFF)=0 # uniquement si le lot est saisissable
+        # JCS le 28/11/19 - 217901 : Réception lot, initialisation du numéro de lot lors de la création d'une nouvelle ligne
+        If nolign>1 # uniquement ligne à partir de 2
+          If NBLIG<nolign and [M:ENT]LOTAFF(nolign-1)=[M:ENT]LOTAFF(nolign-2) # uniquement nouvelles lignes identique à la précédente
+            [M:ENT]LOTAFF(nolign-1)=""
+            Call LOTNUMCPT([M:ENT]LOTAFF(nolign-1),[M:ENT]STOFCY,[M:ENT]IPTDAT,[M:ENT]ITMREF) From STKACT
+            Affzo [M:ENT]LOTAFF(nolign-1)
+          Endif
+        Else # cas de la première ligne
+          If [M:ENT]LOTAFF(nolign-1)="" # uniquement si on a pas déjà un numéro de lot
+            Call LOTNUMCPT([M:ENT]LOTAFF(nolign-1),[M:ENT]STOFCY,[M:ENT]IPTDAT,[M:ENT]ITMREF) From STKACT
+            Affzo [M:ENT]LOTAFF(nolign-1)
+          Endif
+        Endif
+      Endif
+    Endif
+  Endif
+End
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran STOENT) 22/06/2021 18:10:46 (ADMIN)
+# JCS le 22/06/21 - F6-01370 : Ajout d'un menu pour initialiser le compteur à l'aide du prochain YSER1
+######################################################################################
+Subprog B20_SERNUM(VALEUR)
+Variable Char    VALEUR()
+  Local Char ZCOMPTEUR(30)
+  Local Integer ZSTAT
+  If VALEUR=''
+    #Subprog NUMERO(COMPTEUR,SITE,DAT,COMP,VALEUR,STAT)
+    Call NUMERO("YSER1",[M:ENT]STOFCY,date$,"",ZCOMPTEUR,ZSTAT) From SUBANM
+
+    If vireblc(ZCOMPTEUR,2)<>''
+      VALEUR=ZCOMPTEUR
+    Endif
+  Endif
+End
+
+######################################################################################
+
