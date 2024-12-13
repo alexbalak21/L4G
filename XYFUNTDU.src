@@ -1,3 +1,7 @@
+# PPI 09-06-2020 K0016604 Flux Liste à servir / Préparation des matières
+# BKV - 13/12/2024 - 3004730 - $ALIM_QTE : Ajout du traitement pour alimenter les champs Qté
+
+
 $ACTION
   If filinfo(filpath("TRT","SPEUTIL","adx"),7)>0
     Gosub KARDOL_DEV From SPEUTIL
