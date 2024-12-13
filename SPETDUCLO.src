@@ -1,14 +1,29 @@
 $ACTION
+  If filinfo(filpath("TRT","SPEUTIL","adx"),7)>0
+    Gosub KARDOL_DEV From SPEUTIL
+  Endif
+  If filinfo(filpath("TRT","XYFUNTDU_X1WMS","adx"),7)>0
+&  & func X1ADDON.G("X1WMS")>0
+    Gosub ACTION From XYFUNTDU_X1WMS
+  Endif
 Case ACTION
-When "SETBOUT" : Gosub ALIM_QTE
+When "AV_CHOIX" : Gosub ALIM_QTE
 When Default
 Endcase
 Return
 
+
+
 $ALIM_QTE
     If !clalev ([F:MFGHEAD]) : Local File MFGHEAD[F:MFGHEAD] :  Endif
     Local Integer ZI : ZI=0
-    For ZI=0 To [M:CLOSEL1]NBLIG-1
-    Infbox [M:CLOSEL1]MFGNUM
+    For ZI=0 To [M:CLS1]NBLIG-1
+        Read [F:MFGHEAD]MFG0 = [M:CLS1]MFGNUM(ZI)
+        if !fstat
+            [M:CLS1]EXTQTY(ZI) = [F:MFGHEAD]EXTQTY
+            [M:CLS1]CPLQTY(ZI) = [F:MFGHEAD]CPLQTY
+            Affzo [M:CLS1]EXTQTY(ZI)
+            Affzo [M:CLS1]CPLQTY(ZI)
+        Endif        
     Next
 Return

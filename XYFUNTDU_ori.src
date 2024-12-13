@@ -1,0 +1,15 @@
+
+# PPI 09-06-2020 K0016604 Flux Liste à servir / Préparation des matières
+
+$ACTION
+  If filinfo(filpath("TRT","SPEUTIL","adx"),7)>0
+    Gosub KARDOL_DEV From SPEUTIL
+  Endif
+  If filinfo(filpath("TRT","XYFUNTDU_X1WMS","adx"),7)>0
+&  & func X1ADDON.G("X1WMS")>0
+    Gosub ACTION From XYFUNTDU_X1WMS
+  Endif
+
+
+Return
+

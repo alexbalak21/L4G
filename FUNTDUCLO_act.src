@@ -1,0 +1,729 @@
+#########################################################################
+#                                                                       #
+# Fonction de Clôture/Solde en série                            GPAO    #
+#                                                                       #
+# ACTION  : TRTTDUCLO  : Action traitement de Clôture/Solde en série    #
+#                                                                       #
+#                                                                       #
+#########################################################################
+# Issue X3-147107 - 2019-08-15 by BAKHA : When you select orders to 'Complete',
+#                                         shows orders also completed.
+# Issue X3-256770 - 2021-08-23 by BAKHA : For closed. select In-progress and Complete.
+
+#CHECK UNUSED_BEGIN
+Call OUVRE_TRACE( "FUNTDUCLO" ) From LECFIC
+## GPROG    = Traitement
+## GTYPPROG = 1:Direct  2:O/N   3:Dialogue  4:Autre
+## GWINDOW  = Ecran de saisie
+## GWINCRIT = Ecran de critères
+
+GPROG    = "FUNTDUCLO"
+GTYPPROG = 3
+GWINDOW  = "FTDUCLO"
+GWINCRIT = "DTDUCLO"
+Local Char PARAM(10)(1..2) , WVALEUR(10)
+GBATCH=0
+GSERVEUR=0
+Call TRAITE_CHAR(WVALEUR,PARAM,GWINDOW,GPROG,GWINCRIT,GTYPPROG,"SPETDUCLO") From GTRAITE
+Call LEC_TRACE From LECFIC
+Call FERME_TRACE From LECFIC
+End
+#CHECK UNUSED_END
+
+#########################################################################
+# Etiquettes ACTION                                                     #
+#########################################################################
+$ACTION
+#--- Actions liées au traitement standard
+
+Case ACTION
+ When "OUVRE_BATCH": Gosub OUVRE_BATCH  : # FQ 66881 GA 09/2010 trt "batchable"
+ When "EXEC"       : Gosub EXEC         : # FQ 66881 GA 09/2010 trt "batchable"
+ When "INIT"       : Gosub INIT
+ When "INIT_DIA"   : Gosub INIT_DIA
+ When "TERMINE"    : Gosub TERMINE
+ When Default
+Endcase
+
+# Actions liées à la saisie fenêtre
+Case ACTION
+ When "SETBOUT"       : Gosub SETBOUT   : # FQ 66881 GA 09/2010 ajout [M:DIA]WTRAIT
+ When "BOUTON"        : Gosub BOUTON
+ When "OUVRE"         : Gosub OUVRE
+ When "DEBUT"         : Gosub DEBUT
+ When "FIN"           : Gosub FIN
+ When Default
+Endcase
+
+Call TRACE_DEBUG("FUNTDUCLO: action="-ACTION-num$(GBATCH))
+Return
+
+#########################################################################
+#    Actions liés au type traitement et affichage divers                #
+#########################################################################
+$INIT
+
+#---------------------------------------#
+# Ouverture des fichiers utilisés       #
+#---------------------------------------#
+If clalev([F:MFG]) = 0 : Local File MFGHEAD     [MFG] : Endif
+If clalev([F:MFI]) = 0 : Local File MFGITM      [MFI] : Endif
+If clalev([F:MFM]) = 0 : Local File MFGMAT      [MFM] : Endif
+If clalev([F:MFO]) = 0 : Local File MFGOPE      [MFO] : Endif
+If clalev([F:MFP]) = 0 : Local File MFGPRN      [MFP] : Endif
+If clalev([F:MTS]) = 0 : Local File MFGTRS      [MTS] : Endif
+If clalev([F:FCY]) = 0 : Local File FACILITY    [FCY] : Endif
+If clalev([F:ITM]) = 0 : Local File ITMMASTER   [ITM] : Endif
+If clalev([F:ITF]) = 0 : Local File ITMFACILIT  [ITF] : Endif
+If clalev([F:ITV]) = 0 : Local File ITMMVT      [ITV] : Endif
+If clalev([F:ITG]) = 0 : Local File ITMCATEG    [ITG] : Endif
+If clalev([F:MWS]) = 0 : Local File WORKSTATIO  [MWS] : Endif
+If clalev ([F:SCH]) <= 0 : Local File SCHEDULING [SCH] : Endif
+If clalev ([F:TUN]) <= 0 : Local File TABUNIT    [TUN] : Endif
+If clalev ([F:ORD]) <= 0 : Local File ORDERS     [ORD] : Endif
+If clalev ([F:OPS]) <= 0 : Local File OPERATIONS [OPS] : Endif
+If clalev ([F:POQ]) <= 0 : Local File PORDERQ    [POQ] : Endif
+If clalev ([F:STJ]) <= 0 : Local File STOJOU     [STJ] : Endif
+If clalev ([M:OPSK])<= 0 : Local Mask OPSK       [OPSK]: Endif
+If clalev ([M:ORDK])<= 0 : Local Mask ORDK       [ORDK]: Endif
+If clalev ([M:MTMK])<= 0 : Local Mask MTMK       [MTMK]: Endif
+If clalev ([M:STW]) <= 0 : Local Mask STOWORK    [STW] : Endif
+If clalev ([M:ALP]) <= 0 : Local Mask ALLPAR     [ALP]   Endif
+If clalev ([M:SOW]) <= 0 : Local Mask STOSORW    [SOW]   Endif
+If clalev ([F:TRU]) <= 0 : Local File TABALLRUL  [TRU] : Endif
+If clalev ([F:SRU]) <= 0 : Local File TABSTORUL  [SRU] : Endif
+If clalev ([F:CAL]) <= 0 : Local File CPTANALIN  [CAL] : Endif
+If !clalev([M:SVW]) : Local Mask STOVALWORK [SVW] : Endif
+If GWRHACT=2
+   If !clalev([F:WRH])  Local File WAREHOUSE  [WRH] : Endif
+   If !clalev([F:ITW])  Local File ITMWRH     [ITW] : Endif
+Endif
+
+Gosub STK_INILOC From STKLOC
+
+# sr 08.02 demande 15029
+Local Mask JALK   [JALK]                                             # ecran pour jalonnement
+If clalev([F:PJA])<=0 : Local File PARJAL     [PJA] : Endif          # Paramètres jalonnement
+
+# V6 Affectations
+Gosub OPEN_MTO From MTOLINKLIB
+
+Read [F:MTS]MTS0 = 2;GCLEMTSNUM
+If fstat : Raz [F:MTS] : [F:MTS]OPEUOMMOD = 1 : Endif
+
+Call TRACE_DEBUG("Action INIT: transaction="-[F:MTS]MTSNUM)
+Return
+
+#########################################################################
+$INIT_DIA
+Raz [M:DIA]
+Call FIND_GFCYDEF(8) From TRTX3   # FQ 54218
+[M:DIA]WCRFCY    = GFCY
+Gosub CHARG_PARAM                 # mm 12.02
+Affzo [M:DIA]
+Return
+
+#########################################################################
+$OUVRE
+Local    Char     CRITERE(250), CRITSUP(250)
+Local    Integer  REPONSE
+Local    Integer  WOK
+Local    Char     WMESS1(80)
+Local    Integer  NBMODIF
+Local    Char     CUSFLT(255)    # 08.05 31494
+
+Global   Integer  GSUICTL        # contrôle suivi
+Global   Integer  GSSTCMDCTL     # contrôle opé ss-traitance cmdée ou en cours
+Global   Integer  GREACTL        # contrôle opé réalisée
+Global   Integer  GLANCTL        # contrôle art. lancé produit
+Global   Integer  GCNSCTL        # contrôle matière consommée
+Global   Integer  GSTOP
+Global   Integer  GGIVE_UP
+Global   Integer  GMATCTL        # suivi des matières
+Global   Integer  GOPECTL        # suivi des opé.
+Global   Integer  GQTYCTL        # qté réalisée < qté prévue
+Global   Char     GWAICTL(2)     # checks presence of suspended transactions - 93576 mm 06.2014
+Global    Char    GWMESS2(250)
+Global   Date     GCLODAT        # date de cloture à appliquer
+Raz CRITERE, CRITSUP
+
+Gosub SEL_OF
+
+Return
+
+
+#########################################################################
+$SEL_OF
+
+# Criteres de selection
+CRITERE = "MFGSTA = 1"
+
+CRITERE -= ' & MFGFCY = "' +[M:DIA]WCRFCY+'"'
+
+# N° OF
+If [M:DIA]WNUMDEB <> ""
+     CRITERE -= ' & MFGNUM >= "' +[M:DIA]WNUMDEB+'"'
+Endif
+If [M:DIA]WNUMFIN <> ""
+    CRITERE -= ' & MFGNUM <= "' +[M:DIA]WNUMFIN+'"'
+Endif
+
+# GH 31/10/12 bug 85452 : les [MFI] sous-produit n'ont pas les mêmes dates que l'entête OF
+# Dates
+#If [M:DIA]WDATDEB <> [0/0/0]
+#   CRITERE -= ' & STRDAT >= [' +format$(GFMD,[M:DIA]WDATDEB)+']'
+#Endif
+#If [M:DIA]WDATFIN <> [0/0/0]
+#   CRITERE -= ' & ENDDAT <= [' +format$(GFMD,[M:DIA]WDATFIN)+']'
+#Endif
+
+# article
+If [M:DIA]WITMDEB <> ""
+   CRITERE -= ' & ITMREF >= "' +[M:DIA]WITMDEB+'"'
+Endif
+If [M:DIA]WITMFIN<> ""
+   CRITERE -= ' & ITMREF <= "' +[M:DIA]WITMFIN+'"'
+Endif
+
+# affaire
+If [M:DIA]WPJTDEB <> ""
+    CRITERE -= ' & PJT >="'+[M:DIA]WPJTDEB+'"'
+Endif
+If [M:DIA]WPJTFIN <> ""
+    #GA 07/03/2006 CRITERE -= ' & PJT >="'+[M:DIA]WPJTFIN+'"'
+    CRITERE -= ' & PJT <="'+[M:DIA]WPJTFIN+'"'
+Endif
+
+# commande
+CRITSUP = "1=1"
+If [M:DIA]WCDEDEB <> ""
+    CRITSUP -= ' & VCRTYPORI = 2'
+    # FQ 45619 CRITSUP -= ' & VCRNUMORI = "' +[M:DIA]WCDEDEB+'"'
+    CRITSUP -= ' & VCRNUMORI >= "' +[M:DIA]WCDEDEB+'"'
+Endif
+If [M:DIA]WCDEFIN <> ""
+   CRITSUP -= ' & VCRTYPORI = 2'
+   # FQ 45619 CRITSUP -= ' & VCRNUMORI = "' +[M:DIA]WCDEFIN+'"'
+   CRITSUP -= ' & VCRNUMORI <= "' +[M:DIA]WCDEFIN+'"'
+Endif
+Return
+
+#########################################################################
+$SETBOUT                     # FQ 66881 GA 09/2010 ajout [M:DIA]WTRAIT
+
+If dim([M:DIA]WTRAIT)>0 & !GBATCH
+# ------------------------------------------------------------------------------------- #
+# Boutons bas d'écrans                                                                  #
+# ------------------------------------------------------------------------------------- #
+   Case [M:DIA]WTRAIT
+     When 2 : Call VIREBOUT(CHMEN,"2") From GOBJET # Solde
+     When 3 : Call VIREBOUT(CHMEN,"1") From GOBJET # Clôture
+     When Default :
+   Endcase
+   Gosub SET_BOUT_SPE From GSAISIE
+Endif
+Return
+
+#########################################################################
+$DEBUT
+
+Local Char    TIT(50) :  Call TEXTE(23553,TIT) From OBJDIV    # "Clôture/solde en série"
+Default Mask [CLS1]
+
+Gosub LIRE
+If [M:CLS1]NBLIG=0
+    GERR=2 : GMESSAGE=mess(177,190,1)
+    FIN=1
+Endif
+
+Return
+
+#########################################################################
+$LIRE
+
+REP=""
+Raz [M:CLS1]
+nolign=0
+If GTRACE = ""
+    Call OUVRE_TRACE (TIT) From LECFIC
+Elsif GSERVEUR                         # FQ 66881 GA 09/2010 trt "batchable"
+    Local Char    WTIT(50) :  Call TEXTE(23553,WTIT) From OBJDIV    # "Clôture/solde en série"
+    Call ECR_TRACE(WTIT-"-"-mess(3,45,1)-[M:DIA]WCRFCY,0) From GESECRAN
+Endif
+
+# 08.05 31494
+Raz CUSFLT
+GPOINT = "CUSSELFLT" : Gosub ENTREE From EXEFNC
+If CUSFLT = "" : CUSFLT = "1=1" : Endif
+
+Filter [F:MFI] Where evalue(CRITERE) & evalue(CRITSUP) & evalue(CUSFLT)                # 08.05 31494
+Link [F:MFI] With [F:ITM]ITM0 = [F:MFI]ITMREF ,[F:MFG]MFG0 = [F:MFI]MFGNUM As [XFG]
+nolign = 0
+For [XFG]
+    # GH 31/10/12 bug 85452 : les [MFI] sous-produit n'ont pas les mêmes dates que l'entête OF
+    If [M:DIA]WDATDEB <> [0/0/0] & [F:MFG]STRDAT < [M:DIA]WDATDEB : Goto SUIV : Endif
+    If [M:DIA]WDATFIN <> [0/0/0] & [F:MFG]ENDDAT > [M:DIA]WDATFIN : Goto SUIV : Endif
+
+    # --------- 03.06 35175
+    GPE = 0
+    GPOINT="CHECKMFG" : Gosub ENTREE From EXEFNC
+    If GPE : Goto SUIV : Endif
+    #----------
+
+    # si il existe pls articles pour le même OF
+    If nolign>=1 & [M:CLS1]MFGNUM(nolign-1)=[F:MFI]MFGNUM  : Goto SUIV : Endif
+    # la situation de l'ordre doit être au moins encours
+    If [F:MFG]MFGTRKFLG < 4 : Goto SUIV : Endif
+    # X3-147107 - For complete, ignore Completed
+    If [M:DIA]WTRAIT = 2 and [F:MFG]MFGTRKFLG = 5 : Goto SUIV : Endif
+    # Issue X3-256770 - include In-progress and Complete
+    # For close, ignore In-progress
+    #If [M:DIA]WTRAIT = 3 and [F:MFG]MFGTRKFLG = 4 : Goto SUIV : Endif
+
+    If [F:MFG]MFGSTA = 4 : Goto SUIV : Endif
+    # si l'OF est en cours d'optimisation
+    If [F:MFG]OPTFLG = 2: Goto SUIV : Endif
+    # si l'Of est dans le plan de pesée ou en cours de pesée, on ne peut pas le sélectionner sr 05.03 + mm 05.11
+    If dim([F:MFG]WGGFLG ) > 0 & find([F:MFG]WGGFLG,3,4,8): Goto SUIV : Endif
+    # filtres OF soldés
+    If [M:DIA]CLOSED = 2 & [F:MFG]MFGTRKFLG <> 5 : Goto SUIV : Endif
+
+    Look [F:ITM]ITM0 = [F:ITM]ITMREF
+    If !fstat
+        nolign += 1
+        # FQ 66881 GA 09/2010
+        If nolign>=dim([M:CLS1]MFGNUM) : Break : Endif
+        [M:CLS1]WCRFCY                  = [F:MFI]MFGFCY
+        [M:CLS1]MFGNUM(nolign-1)        = [F:MFI]MFGNUM
+        [M:CLS1]MFGDES(nolign-1)        = [F:MFI]MFGDES
+        [M:CLS1]ROUNUM(nolign-1)        = [F:MFG]ROUNUM
+        [M:CLS1]MFGTRKFLG(nolign-1)     = [F:MFG]MFGTRKFLG
+        # GH 31/10/12 bug 85452 : les [MFI] sous-produit n'ont pas les mêmes dates que l'entête OF
+        #[M:CLS1]STRDAT(nolign-1)        = [F:MFI]STRDAT
+        #[M:CLS1]ENDDAT(nolign-1)        = [F:MFI]ENDDAT
+        [M:CLS1]STRDAT(nolign-1)        = [F:MFG]STRDAT
+        [M:CLS1]ENDDAT(nolign-1)        = [F:MFG]ENDDAT
+        [M:CLS1]PJT(nolign-1)           = [F:MFI]PJT
+        [M:CLS1]VCRNUMORI(nolign-1)     = [F:MFI]VCRNUMORI
+        # Issue 109749 - 2015-12-11 by BEEBE : if WO is not locked by another user
+        If func MFGLIB.CHKMFGLOCK([F:MFI]MFGNUM,0)
+            [M:CLS1]FMODIF(nolign-1) = 1
+        Endif
+   Endif
+$SUIV
+Next
+Filter [F:MFI]
+Filter [F:ITM]
+[M:CLS1]NBLIG= nolign
+Affzo [M:CLS1]
+
+Return
+
+#########################################################################
+$BOUTON
+Case BOUT
+    When "1" : Gosub SOLDE   : FIN=1
+    When "2" : Gosub CLOTURE : FIN=1
+    When "3" : Gosub INCLUDE
+    When "4" : Gosub EXCLUDE
+Endcase
+Return
+
+#########################################################################
+$SOLDE
+# 98877 mm 06.2014
+# update global variables with user selection
+# Block rules selected
+Case [M:DIA]QTYFLG # If completed qty. < planned qty 1 No 2 Yes
+    When 1 : GQTYCTL = 1
+    When 2 : GQTYCTL = 2
+Endcase
+
+Case [M:DIA]SSTFLG # If at least one sub-con ordered/in progress 1 No 2 Yes
+   When 1 : GSSTCMDCTL = 1
+   When 2 : GSSTCMDCTL = 2
+Endcase
+
+Case [M:DIA]REAFLG # If at least one operation is pending 1 No 2 Yes
+    When 1 : GREACTL = 1
+    When 2 : GREACTL = 2
+Endcase
+
+Case [M:DIA]LANFLG # If at least one rel. prod not produced 1 No 2 Yes
+    When 1 : GLANCTL = 1
+    When 2 : GLANCTL = 2
+Endcase
+
+Case [M:DIA]CNSFLG # If at least one material not consumed 1 No 2 Yes
+    When 1 : GCNSCTL = 1
+    When 2 : GCNSCTL = 2
+Endcase
+
+# Allocation rules selected
+Case [M:DIA]MATFLG # Track automatic materials 1 No 2 Yes
+    When 1 : GMATCTL = 1
+    When 2 : GMATCTL = 2
+Endcase
+
+Case [M:DIA]OPEFLG # Automatic tracking of operations 1 No 2 Yes
+    When 1 : GOPECTL = 1
+    When 2 : GOPECTL = 2
+Endcase
+
+# FQ 66881 GA 09/2010 Cloture / Solde en batch
+If !GSERVEUR
+    Call TEMPON("V") From GESECRAN
+    If GTRACE = ""
+        Call OUVRE_TRACE (TIT) From LECFIC
+    Endif
+Endif
+
+NBMODIF =0
+For nolign=1 To [M:CLS1]NBLIG
+    GSTOP=0
+    GGIVE_UP=0
+    GWMESS2= ""
+    GCLODAT = [M:CLS1]CLODATDET(nolign-1)
+    If [M:CLS1]MFGTRKFLG(nolign-1)=4 & [M:CLS1]FMODIF(nolign-1)= 2
+        Call TRTCLEMFG([M:CLS1]MFGNUM(nolign-1)) From FUNMFGS
+        If GSTOP =0
+            WMESS1=[M:CLS1]MFGNUM(nolign-1)-":"-mess(156,197,1)-mess(3,279,1)
+            Call ECR_TRACE(WMESS1,0) From GESECRAN
+            If GWMESS2 <>"" : Call ECR_TRACE(GWMESS2,0) From GESECRAN : Endif
+            NBMODIF +=1
+        Else
+           If GGIVE_UP= 0
+              If  GWMESS2 <>"" : Call ECR_TRACE(GWMESS2,-1) From GESECRAN : Endif
+           Else
+              WMESS1=mess(232,193,1)-[M:CLS1]MFGNUM(nolign-1)
+              Call ECR_TRACE(WMESS1,1) From GESECRAN
+           Endif
+        Endif
+    Else
+      # FQ 66881 GA 09/2010 Cloture / Solde en batch trace des OF non traités
+        WMESS1=[M:CLS1]MFGNUM(nolign-1)-":"-mess(156,197,1)- mess(414,177,1) # non traité
+        Call ECR_TRACE(WMESS1,-1) From GESECRAN
+    Endif
+Next
+
+If NBMODIF
+    WMESS1=num$(NBMODIF)-mess(362,197,1)
+    Call ECR_TRACE(WMESS1,0) From GESECRAN
+Else
+    WMESS1=mess(371,197,1)
+    Call ECR_TRACE(WMESS1-num$(GCLODAT)-num$([M:CLS1]NBLIG),0) From GESECRAN
+Endif
+
+
+# FQ 66881 GA 09/2010 Cloture / Solde en batch
+If !GSERVEUR
+    Call TEMPOFF From GESECRAN
+Endif
+Return
+
+
+#########################################################################
+$CLOTURE
+
+Case [M:DIA]QTYFLG
+    When 1 : GQTYCTL =1
+    When 2 : GQTYCTL =2
+Endcase
+
+Case [M:DIA]REAFLG
+    When 1 : GREACTL =1
+    When 2 : GREACTL =2
+Endcase
+
+Case [M:DIA]LANFLG
+    When 1 : GLANCTL =1
+    When 2 : GLANCTL =2
+Endcase
+
+Case [M:DIA]CNSFLG
+    When 1 : GCNSCTL =1
+    When 2 : GCNSCTL =2
+Endcase
+
+Case [M:DIA]MATFLG
+    When 1 : GMATCTL =1
+    When 2 : GMATCTL =2
+Endcase
+
+Case [M:DIA]OPEFLG
+    When 1 : GOPECTL =1
+    When 2 : GOPECTL =2
+Endcase
+
+# Issue 99496 - 2014-11-03 by CCC : pending transaction control
+Raz GWAICTL
+Call PARAM([M:DIA]WCRFCY, "WOMMVTWAI", GWAICTL) From ADOVAL
+
+
+# FQ 66881 GA 09/2010 Cloture / Solde en batch
+If !GSERVEUR
+    Call TEMPON("V") From GESECRAN
+    If GTRACE = ""
+        Call OUVRE_TRACE (TIT) From LECFIC
+    Endif
+Endif
+
+NBMODIF =0
+For nolign=1 To [M:CLS1]NBLIG
+    GSTOP=0
+    GGIVE_UP=0
+    GWMESS2= ""
+    GCLODAT = [M:CLS1]CLODATDET(nolign-1)
+    If [M:CLS1]FMODIF(nolign-1)= 2
+        Call TRTCLOMFG([M:CLS1]MFGNUM(nolign-1),[M:DIA]PRFFLG) From FUNMFGS
+        If GSTOP =0
+            WMESS1=[M:CLS1]MFGNUM(nolign-1)-":"-mess(156,197,1)-mess(3,17,1)
+            Call ECR_TRACE(WMESS1,0) From GESECRAN
+            NBMODIF +=1
+            If GWMESS2 <>"" : Call ECR_TRACE(GWMESS2,0) From GESECRAN : Endif
+        Else
+           If GGIVE_UP= 0
+              If  GWMESS2 <>"" : Call ECR_TRACE(GWMESS2,-1) From GESECRAN : Endif
+           Else
+              WMESS1=mess(232,193,1)-[M:CLS1]MFGNUM(nolign-1)
+              Call ECR_TRACE(WMESS1,1) From GESECRAN
+           Endif
+        Endif
+    Else
+      # FQ 66881 GA 09/2010 Cloture / Solde en batch trace des OF non traités
+        WMESS1=[M:CLS1]MFGNUM(nolign-1)-":"-mess(156,197,1)- mess(414,177,1) # non traité
+        Call ECR_TRACE(WMESS1,-1) From GESECRAN
+    Endif
+Next
+
+Call ECR_TRACE(" ", 0) From GESECRAN
+If NBMODIF
+    WMESS1=num$(NBMODIF)-mess(362,197,1)
+    Call ECR_TRACE(WMESS1,0) From GESECRAN
+Else
+    WMESS1=mess(371,197,1)
+    Call ECR_TRACE(WMESS1-num$(GCLODAT)-num$([M:CLS1]NBLIG),0) From GESECRAN
+Endif
+
+# FQ 66881 GA 09/2010 Cloture / Solde en batch
+If !GSERVEUR
+    Call TEMPOFF From GESECRAN
+Endif
+Return
+
+#########################################################################
+$INCLUDE
+Local Integer I
+For I = 0 To [M:CLS1]NBLIG-1
+    # Issue 109749 - 2015-12-11 by BEEBE : if WO is not locked by another user
+    If !func MFGLIB.CHKMFGLOCK([M:CLS1]MFGNUM(I),0)
+        [M:CLS1]FMODIF(I) = 2
+    Else
+        [M:CLS1]FMODIF(I) = 1
+    Endif
+    Affzo [M:CLS1]FMODIF(I)
+    If GSERVEUR & dim([M:CLS1]CLODATDET)>0       # FQ 66881 GA 09/2010 trt "batchable"
+       [M:CLS1]CLODATDET(I)=date$
+    Endif
+Next
+Affzo [M:CLS1]10
+Return
+
+#########################################################################
+$EXCLUDE
+Local Integer I
+For I = 0 To [M:CLS1]NBLIG-1
+    [M:CLS1]FMODIF(I) = 1
+Next
+Affzo [M:CLS1]10
+Return
+
+#########################################################################
+$TERMINE
+# FQ 66881 GA 09/2010 Cloture / Solde en batch
+If !GSERVEUR
+    Call FERME_TRACE From LECFIC
+    Call LEC_TRACE   From LECFIC
+Endif
+Return
+
+#######################################################################
+$FIN
+#--- Sup. des globales perso
+If dim(GSSTCMDCTL)>0    : Kill  GSSTCMDCTL  : Endif
+If dim(GREACTL)>0       : Kill  GREACTL     : Endif
+If dim(GLANCTL)>0       : Kill  GLANCTL     : Endif
+If dim(GCNSCTL)>0       : Kill  GCNSCTL     : Endif
+If dim(GSTOP)>0         : Kill  GSTOP       : Endif
+If dim(GMATCTL)>0       : Kill  GMATCTL     : Endif
+If dim(GOPECTL)>0       : Kill  GOPECTL     : Endif
+If dim(GQTYCTL)>0       : Kill  GQTYCTL     : Endif
+If dim(GWMESS2)>0       : Kill  GWMESS2     : Endif
+# 93576 mm 06.2014
+If dim(GWAICTL)>0       : Kill  GWAICTL     : Endif
+# FQ 67234
+#If dim(GCLODAT)>0       : Kill  GCLODAT     : Endif
+
+
+Return
+
+#########################################################################
+$OUVRE_BATCH                 # FQ 66881 GA 09/2010 trt "batchable"
+If !GBATCH Return Endif
+Local Mask CLOSEL0 [M:DIA]
+Gosub INIT_DIA
+[M:DIA]WTRAIT=2 : Affzo [M:DIA]WTRAIT
+Return
+#########################################################################
+$EXEC                        # FQ 66881 GA 09/2010 trt "batchable"
+# En batch , il vaut mieux mettre onerrgo # FQ 66881 GA 09/2010
+If GSERVEUR
+    Onerrgo ERRBATCH
+Endif
+
+If GSERVEUR
+   If clalev([M:CLS1])=0 Local Mask CLOSEL1  [CLS1] Endif
+   #Gosub INIT  # déjà ok
+   Gosub OUVRE
+   Gosub DEBUT
+   Gosub INCLUDE
+   Case [M:DIA]WTRAIT
+     When 2 : Gosub SOLDE   : FIN=1
+     When 3 : Gosub CLOTURE : FIN=1
+     When Default : Call ECR_TRACE("Aucun traitement demandé ?",1) From GESECRAN
+   Endcase
+Endif
+
+
+Return
+##########################################################################
+# pour les batchs                                                        #
+##########################################################################
+Subprog PARAM(DOSSIER,USER,P1,P2,OK)
+#-----------------------------#
+# obligatoire pour les batchs #
+#-----------------------------#
+Value    Char    DOSSIER   : # dossier de lancement
+Value    Char    USER      : # utilisateur
+Variable Char    P1()(1..) : # on peut avoir 2 fois 50 chaînes de 15 caractères
+Variable Char    P2()(1..)
+Variable Integer OK
+
+Local Char    WIN (GLONFEN)
+WIN="DTDUCLO"
+Call PARAM (DOSSIER,USER,P1,P2,OK,TIT,WIN) From CPTTRT
+
+Call TRACE_DEBUG("Paramètres batch: site="-[M:DIA]WCRFCY)
+
+End
+###########################################################################################
+$ERRBATCH
+Call ECR_TRACE(errmes$(errn)-num$(errl)-errm,1) From GESECRAN
+End
+
+#########################################################################
+$CHARG_PARAM
+#----- Variables globales stock
+Call GLOBVAR(GFCY)    From WWGLOBSTO
+#----- Variables globales GPAO
+Call GLOBVAR(GFCY)    From WWGLOBGPA
+
+GFCY=[M:DIA]WCRFCY
+If GMODU(2)=2 : # Dossier avec module comptabilité
+  Call GLOBVAR(GFCY)  From WWGLOBCPT
+  #----- Chargement des globales référentiels, comptes et sections de la société -----#
+  Call GETCPY(GFCY,"",0,"") From TRTX3CPT
+Endif
+
+Return
+
+
+##########################################################################
+Subprog TRACE_DEBUG(LMESS)
+Value Char LMESS
+If GUSER="GAxxx"
+  If GSERVEUR | GBATCH
+     Call ECR_TRACE(LMESS,0) From GESECRAN
+  Endif
+Endif
+End
+
+##########################################################################
+Subprog IB_NBLIG
+Local Integer L : L = nolign-1
+If L>= 0
+    GBOUT1 = mess(166,198,1)
+    GBOUT2 = mess(133,195,1)
+
+    # Issue 109749 - 2015-12-11 by BEEBE : if WO is locked by another user, no selection possible
+    If [M:CLS1]FMODIF(L) = 2 & func MFGLIB.CHKMFGLOCK([M:CLS1]MFGNUM(L),0)
+        # Get user and name of the user, that is locking the actual WO
+        If clalev([F:APKX]) = 0 : Local File APLLCK [APKX]  : Endif
+        If clalev([M:PSA])  = 0 : Local Mask PSADX [PSA]    : Call LISTE("") From PSADX : Endif
+        If clalev([F:AUSX]) = 0 : Local File AUTILIS [AUSX] : Endif
+        Local Char PROCESS(20)
+        Local Char LOGIN(GLONALO), USER (50), NOM(GLONDES)
+        Local Integer K
+
+        For [APKX] Where LCKSYM="MFG"+[M:CLS1]MFGNUM(L) & LCKPID<>adxuid(2)
+            PROCESS = num$([F:APKX]LCKPID)
+            K = find(PROCESS,[M:PSA]UID(0..[M:PSA]NBLIG-1))
+            Raz LOGIN
+            If K
+                LOGIN   = toupper([M:PSA]USER(K-1))
+                If LOGIN<>""
+                    Read [AUSX]LOGIN = LOGIN
+                    If !fstat
+                        USER = [F:AUSX]USR
+                        NOM =  [F:AUSX]NOMUSR
+                    Endif
+                Endif
+            Endif
+        Next
+        # disable modification flag, when WO is locked ba another user
+        [M:CLS1]FMODIF(L) = 1
+        Affzo [M:CLS1]FMODIF(L)
+        Call ERREUR([M:CLS1]MFGNUM(L)-":"-mess(280,193,1)-" - "-mess(37, 133,1)-": "-USER-" "-NOM) From GESECRAN
+    Endif
+Endif
+
+End
+
+
+##########################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran CLOSEL1) 11-03-2006 14:04:45 (MB)
+######################################################################################
+Subprog C_CLODAT(VALEUR)
+Variable Date    VALEUR
+If VALEUR > date$ : GMESSAGE = mess(129,194,1) : mkstat = 1 : End : Endif
+End
+
+Subprog AS_CLODATDET(VALEUR)
+Variable Date    VALEUR
+End
+
+Subprog C_CLODATDET(VALEUR)
+Variable Date    VALEUR
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran CLOSEL1) 16/10/2008 11:04:58 (LLC)
+######################################################################################
+Subprog AM_CLODAT(VALEUR)
+Variable Date    VALEUR
+Local Integer I
+
+For I = 0 To [M:CLS1]NBLIG - 1
+    [M:CLS1]CLODATDET(I) = VALEUR
+Next I
+
+Affzo [M:CLS1]10
+End
+
+
+######################################################################################
