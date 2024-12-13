@@ -9,7 +9,5 @@ $ACTION
 &  & func X1ADDON.G("X1WMS")>0
     Gosub ACTION From XYFUNTDU_X1WMS
   Endif
-
-
 Return
 

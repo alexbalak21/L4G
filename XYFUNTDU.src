@@ -11,14 +11,14 @@ $ACTION
     Gosub ACTION From XYFUNTDU_X1WMS
   Endif
 Case ACTION
-When "AV_CHOIX" : Gosub ALIM_QTE
+When "AV_CHOIX" : Gosub AV_CHOIX
 When Default
 Endcase
 Return
 
 
-
-$ALIM_QTE
+#ALIMENTATION DES CHAMPS EXTQTY (Qté prévue) & CPLQTY (Qté réal) à partir de la table MFGHEAD
+$AV_CHOIX
     If !clalev ([F:MFGHEAD]) : Local File MFGHEAD[F:MFGHEAD] :  Endif
     Local Integer ZI : ZI=0
     For ZI=0 To [M:CLS1]NBLIG-1
