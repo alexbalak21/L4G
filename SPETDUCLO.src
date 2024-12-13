@@ -1,13 +1,14 @@
 $ACTION
-Gosub KARDOL_DEV From SPEUTIL
-Gosub ALIM_QTE
+Case ACTION
+When "SETBOUT" : Gosub ALIM_QTE
+When Default
+Endcase
 Return
-
 
 $ALIM_QTE
     If !clalev ([F:MFGHEAD]) : Local File MFGHEAD[F:MFGHEAD] :  Endif
     Local Integer ZI : ZI=0
-    For ZI=0 To [M:CLS1]NBLIG-1
-    Infbox [M:CLS1]MFGNUM
+    For ZI=0 To [M:CLOSEL1]NBLIG-1
+    Infbox [M:CLOSEL1]MFGNUM
     Next
-Return 
+Return
