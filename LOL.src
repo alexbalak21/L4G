@@ -1,22 +1,3 @@
-# PPI 09-06-2020 K0016604 Flux Liste à servir / Préparation des matières
-# BKV - 13/12/2024 - 3004730 - $ALIM_QTE : Ajout du traitement pour alimenter les champs Qté
-
-
-$ACTION
-  If filinfo(filpath("TRT","SPEUTIL","adx"),7)>0
-    Gosub KARDOL_DEV From SPEUTIL
-  Endif
-  If filinfo(filpath("TRT","XYFUNTDU_X1WMS","adx"),7)>0
-&  & func X1ADDON.G("X1WMS")>0
-    Gosub ACTION From XYFUNTDU_X1WMS
-  Endif
-Case ACTION
-When "AV_CHOIX" : Gosub AV_CHOIX
-When Defaultz
-Endcase
-Return
-
-
 #ALIMENTATION DES CHAMPS EXTQTY (Qté prévue) & CPLQTY (Qté réal) à partir de la table MFGHEAD
 $AV_CHOIX
     If !clalev ([F:MFGHEAD]) : Local File MFGHEAD[F:MFGHEAD] :  Endif

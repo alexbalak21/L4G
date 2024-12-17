@@ -1,0 +1,35 @@
+# OP le 16/12/24 : CR-83301 - Affectation Demande KPM - Modéré - "GROUPE HPG - 3004631 / 5003315
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+Case ACTION
+  When "AP_FILLBOX" : Gosub AP_FILLBOX
+  When "AV_CHOIX" : Gosub AV_CHOIX
+Endcase
+Return
+
+
+# OP le 16/12/24 : CR-83301 - Affectation Demande KPM - Modéré - "GROUPE HPG - 3004631 / 5003315
+$AP_FILLBOX
+  If currbox=GBOXPT1 Then
+    Gosub DEB_PICK From SUBPIHA
+    For [PTD_]
+      Gosub PICKE From SUBPIHA
+    Next
+    Gosub FIN_PICK From SUBPIHA
+  Endif
+Return
+
+
+
+# BKV - 17/12/24 - 3004949 : ALIMENTATION DU CHAMP No BL Fournisseur
+$AV_CHOIX
+    If !clalev ([F:PTH]) : Local File PTH[F:PTH] : Endif
+    Local Integer ZI : ZI=0
+    For ZI=0 To [M:PIH3]NBLIG-1
+        Read [F:PTH]PTH0 = [M:PIH3]NUMORI(ZI)
+        If !fstat
+            [M:PIH3]BPSNDE(ZI) = [F:PTH]BPSNDE
+            Affzo [M:PIH3]BPSNDE(ZI)
+        Endif
+    Next
+Return

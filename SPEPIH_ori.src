@@ -1,0 +1,19 @@
+# OP le 16/12/24 : CR-83301 - Affectation Demande KPM - Modéré - "GROUPE HPG - 3004631 / 5003315
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+Case ACTION
+  When "AP_FILLBOX" : Gosub AP_FILLBOX
+Endcase
+Return
+
+
+# OP le 16/12/24 : CR-83301 - Affectation Demande KPM - Modéré - "GROUPE HPG - 3004631 / 5003315
+$AP_FILLBOX
+  If currbox=GBOXPT1 Then
+    Gosub DEB_PICK From SUBPIHA
+    For [PTD_]
+      Gosub PICKE From SUBPIHA
+    Next
+    Gosub FIN_PICK From SUBPIHA
+  Endif
+Return

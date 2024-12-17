@@ -1,0 +1,113 @@
+# JCS le 13/01/2023 - F6-01511 : correction du contrôle
+# JCS le 12/12/2022 - F6-01511 : Ajout d'un contrôle si le champ Valeur VLE mg/m3 a une valeur > à 2
+
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+
+# JCS le 12/12/2022 - F6-01511 : Ajout d'un contrôle si le champ Valeur VLE mg/m3 a une valeur > à 2
+Case ACTION
+    When "VERIF_CRE"       : Gosub VERIF_ENR
+    When "VERIF_MOD"       : Gosub VERIF_ENR
+    When Default
+Endcase
+
+Return
+
+# JCS le 12/12/2022 - F6-01511 : Ajout d'un contrôle si le champ Valeur VLE mg/m3 a une valeur > à 2
+$VERIF_ENR
+   # JCS le 13/01/2023 - F6-01511 : Correction du contrôle
+   #If [M:ZFT0]ZSTAVLE>=2 and vireblc([M:ZFT0]ZVALVLE,2)=''
+   If [M:ZFT0]ZSTAVLE>2 and [M:ZFT0]ZVALVLE=0
+     Call ERREUR ("La valeur VLE est obligatoire si le statut VLE n'est pas 'Non renseigné'") From GESECRAN
+     OK=0
+   Endif
+Return
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran ZFICTEC1) 26/11/2018 18:08:57 (JOF)
+######################################################################################
+Subprog IB_ZCASNUM
+End
+
+Subprog IB_ZCENUM
+End
+
+Subprog IB_ZINDEXNUM
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran ZFICTEC0) 26/11/2018 18:25:27 (JOF)
+######################################################################################
+Subprog IB_ZFDSEXTEND
+End
+
+Subprog IB_ZDATRECFDS
+End
+
+Subprog IB_ZREACHNUM
+End
+
+Subprog IB_ZSTATREACH
+End
+
+Subprog IB_ZQTYPERMIS
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran ZFICTEC0) 29/03/2019 16:28:10 (JOF)
+######################################################################################
+Subprog IB_ZNANO
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran ZFICTEC0) 29/07/2019 18:04:18 (JOF)
+######################################################################################
+Subprog IB_ZHOTRAW
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran ZFICTEC0) 15/01/2020 18:31:43 (JOF)
+######################################################################################
+Subprog IB_XREACHTYPART
+End
+
+
+######################################################################################
+######################################################################################
+## JCS le 12/12/2022 - F6-01511 : Ajout d'un contrôle si le champ Valeur VLE mg/m3 a une valeur > à 2
+## Etiquette ajoutée par le superviseur (écran ZFICTEC0) 12/12/2022 18:37:35 (ADMIN)
+######################################################################################
+Subprog C_ZVALVLE(VALEUR)
+Variable Decimal VALEUR
+  # JCS le 13/01/2023 - F6-01511 : Correction du contrôle
+  #If vireblc(VALEUR,2)='' and [M:ZFT0]ZSTAVLE>=2
+  If VALEUR=0 and [M:ZFT0]ZSTAVLE>2
+    Call ERREUR ("La valeur VLE est obligatoire si le statut VLE n'est pas 'Non renseigné'") From GESECRAN
+    mkstat=2
+  Endif
+End
+
+
+######################################################################################
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran ZFICTEC0) 10/03/2023 11:47:26 (ADMIN)
+######################################################################################
+Subprog C_ZSTAVLE(VALEUR)
+Variable Integer VALEUR
+End
+
+
+######################################################################################
+
