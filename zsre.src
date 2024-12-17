@@ -1,0 +1,24 @@
+Funprog ZCODE_CLI_REVEND(ZSRENUM)
+Value Char ZSRENUM
+
+Local Char ZMACRSLNUM (60)
+Raz ZMACRSLNUM
+
+If !clalev([F:ZMAC]) : Local File MACHINES [ZMAC] : Endif
+If !clalev([F:ZSRM]) : Local File SREMAC   [ZSRM] : Endif
+If !clalev([F:ZBPR]) : Local File BPARTNER [ZBPR] : Endif
+
+Filter [ZSRM]
+Filter [ZSRM] Where SRENUM = ZSRENUM
+Read [ZSRM]First
+If !fstat
+  Read [F:ZMAC]MAC0=[ZSRM]MACNUM
+  If !fstat
+    Read[F:ZBPR]BPR0=[F:ZMAC]MACRSL
+    If !fstat
+      ZMACRSLNUM=[F:ZBPR]BPRNUM
+    Endif
+  Endif
+Endif
+
+End ZMACRSLNUM
