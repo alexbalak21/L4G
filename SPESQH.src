@@ -1,0 +1,514 @@
+# devis client
+# FMU le 03/07/24 : F2-23692 : Modif. YPREV et FORECAST
+# SSW le 02/06/22 : 254946 : Forcer le paramètre GSQHTYP avec la valeur [F:SLT]YQHTYP en création de devis
+# SSW le 02/06/22 : 254924 : Empêcher l'exécution du bouton Génération nomenclature dans la fonction devis si conditions pas réunies en v12
+# TKE le 31/05/22 : chrono 251193 :  Sauvegarde contexte sur la fonction en cours.
+# SYO le 20/05/22 : 251193 : Message d'erreur dans le spécifique RAFFIN de génération des nomenclatures
+# SSW le 08/11/21 : 247595 : modification calcul ZREMISETG
+# DLC le 21/06/21 269270 : modification calcul
+# DLC le 17/03/21 239270 : ajout zone calculée Remise TG
+
+######################################################################################
+$ACTION
+    Case ACTION
+        When "SETBOUT"   : Gosub SETBOUT #CAK 2017-05-29
+        When "AVANTBOUT" : Gosub AVANTBOUT #CAK 2017-05-29
+        When "EXEBOUT"   : Gosub EXEBOUT
+        When "RAZCRE"    : Gosub RAZCRE
+        When "LIENS"     : Gosub LIENS # DLC le 17/03/21 239270 : ajout zone calculée Remise TG
+        When "OUVRE"     : Call REWRITE_W From X1ADDON # DLC le 20/05/21 237964 : ajout zones en tête transaction AO
+        When "OUVRE_BOITE" :  Gosub SET_WINDOW From X1ADDON # DLC le 20/05/21 237964 : ajout zones en tête transaction AO
+    Endcase
+    # DLC migration V12 : ajout redirection Kardol
+    Gosub KARDOL_DEV From SPEUTIL
+Return
+
+# DLC le 17/03/21 239270 : ajout zone calculée Remise TG
+$LIENS
+If dim([M:SQH2]ZREMTG)>0
+Local Integer ZI
+Gosub ACTION From SUBSQH
+For ZI=0 To [M:SQH2]NBLIG-1
+# SSW le 08/11/21 : 247595 : modification calcul ZREMISETG
+#    if [M:SQH2]YPRIXCATAL(ZI)>0
+    If [M:SQH2]YPRIXCATAL(ZI)>0
+        # DLC le 21/06/21 269270 : modification calcul
+        #[m:SQH2]ZREMTG(zi)=100*[m:SQH2]GROPRI(ZI)/[M:SQH2]YPRIXCATAL(ZI)
+# SSW le 08/11/21 : 247595 : modification calcul ZREMISETG
+#        [m:SQH2]ZREMTG(zi)=100*([M:SQH2]YPRIXCATAL(ZI)-[m:SQH2]GROPRI(ZI))/[M:SQH2]YPRIXCATAL(ZI)
+# SSW le 10/02/22 : 247595 : la formule de calcul change encore....
+#        [m:SQH2]ZREMTG(zi)=(([m:SQH2]GROPRI(ZI)-[M:SQH2]YPRIXCATAL(ZI))/[m:SQH2]GROPRI(ZI))*100
+        [M:SQH2]ZREMTG(ZI)=abs((([M:SQH2]GROPRI(ZI)-[M:SQH2]YPRIXCATAL(ZI))/[M:SQH2]YPRIXCATAL(ZI))*100)
+    Endif
+Next ZI
+Endif
+Return
+
+######################################################################################
+#CAK 2017-05-29
+$SETBOUT
+    CHMEN+=")£"
+    Gosub SET_BOUT_SPE From GSAISIE
+Return
+
+
+######################################################################################
+#CAK 2017-05-29
+$AVANTBOUT
+    Case BOUT
+        When ")" : GBCRMFLGNEW = 1
+        When "£" : GBCRMFLGNEW = 1
+    Endcase
+    # SSW le 02/06/22 : 254924 : Empêcher l'exécution du bouton Génération nomenclature dans la fonction devis si conditions pas réunies en v12
+    If BOUT='w' Then
+      # Si ref dossier P ou ref dossier PC vide on bloque la génération nomenclature
+      If (vireblc([M:YSQH]YREFDOSSIER,2)='') or (vireblc([M:YSQH]YREFDOSSIER2,2)='') Then
+        Call MESSAGE('Les zones Réf. PF et Réf. PC doivent être renseignées.') From GESECRAN
+        OK=0
+      Endif
+    Endif
+Return
+
+######################################################################################
+$EXEBOUT
+    Case BOUT
+        When "w" : # SYO le 20/05/22 : 251193 : Message d'erreur dans le spécifique RAFFIN de génération des nomenclatures
+        #When "y"
+
+            # Sauvegarde contexte
+            ## Globales
+            Local Char ZGNAVIG(20)(50)
+            Local Integer ZGPILNAV, ZGPILOBJ
+            Local Integer ZII
+            For ZII=1 To 49
+              ZGNAVIG(ZII)=GNAVIG(ZII)
+            Next ZII
+            ZGPILOBJ=GPILOBJ
+            ZGPILNAV=GPILNAV
+
+            # TKE chrono 251193 :  Sauvegarde contexte droit utilisateur sur la fonction en cours.
+            Local Char ZGUSRAUZ(20)(100)
+            For ZII=1 To 99
+              ZGUSRAUZ(ZII)=GUSRAUZ(ZII)
+            Next ZII
+
+            Local Char ZGREP, ZGABREV, ZGALIPLK, ZGBOITE, ZGCLE, ZGFLAG, ZGFONC1, ZGFONCTION, ZGFONCTION1, ZGOPTWINTRT
+            ZGREP=GREP
+            ZGABREV=GABREV
+            ZGALIPLK=GALIPLK
+            ZGBOITE=GBOITE
+            ZGCLE=GCLE
+            ZGFLAG=GFLAG
+            ZGFONC1=GFONC1
+            ZGFONCTION=GFONCTION
+            ZGFONCTION1=GFONCTION1
+            ZGOPTWINTRT=GOPTWINTRT
+
+            Gosub SAUV_GLOB From TRTX3GLOB
+
+            #WFONC1 = GFONC1
+            Gosub GENE_NOMENC From SPESQH2
+            #CLECUR1 = [M:SQH0]SQHNUM
+            #GFONC1 = WFONC1
+
+
+            # TKE chrono 251193 : restauration variable globale !
+            Gosub REST_GLOB From TRTX3GLOB
+
+            GPILOBJ=ZGPILOBJ
+            GPILNAV=ZGPILNAV
+            For ZII=1 To 49
+              GNAVIG(ZII)=ZGNAVIG(ZII)
+            Next ZII
+
+            # TKE chrono 251193 :  Sauvegarde contexte droit utilisateur sur la fonction en cours.
+            For ZII=1 To GNBAUZ
+              GUSRAUZ(ZII)=ZGUSRAUZ(ZII)
+            Next ZII
+
+            GREP=ZGREP
+            GABREV=ZGABREV
+            GALIPLK=ZGALIPLK
+            GBOITE=ZGBOITE
+            GCLE=ZGCLE
+            GFLAG=ZGFLAG
+            GFONC1=ZGFONC1
+            GFONCTION=ZGFONCTION
+            GFONCTION1=ZGFONCTION1
+            GOPTWINTRT=ZGOPTWINTRT
+
+            Gosub RELIT From GOBJSUB
+
+    Endcase
+Return
+
+
+######################################################################################
+$RAZCRE
+    # SSW le 02/06/22 : 254946 : Forcer le paramètre GSQHTYP avec la valeur [F:SLT]YQHTYP en création de devis
+    # On appelle le module KARDOL qui appelle le standard
+    Gosub ACTION From SPESQHKAR
+
+    If clalev ([F:SLT])=0 Local File SALTRS [SLT] Endif
+    Read [SLT]SLT0=1;GFLAG
+    If !fstat & [F:SLT]YSQHTYP<>""
+        [M:SQH0]YSQHTYP=[F:SLT]YSQHTYP
+        Affzo [M:SQH0]YSQHTYP
+
+        # SSW le 02/06/22 : 254946 : Forcer le paramètre GSQHTYP avec la valeur [F:SLT]YQHTYP en création de devis
+        #  On initialise le champ standard SQHTYP avec le champ spécifique YSQHTYP
+        Call CONTTSQ([M:SQH0]YSQHTYP,GCURLEG,"SQH0","SQHTYP",[M:SQH0]SALFCY,"",GSOCIETE) From SUBTSQ
+        [M:SQH0]SQHTYP=[M:SQH0]YSQHTYP
+
+        Call AP_SQHTYP([M:SQH0]SQHTYP) From SUBSQH
+        Call AM_SQHTYP([M:SQH0]SQHTYP) From SUBSQH
+        Affzo [M:SQH0]SQHTYP
+    Endif
+
+    Case GFLAG
+        When "GG"  : [M:SQH0]YVALIDEPN=1 :# lib 1017
+        When "PJT" : [M:SQH0]YVALIDEPN=2
+        When "ZGG"  : [M:SQH0]YVALIDEPN=1 :# CAK 2017-12-11
+    Endcase
+    If !GIMPORT : Affzo [M:SQH0]YVALIDEPN : Endif
+    # SSW le 02/06/22 : 254946 : Forcer le paramètre GSQHTYP avec la valeur [F:SLT]YQHTYP en création de devis
+    #   On bloque l'appel au module et standard
+    ZGPE=1
+    ZGPECLI=1
+    GPE=1
+
+Return
+
+
+######################################################################################
+
+
+######################################################################################
+Subprog AM_ITMREF(VALEUR)
+    Variable Char    VALEUR()
+
+    If !clalev([F:ITS]) : Local File ITMSALES [ITS] : Endif
+    Read [ITS]ITS0=VALEUR
+    If fstat : Raz [ITS] : Endif
+
+    [M]ZDETAILCONDI(nolign-1)=[F:ITS]ZDETAILCONDI
+    If !GIMPORT : Affzo [M]ZDETAILCONDI(nolign-1) : Endif
+
+    [M]YPRIXCATAL(nolign-1)=[F:ITS]YPRIXCATAL
+    [M]YPXPROJ(nolign-1)=[F:ITS]YPXPROJ        :# ABS - devis projet
+
+#CAK 2017-12-08 : gestion catalogue maroc - debut
+    If !clalev([F:YSIT]) : Local File FACILITY [YSIT] : Endif
+    Read [YSIT]FCY0=[M:SQH0]SALFCY
+    If !fstat
+        If [F:YSIT]LEGCPY="RAM"
+            [M]YPRIXCATAL(nolign-1)=[F:ITS]YPRIXCATALM
+        Endif
+    Endif
+#CAK 2017-12-08 : gestion catalogue maroc - fin
+
+    If !GIMPORT : Affzo [M]YPRIXCATAL(nolign-1) : Endif
+
+    [M]TSICOD(nolign-1)=[F:ITM]TSICOD(1)
+    If !GIMPORT : Affzo [M]TSICOD(nolign-1) : Endif
+
+    If !clalev([F:ITV]) : Local File ITMMVT [ITV] : Endif
+    Read [ITV]ITV0=VALEUR;GFCYDEF
+    If fstat : Raz [ITV] : Endif
+
+    [M]YAVC(nolign-1)=[F:ITV]AVC
+    If !GIMPORT : Affzo [M]YAVC(nolign-1) : Endif
+
+    ## ----- Recherche YPRIXPLACE
+    If !clalev([F:YSQD]) : Local File SQUOTED [YSQD] : Endif
+    For [YSQD]Y000 Where [YSQD]BPCORD=[M:SQH0]BPCORD & [YSQD]ITMREF=VALEUR
+        [M]YPRIXPLACE(nolign-1)=[YSQD]GROPRI
+    Next
+End
+
+
+######################################################################################
+Subprog AM_QTY(VALEUR)
+    Variable Decimal VALEUR
+
+    [M]YBUDBPS(nolign-1)=VALEUR*[M]YPRIBPS(nolign-1)
+    If !GIMPORT : Affzo [M]YBUDBPS(nolign-1) : Endif
+
+    ## ----- Recherche tarif ------- YPRIXPLACE
+    ## recherche si l'article/client a déjà été dans un autre devis -> init dans AM_ITMREF
+    #Local    Integer  NOL     : NOL=nolign-1
+    ## Article normal ou composé
+    #TYP=1
+    ## Composant
+    #If find([M:SQH2]LINTYP(NOL),3,4,5,7,8,9,11,12,13)
+    #    Local Integer ORI : ORI=NOL
+    #    While !find([M]LINTYP(ORI),2,6,10) & ORI >= 0 ORI-=1 Wend
+    #    If find([M]LINTYP(ORI),2,6,10) GPNTITMREF=[M]ITMREF(ORI) Endif
+    #    TYP=4
+    #Endif
+    ## --> Recherche tarif
+    #Call RECH_TARIF(TYP,[M]ITMREF(NOL),NOL,VALEUR,"SQH",[M]YPRIXPLACE(NOL)) From TRTVENTAR
+
+
+    ## action standard
+    Call AM_QTY(VALEUR) From SUBSQH
+End
+
+
+######################################################################################
+Subprog AM_YPRIBPS(VALEUR)
+    Variable Decimal VALEUR
+
+    [M]YBUDBPS(nolign-1)=VALEUR*[M]QTY(nolign-1)
+    If !GIMPORT : Affzo [M]YBUDBPS(nolign-1) : Endif
+End
+
+
+######################################################################################
+Subprog AS_YPFM(VALEUR)
+    Variable Decimal VALEUR
+    mkstat=2
+End
+
+
+######################################################################################
+Subprog AV_YPFM(VALEUR)
+    Variable Decimal VALEUR
+
+    If [M]NETPRI(nolign-1)<>0
+        VALEUR=ar2([M]PFM(nolign-1)/[M]NETPRI(nolign-1)*100)
+    Else
+        VALEUR=-999.99
+    Endif
+End
+
+
+######################################################################################
+Subprog AM_GROPRI(VALEUR)
+    Variable Decimal VALEUR
+
+    [M]YPRIEXCEPT(nolign-1)=2
+    If !GIMPORT : Affzo [M]YPRIEXCEPT(nolign-1) : Endif
+
+    # DLC le 17/03/21 239270 : ajout zone calculée Remise TG
+    If dim([M:SQH2]ZREMTG)>0
+# SSW le 08/11/21 : 247595 : modification calcul ZREMISETG
+#        if [M:SQH2]YPRIXCATAL(nolign-1)>0
+        If VALEUR>0
+            # DLC le 21/06/21 269270 : modification calcul
+            #[m:SQH2]ZREMTG(nolign-1)=100*valeur/[M:SQH2]YPRIXCATAL(nolign-1)
+# SSW le 08/11/21 : 247595 : modification calcul ZREMISETG
+#            [m:SQH2]ZREMTG(nolign-1)=100*([M:SQH2]YPRIXCATAL(nolign-1)-valeur)/[M:SQH2]YPRIXCATAL(nolign-1)
+            [M:SQH2]ZREMTG(nolign-1)=((VALEUR-[M:SQH2]YPRIXCATAL(nolign-1))/VALEUR)*100
+        Endif
+    Endif
+End
+
+
+######################################################################################
+Subprog C_YGAINDAT(VALEUR)
+    Variable Date     VALEUR
+    # FMU le 03/07/24 : F2-23692
+    ###If [M]YGAIN(nolign-1)=2 & VALEUR=[00/00/0000] : mkstat=2 : Endif
+    If [M]YQTYGAIN(nolign-1)<>0 & VALEUR=[00/00/0000] : mkstat=2 : Endif
+
+End
+
+
+######################################################################################
+Subprog C_YPERTEDAT(VALEUR)
+    Variable Date    VALEUR
+    If [M]YQTYPERTE(nolign-1)<>0 & VALEUR=[00/00/0000] : mkstat=2 : Endif
+End
+
+
+
+
+
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran YSQH2) 11/06/2014 16:57:39 (ADRAF)
+######################################################################################
+Subprog IB_ZTXRECONDUC
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran WK1GG1) 11/06/2014 17:03:15 (ADRAF)
+######################################################################################
+Subprog IB_ZDELAILIV
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran YSQH) 18/06/2014 17:00:55 (ADRAF)
+######################################################################################
+Subprog IB_YFICHEEVAL
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran YSQH) 18/06/2014 17:16:32 (ADRAF)
+######################################################################################
+Subprog IB_YQTEECHNS
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran YSQH2) 24/06/2014 17:12:11 (ADRAF)
+######################################################################################
+Subprog IB_ZDLRECONDUC
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SQH1) 24/06/2014 17:24:44 (ADRAF)
+######################################################################################
+Subprog IB_ZDATEDEBGG
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SQH1) 24/06/2014 17:25:10 (ADRAF)
+######################################################################################
+Subprog IB_ZDATEFINGG
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran WK1GG1) 24/06/2014 17:54:48 (ADRAF)
+######################################################################################
+Subprog IB_ZCONTACT
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran WK1GG1) 24/06/2014 17:56:53 (ADRAF)
+######################################################################################
+Subprog IB_ZCONTACTNOM
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran YSQH) 24/06/2014 18:46:36 (ADRAF)
+######################################################################################
+Subprog IB_YTRACABILITE
+End
+
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran YSQH2) 24/07/2014 11:44:56 (ADRAF)
+######################################################################################
+Subprog IB_ZSITEREPAO
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran YSQH) 24/07/2014 12:24:48 (ADRAF)
+######################################################################################
+Subprog IB_ZCDTPROVI
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SQH0) 24/07/2014 15:59:03 (ADRAF)
+######################################################################################
+Subprog S_YVALIDEPN(VALEUR)
+Variable Integer VALEUR
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SQH0) 24/07/2014 16:25:16 (ADRAF)
+######################################################################################
+Subprog IB_ZCOMMPN
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SQH2) 15/10/2014 09:47:22 (HLAC)
+######################################################################################
+Subprog AM_YVALIDEPN(VALEUR)
+  Variable Integer  VALEUR
+  [M]YVALIDEPNDAT=date$
+  If dim([M]YVALIDEPNUSR)>=0
+    [M]YVALIDEPNUSR=GUSER
+  Endif
+End
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SQH0) 25/11/2015 11:26:47 (AM)
+######################################################################################
+Subprog IB_YVALIDEPNUSR
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran YSQH) 25/11/2015 11:32:22 (AM)
+######################################################################################
+Subprog IB_ZTSICOD
+End
+
+
+######################################################################################
+
+#CAK 2017-09-27 ci-dessous
+Subprog AM_BPCORD(VALEUR)
+Variable Char    VALEUR()
+    If clalev([F:BPR])
+        If [F:BPR]PPTFLG=2
+            [M:SQH3]PTE="VIR30"
+            Affzo [M:SQH3]PTE
+
+            [M:SQH1]DAYLTI=2
+            Affzo [M:SQH1]DAYLTI
+        Endif
+    Endif
+End
+######################################################################################
+
+######################################################################################
+# DLC le 17/03/21 239270 : ajout zone calculée Remise TG
+######################################################################################
+Subprog AM_YPRIXCATAL(VALEUR)
+Variable Decimal VALEUR
+If dim([M:SQH2]ZREMTG)>0
+# SSW le 08/11/21 : 247595 : modification calcul ZREMISETG
+    If [M:SQH2]GROPRI(nolign-1)>0
+        # DLC le 21/06/21 269270 : modification calcul
+        #[m:SQH2]ZREMTG(nolign-1)=100*[m:SQH2]GROPRI(nolign-1)/valeur
+# SSW le 08/11/21 : 247595 : modification calcul ZREMISETG
+#        [m:SQH2]ZREMTG(nolign-1)=100*(valeur-[m:SQH2]GROPRI(nolign-1))/valeur
+		 [M:SQH2]ZREMTG(nolign-1)=(([M:SQH2]GROPRI(nolign-1)-VALEUR)/[M:SQH2]GROPRI(nolign-1))*100    Endif
+Endif
+End

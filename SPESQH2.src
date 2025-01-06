@@ -1,0 +1,314 @@
+#<AdxTL>@(#)9.0.0.0 $Revision$
+# Devis
+
+# TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+
+############################################################
+$GENE_NOMENC
+    Call OUVRE_TRACE("Génération Nomenclature") From LECFIC
+    Call TEMPON("o") From GESECRAN
+    Call ECR_TRACE("Devis"-[M:SQH0]SQHNUM,-2) From GESECRAN
+
+    Local Char    MOD_(30)        :# nom du modèle
+    Local Char    REP_FIC(250)    :# rep+fichier
+
+    Gosub GENE_ITM_PF    :# Article PF
+    Gosub GENE_ITM_PC    :# Article PC
+
+    Gosub GENE_SST_PF    :# Article sst PF
+    Gosub GENE_SST_PC    :# Article sst PC
+
+    Gosub GENE_BOM_PF    :# Nomenclature PF
+    Gosub GENE_BOM_XPF   :# Nomenclature PF
+
+    Gosub GENE_BOM_PC    :# Nomenclature PC
+    Gosub GENE_BOMS_PF   :# Nomenclature commerciale PF
+
+    Gosub GENE_ROU_PF    :# Gamme PF
+    Gosub GENE_ROU_PC    :# Gamme PC
+
+
+    Call TEMPOFF() From GESECRAN
+    Call FERME_TRACE() From LECFIC
+    Call LEC_TRACE() From LECFIC
+Return
+
+
+############################################################
+$GENE_ITM_PF
+    If [F:SQH]YREFDOSSIER="" : Return : Endif
+    If !clalev([F:ITM]) : Local File ITMMASTER [F:ITM] : Endif
+
+    Call ECR_TRACE("",0) From GESECRAN
+    Call ECR_TRACE(string$(20,"*")-"Article PF"-[F:SQH]YREFDOSSIER-string$(20,"*"),-2) From GESECRAN
+
+    Read [ITM]ITM0=[F:SQH]YREFDOSSIER
+    If !fstat
+        Call ECR_TRACE([F:SQH]YREFDOSSIER-"Article PF déjà existant",0) From GESECRAN
+        Return
+    Endif
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_IPF_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    MOD_="YSQHITMPF"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+
+############################################################
+$GENE_ITM_PC
+    If [F:SQH]YREFDOSSIER2="" : Return : Endif
+    If !clalev([F:ITM]) : Local File ITMMASTER [F:ITM] : Endif
+
+    Call ECR_TRACE("",0) From GESECRAN
+    Call ECR_TRACE(string$(20,"*")-"Article PC"-[F:SQH]YREFDOSSIER2-string$(20,"*"),-2) From GESECRAN
+
+    Read [ITM]ITM0=[F:SQH]YREFDOSSIER2
+    If !fstat
+        Call ECR_TRACE([F:SQH]YREFDOSSIER2-"Article PC déjà existant",0) From GESECRAN
+        Return
+    Endif
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_IPC_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    MOD_="YSQHITMPC"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+
+############################################################
+$GENE_SST_PF
+    If [F:SQH]YREFSST="" : Return : Endif
+    If !clalev([F:ITM]) : Local File ITMMASTER [F:ITM] : Endif
+
+    Call ECR_TRACE("",0) From GESECRAN
+    Call ECR_TRACE(string$(20,"*")-"Article sst PF"-[F:SQH]YREFSST-string$(20,"*"),-2) From GESECRAN
+
+    Read [ITM]ITM0=[F:SQH]YREFSST
+    If !fstat
+        Call ECR_TRACE([F:SQH]YREFSST-"Article sst PF déjà existant",0) From GESECRAN
+        Return
+    Endif
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_SPF_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    MOD_="YSQHSSTPF"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+
+############################################################
+$GENE_SST_PC
+    If [F:SQH]YREFSST2="" : Return : Endif
+    If !clalev([F:ITM]) : Local File ITMMASTER [F:ITM] : Endif
+
+    Call ECR_TRACE("",0) From GESECRAN
+    Call ECR_TRACE(string$(20,"*")-"Article sst PC"-[F:SQH]YREFSST2-string$(20,"*"),-2) From GESECRAN
+
+    Read [ITM]ITM0=[F:SQH]YREFSST2
+    If !fstat
+        Call ECR_TRACE([F:SQH]YREFSST2-"Article sst PC déjà existant",0) From GESECRAN
+        Return
+    Endif
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_SPC_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    MOD_="YSQHSSTPC"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+
+############################################################
+$GENE_BOM_PF
+    Call ECR_TRACE("",0) From GESECRAN
+    If [F:SQH]YREFDOSSIER2=""
+        Call ECR_TRACE(string$(20,"*")-"Nomenclature PF"-[F:SQH]YREFDOSSIER-"(sst"-mess([F:SQH]YSST1,1,1)-string$(20,"*"),-2) From GESECRAN
+
+        If [F:SQH]YSST1=2 and [F:SQH]YREFSST <> "990301"
+            MOD_="YSQHBSPF"
+         Else
+            MOD_="YSQHBPPF"
+        Endif
+    Else
+        Call ECR_TRACE(string$(20,"*")-"Nomenclature PF"-[F:SQH]YREFDOSSIER-"/"-[F:SQH]YREFDOSSIER2-"(sst"-mess([F:SQH]YSST1,1,1)-string$(20,"*"),-2) From GESECRAN
+
+        If [F:SQH]YSST1=2 and [F:SQH]YREFSST <> "990301"
+            MOD_="YSQHBSPFC"
+        Else
+            MOD_="YSQHBPPFC"
+        Endif
+    Endif
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_BPC_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+############################################################
+$GENE_BOM_XPF
+    Call ECR_TRACE("",0) From GESECRAN
+If GUSER="HLAC" : Dbgaff : Endif
+    If [F:SQH]YREFDOSSIER2=""
+        Call ECR_TRACE(string$(20,"*")-"Nomenclature PF"-[F:SQH]YREFDOSSIER-"(sst"-mess([F:SQH]YSST1,1,1)-string$(20,"*"),-2) From GESECRAN
+
+        If [F:SQH]YSST1=2 and [F:SQH]YREFSST = "990301"
+            MOD_="YSQHXBSPF"
+        Else
+            MOD_="YSQHBPPF"
+        Endif
+    Else
+        Call ECR_TRACE(string$(20,"*")-"Nomenclature PF"-[F:SQH]YREFDOSSIER-"/"-[F:SQH]YREFDOSSIER2-"(sst"-mess([F:SQH]YSST1,1,1)-string$(20,"*"),-2) From GESECRAN
+
+        If [F:SQH]YSST1=2 and [F:SQH]YREFSST = "990301"
+            MOD_="YSQHXSPFC"
+        Else
+            MOD_="YSQHBPPFC"
+        Endif
+    Endif
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_BPC_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+############################################################
+$GENE_BOM_PC
+    If [F:SQH]YREFDOSSIER2="" : Return : Endif
+
+    Call ECR_TRACE("",0) From GESECRAN
+    Call ECR_TRACE(string$(20,"*")-"Nomenclature PC"-[F:SQH]YREFDOSSIER2-"(sst"-mess([F:SQH]YSST2,1,1)-string$(20,"*"),-2) From GESECRAN
+    If [F:SQH]YSST2=2
+        MOD_="YSQHBSPC"
+    Else
+        MOD_="YSQHBPPC"
+    Endif
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_BPF_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+############################################################
+$GENE_BOMS_PF
+    If [F:SQH]YREFDOSSIER="" : Return : Endif
+
+    Call ECR_TRACE("",0) From GESECRAN
+    Call ECR_TRACE(string$(20,"*")-"Nomenclature commerciale PF"-[F:SQH]YREFDOSSIER-string$(20,"*"),-2) From GESECRAN
+
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_CO_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    MOD_="YSQHCOPF"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+############################################################
+$GENE_ROU_PF
+    If [F:SQH]YSST1 = 2 : Return : Endif
+
+    Call ECR_TRACE("",0) From GESECRAN
+    Call ECR_TRACE(string$(20,"*")-"Gamme PF"-[F:SQH]YREFDOSSIER-string$(20,"*"),-2) From GESECRAN
+
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_ROUPF_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    MOD_="YSQHROUPF"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+############################################################
+$GENE_ROU_PC
+    If [F:SQH]YSST2 = 2 : Return : Endif
+
+    Call ECR_TRACE("",0) From GESECRAN
+    Call ECR_TRACE(string$(20,"*")-"Gamme PC"-[F:SQH]YREFDOSSIER2-string$(20,"*"),-2) From GESECRAN
+
+
+    REP_FIC=filpath("tmp",[M:SQH0]SQHNUM+"_ROUPC_"+format$("D:YYMMDD[_]hhmmss",date$),"txt")
+    MOD_="YSQHROUPC"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Export avec le modèle "+MOD_,0) From GESECRAN
+    Call EXPORT_SIL(MOD_ , REP_FIC)
+    MOD_+="2"
+    # TKE le 23/05/2022 : Chrono 251193 : Ajout des modèles dans la trace.
+    Call ECR_TRACE("Import avec le modèle "+MOD_,0) From GESECRAN
+    Call IMPORTSIL(MOD_ , REP_FIC) From GIMPOBJ
+Return
+
+############################################################
+Subprog EXPORT_SIL(MOD_,REP_FIC)
+    Value Char MOD_ , REP_FIC
+
+    Local Char    MESSAGE (250)
+
+    Gosub OUVRE From GEXPOBJ
+    If !clalev([M:DIA]) : Local Mask EXPOBJ [DIA] : Endif
+
+    [M:DIA]MODELE = MOD_
+    Call CHARGE_MODELE([M:DIA]MODELE,GBIDI1) From GEXPOBJ
+    If GBIDI1 : End : Endif
+
+    [M:DIA] = [M:EXP1]
+    # ajout de critère
+    [M:DIA]CRITERE(0)= "SQHNUM='" + [M:SQH0]SQHNUM + "'"
+    [M:DIA]NOMEXP = REP_FIC
+    [M:DIA]CHRONO = 1
+    [M:EXP2] = [M:DIA]
+    #GSILENCE = 1
+
+    Call EXPORTSIL From GEXPOBJ
+    If [M:EXP2]STAT :# recup message d'erreur
+        Call ERR_EXPORT([M:EXP2]STAT,MESSAGE) From GEXPOBJ
+        If MESSAGE <> "" Then
+            Call ECR_TRACE(MESSAGE,1) From GESECRAN
+        Endif
+    Endif
+End
+
+
+############################################################

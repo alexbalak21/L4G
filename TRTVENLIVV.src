@@ -1,0 +1,2347 @@
+﻿#<AdxTL>@(#)10.0.0.0 $Revision$  #!!!!DISCLAIMER V12P21 P Base DO NOT COPY OR USE THIS FILE IN ANY X3 FOLDER OR SUB FOLDER!!!!
+#########################################################################
+#                                                                       #
+# TRAITEMENT de VALIDATION de LIVRAISON   -    TRTVENLIVV               #
+#                                                                       #
+#########################################################################
+#                                                                       #
+# ACTION MODELISATION E-COMMERCE : GACTION                              #
+#-----------------------------------------------------------------------#
+#                                                                       #
+# DIVVALLIV   : Validation d'une livraison                              #
+#                                                                       #
+#########################################################################
+# Issue X3-98052 - 20180803 by LD : Cost price on line of Sales Order is rounding for currency conversion
+
+$ACTION
+  Case ACTION
+    When "TRT_DIV"    : Gosub TRT_DIV
+  Endcase
+Return
+
+#########################################################################
+$TRT_DIV
+  Case GACTION
+    When "DIVVALLIV"  :
+      Local Char PADMIN
+      Call OUVRE_TRACE(mess(34,191,1)) From LECFIC
+      # Récupération paramètre administrateur stock
+      Call PARAMUTIL("STOADMIN",PADMIN,"","") From SUBAUS
+      GSTOADMIN = val(PADMIN)
+      Call TEMPON("V") From GESECRAN
+      Call VALIDATION([M:SDH0]SDHNUM)
+      Call TEMPOFF From GESECRAN
+      Call GLOBVAR([M:SDH0]SALFCY,"VEN") From TRTX3
+      Call FERME_TRACE From LECFIC
+      #RICAR 15/12/2015 SAM #113194 - Begin
+      If [F:SDH]CFMFLG <> 2 | GOK = 0
+      #RICAR 15/12/2015 SAM #113194 - End
+        Call LEC_TRACE From LECFIC
+      Else
+        #BRBAN 08/07/2014 SAM #93745
+        GTRACE = ""
+      Endif
+  Endcase
+Return
+
+#########################################################################
+#-----------------------------------------------------------------------#
+#    Validation des livraisons                                          #
+#-----------------------------------------------------------------------#
+Subprog VALIDATION(SDHNUM)
+Value    Char     SDHNUM
+
+Local Char     SYMBOLE1(50), SYMBOLE2(50)
+Local Decimal  COEFF, WLIN, WMOINSSTU
+Local Integer  WMOD, WRET, I
+Local Decimal  LQTA, LSHT
+Local Integer  LNBR, LNBJ, LRET, LTRSTYP
+Local Date     WSHIDAT
+Local Char     WBPDNAM(GLONNAM)
+Local Char     WCRIT(80)
+Local Char     WCRITSTO1(240)     : # Filtre statut
+Local Integer  WQAR, WTRBEGIN
+Local Date     WDATPER
+
+#DLUBPC
+Local Char  NBDAY(10)
+Raz NBDAY
+
+#--- Issue X3-69499 - 2018-02-14 by TS
+If !clalev ([F:ACV]) : Local File ACTIV  [ACV] : Endif
+Local  Integer WLIVPAR    : # 1 = livraiosn validée partiellement
+Local  Integer WNBLIN     : # Nb lignes livraison
+Local  Integer WNBLINCFM  : # Nb lignes livraison validées
+Local  Integer WNBLINWIP  : # Nb lignes livraison en cours de validation
+Global Integer GVALIDLIN  : # Niveau de validation de la livraison
+                            #   1 = Ligne de livraison
+                            #   0 = Livraison complète
+# Complète Delivery Validation "CDV"
+GVALIDLIN=0
+Read [ACV] CODACT = "CDV"
+If !fstat & [F:ACV]FLACT<>2
+  GVALIDLIN=1
+Endif
+#--- End issue X3-69499
+
+If !clalev ([F:SDH]) : Local File SDELIVERY  [SDH] : Endif
+If !clalev ([F:SDD]) : Local File SDELIVERYD [SDD] : Endif
+If !clalev ([F:ITM]) : Local File ITMMASTER  [ITM] : Endif
+If !clalev ([F:ITS]) : Local File ITMSALES   [ITS] : Endif
+If !clalev ([F:ITF]) : Local File ITMFACILIT [ITF] : Endif
+If !clalev ([F:STA]) : Local File STOALL     [STA] : Endif
+If !clalev ([F:STL]) : Local File STOLOT     [STL] : Endif
+If !clalev ([F:STO]) : Local File STOCK      [STO] : Endif
+If !clalev ([F:STS]) : Local File STOSER     [STS] : Endif
+If !clalev ([F:STJ]) : Local File STOJOU     [STJ] : Endif
+If !clalev ([F:SOH]) : Local File SORDER     [SOH] : Endif
+If !clalev ([F:SOQ]) : Local File SORDERQ    [SOQ] : Endif
+If !clalev ([F:REO]) : Local File STOREO     [REO] : Endif
+If !clalev ([F:MVC]) : Local File BPCUSTMVT  [MVC] : Endif
+If !clalev ([F:LCM]) : Local File LASTCUSMVT [LCM] : Endif
+If !clalev ([F:BPR]) : Local File BPARTNER   [BPR] : Endif
+If !clalev ([F:SRU]) : Local File TABSTORUL  [SRU] : Endif
+#DLUBPC
+If !clalev ([F:ITU]) : Local File ITMBPC  [ITU] : Endif
+
+If GMODU(6)=2 & clalev([F:POQ])=0 : Local File PORDERQ [POQ] : Endif
+
+If !clalev([F:SPH]) : Local File SPACK     [SPH] : Endif
+If !clalev([F:SPD]) : Local File SPACKD    [SPD] : Endif
+If !clalev([F:PRH]) : Local File STOPREH   [PRH] : Endif
+If !clalev([F:PRL]) : Local File STOPRELIS [PRL] : Endif
+If !clalev([F:CAL]) : Local File CPTANALIN [CAL] : Endif
+If !clalev([F:SVF]) : Local File SVCRFOOT  [SVF] : Endif
+If !clalev([F:SVV]) : Local File SVCRVAT   [SVV] : Endif
+If !clalev([F:BPD]) : Local File BPDLVCUST [BPD] : Endif :# CPO 70146
+
+# Classe écran pour les encours
+If !clalev([M:ORDK]) : Local Mask ORDK       [ORDK] : Endif
+# Classe écran pour le moteur de maj
+If !clalev([M:STW])  : Local Mask STOWORK    [STW]  : Endif
+
+GOK=1
+
+
+# --> Lecture entête livraison
+If [F:SDH]SDHNUM<>[L]SDHNUM # Issue X3-41004 - 2017-05-29 by CPO : Analyze mass delivery validation to increase performance - Spike 2
+  Read [SDH]SDH0 = SDHNUM
+  If fstat : GOK=0  : Call RSTA("SDH",SDHNUM) From GLOCK : End : Endif
+Endif # Issue X3-41004 - 2017-05-29 by CPO : Analyze mass delivery validation to increase performance - Spike 2
+
+# Ecran de travail valeurs des mouvements
+    If clalev([M:SVW])=0
+        Local Mask STOVALWORK [SVW]
+    Endif
+    Raz [M:SVW]
+    # CCC (2009-08-07) Bug 57030 : Les changements d'emplacement nécessitent l'écran SVWD
+    # Issue X3-54040 - 2017-10-12 by ERMIL : SVWD needed for SCO deliveries
+    If ([F:SDH]LND=2 | [F:SDH]SCO=2) & clalev([M:SVWD])=0   # Cas des livraisons de prêt
+         Local Mask STOVALWORK [SVWD]
+    Endif
+    If ([F:SDH]LND=2 | [F:SDH]SCO=2)
+      Raz [M:SVWD]
+    Endif
+
+# --> Alimentation GFINRSP
+Call GETDEV([F:SDH]SALFCY) From DEVSUB
+
+# --> Contrôle des droits d'accès sur le site expé de la livraison
+#     si le site n'est pas saisi dans l'écran de sélection
+If [F:SDH]STOFCY = ""
+   Call CONTFCY([F:SDH]STOFCY) From CPTSUB
+   If mkstat
+      GOK=0
+      Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-mess(2,104,1),1) From GESECRAN
+      End
+   Endif
+Endif
+
+# Issue X3-51175 - 2017-08-04 by CPO : post a delivery with an analytic section inactive
+Local Integer IJDIE
+Local Char    SAXECTRL(GLONCCE)
+#--before validation, we have to check analytical sections
+#--/!\ Blocking message as the user cannot modify those after the delivery beeing validated
+#--header analytical sections
+For IJDIE=0 To dim([F:SDH]CCE)-1
+  If [F:SDH]CCE(IJDIE)<>""
+      Raz mkstat : Raz GMESSAGE
+      Call CTRL_F_CCEH([F:SDH]CCE(IJDIE),IJDIE+1,GFINRSP,[F:SDH]DLVDAT,"[F:SDH]CCE") From TRTX3CPT
+      If mkstat
+        GMESSAGE = mess(54,198,1)-[F:SDH]SDHNUM-mess(3,7784,1)-":"-GMESSAGE
+        Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+        Raz GMESSAGE
+        GOK=0 : Break
+      Endif
+  Endif
+Next IJDIE
+If GOK<1 : End : Endif
+
+#--footer analytical sections
+If clalev([F:CAL])=0 : Local File CPTANALIN [CAL] : Endif
+
+Local Char WSFISHO(GLONAX1)
+
+Filter [F:CAL] Where ABRFIC="SVF" and VCRTYP=2 and VCRNUM=[F:SDH]SDHNUM and DSP=""
+For [F:CAL]
+  For IJDIE=0 To dim([F:CAL]CCE)-1
+    If [F:CAL]CCE(IJDIE) <> "" Then
+        Raz mkstat
+        Call CTRL_F_CCE([F:CAL]CCE(IJDIE), IJDIE+1, "", GFINRSP, [F:SDH]DLVDAT,"[F:CAL]CCE") From TRTX3CPT
+        If mkstat Then
+          Raz WSFISHO
+          Call LECTEXTRA(WSFISHO,"SFOOTINV","SHOAXX",num$([F:CAL]VCRSEQ),"") From ATEXTRA
+          GMESSAGE = mess(54,198,1)-[F:SDH]SDHNUM-mess(523,197,1)-num$([F:CAL]VCRSEQ)-"("+WSFISHO+")"-mess(3,7784,1)-":"-GMESSAGE
+          Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+          Raz GMESSAGE : Raz mkstat
+          GOK=0 : Break
+        Endif
+      Endif
+  Next
+Next
+Filter [F:CAL]
+If GOK<1 : End : Endif
+# End issue X3-51175
+
+LTRSTYP    = 4
+If [F:SDH]LND=2
+   LTRSTYP = 17
+Elsif [F:SDH]SCO=2
+   LTRSTYP = 20
+Endif
+
+# Issue X3-69499 - 2018-02-14 by TS
+#For [SDD]SDD0 Where SDHNUM=[F:SDH]SDHNUM
+For [SDD]SDD0 Where SDHNUM=[F:SDH]SDHNUM & LINCFMFLG<>2
+#---
+
+  # Issue X3-51175 - 2017-08-04 by CPO : post a delivery with an analytic section inactive
+  #--before validation, we have to check analytical sections
+  #--/!\ Blocking message as the user cannot modify those after the delivery beeing validated
+  #--line analytical sections
+  Filter [F:CAL] Where ABRFIC="SDD" and VCRTYP=0 and VCRNUM=[F:SDH]SDHNUM and VCRLIN=[F:SDD]SDDLIN and VCRSEQ = 0
+  For [F:CAL]
+    For IJDIE=0 To dim([F:CAL]CCE)-1
+      If [F:CAL]CCE(IJDIE) <> "" Then
+          Raz mkstat
+          Call CTRL_F_CCE([F:CAL]CCE(IJDIE), IJDIE+1, "", GFINRSP, [F:SDH]DLVDAT,"[F:CAL]CCE") From TRTX3CPT
+          If mkstat Then
+            GMESSAGE = mess(54,198,1)-[F:SDH]SDHNUM-mess(162,154,1)-[F:SDD]ITMREF-mess(3,7784,1)-":"-GMESSAGE
+            Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+            Raz GMESSAGE : Raz mkstat
+            GOK=0 : Break
+          Endif
+        Endif
+    Next
+  Next
+  Filter [F:CAL]
+  If GOK<1 : Break : Endif
+  # End issue X3-51175
+
+   Raz WCRITSTO1
+
+   # Article géré en stock
+   If [F:SDD]STOMGTCOD>1
+
+       If[F:ITM]ITMREF<>[F:SDD]ITMREF # Issue X3-41004 - 2017-05-29 by CPO : Analyze mass delivery validation to increase performance - Spike 2
+         Read [ITM]ITM0=[F:SDD]ITMREF
+         If fstat
+            Call RSTA("ITM",[F:SDD]ITMREF) From GLOCK
+            GOK=0 : Break
+       # Issue X3-41004 - 2017-05-29 by CPO : Analyze mass delivery validation to increase performance - Spike 2
+       #Else
+         Endif
+       Endif
+       If [F:ITF]ITMREF<>[F:SDD]ITMREF | [F:ITF]STOFCY<>[F:SDH]STOFCY
+       # End issue X3-41004
+          Read [ITF]ITF0=[F:SDD]ITMREF;[F:SDH]STOFCY
+          If fstat
+             Call RSTA("ITF",[F:SDH]STOFCY-[F:SDD]ITMREF) From GLOCK
+             GOK=0 : Break
+          Endif
+       Endif
+       #DLUBPC
+       #lecture ITMBPC  pour recuperer DLUBPC
+       If [F:SDH]BPCORD <> ""
+          If [F:ITU]ITMREF<>[F:ITM]ITMREF | [F:ITU]BPCNUM<>[F:SDH]BPCORD # Issue X3-41004 - 2017-05-29 by CPO : Analyze mass delivery validation to increase performance - Spike 2
+            Read [ITU]ITU0 = [F:ITM]ITMREF;[F:SDH]BPCORD
+            If fstat
+              Raz [F:ITU]
+            Endif
+          Endif # Issue X3-41004 - 2017-05-29 by CPO : Analyze mass delivery validation to increase performance - Spike 2
+       Endif
+
+      #DLU Client, calcul du nbre de jours à retrancher à la DLU article
+      If [F:ITU]DLUBPC <> 0
+        Call CALNBDAYCLI([F:ITM]EXYMGTCOD,[F:ITM]SHL,[F:ITM]SHLUOM,[F:ITF]DLU,[F:ITU]DLUBPC,NBDAY) From STKLIB
+      Endif
+
+       Call LECSRU([F:SDH]STOFCY,[F:ITM]TCLCOD,LTRSTYP,[F:SDH]TRSCOD,"",LRET)
+&                  From STKLIB
+       If LRET <>0 GOK=0 : Break Endif
+
+       # Si statuts renseignés dans filtre allocation
+       If !find([F:SDD]STA,"","*")
+          # Décodage de la liste de statuts --> transformation en
+          # une formule contenant des 'pat(%,statut)'
+          Call DECODE_STAT([F:SDD]STA,WCRIT) From TRTCATEG
+          # Remplacement des '%' par la variable à tester
+          Call CREE_FORMULE(WCRIT,"[F:STO]STA",WCRITSTO1) From TRTCATEG
+          Raz WCRIT
+       # Sinon prise en compte des sous-statuts autorisés
+       Elsif !find([F:SRU]AUZSST,"","*")
+          Call CREE_FORMULE([F:SRU]FORSTA,"[F:STO]STA",WCRITSTO1) From TRTCATEG
+       Endif
+
+       # S'il n'y avait pas de filtre statut, on traite ceux de la règle d'allocation
+       # restreint par les statuts autorisés pour le mouvement ds la catégorie article
+       If WCRITSTO1=""
+          # Statuts autorisés par la règle de gestion de stock
+          WAQR=[F:SRU]AUZSTA
+
+          # Alimentation du filtre sur le statut
+          Case WAQR
+           When 1       : WCRITSTO1='left$([F:STO]STA,1)="A"'
+           When 2       : WCRITSTO1='left$([F:STO]STA,1)="Q"'
+           When 3       : WCRITSTO1='(left$([F:STO]STA,1)="A"|left$([F:STO]STA,1)="Q")'
+           When 4       : WCRITSTO1='left$([F:STO]STA,1)="R"'
+           When 5       : WCRITSTO1='(left$([F:STO]STA,1)="A"|left$([F:STO]STA,1)="R")'
+           When 6       : WCRITSTO1='(left$([F:STO]STA,1)="Q"|left$([F:STO]STA,1)="R")'
+           When 7       : WCRITSTO1='1=1'
+           When Default : WCRITSTO1='left$([F:STO]STA,1)="A"'
+          Endcase
+       Endif
+
+       # Pas de demande d'analyse
+       If WCRITSTO1<>""
+          WCRITSTO1 = "("+WCRITSTO1+")"
+       Endif
+       WCRITSTO1 += '&[F:STO]QLYCTLDEM=""'
+
+       # Si stock négatif interdit ou livraison pour sous-traitance
+       #--- Issue 90976
+       #If [F:ITM]NEGSTO<>2
+       If [F:ITM]NEGSTO<>2 | [F:SDH]SCO=2
+       #---
+          Filter [STA] Where VCRTYP=4 & VCRNUM=[F:SDH]SDHNUM & VCRLIN=[F:SDD]SDDLIN & ALLTYP=4
+          Read [STA]STA1 First
+          If !fstat
+             #--- Issue 90976
+             #Call ECR_TRACE([F:STA]STOFCY-[F:STA]ITMREF-":"-mess(184,192,1),1) From GESECRAN
+             GMESSAGE=[F:STA]STOFCY-[F:STA]ITMREF-":"-mess(184,192,1)
+             If [F:SDH]SCO=2
+               GMESSAGE-="("+mess(15,432,1)+")"
+             Endif
+             Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+             Raz GMESSAGE
+             #---
+             GOK=0 : #Break      # FGR 20/01/2010 : X3SUIVI60986
+             Filter [STA]
+             Break   # FGR 20/01/2010 : X3SUIVI60986
+          Else
+             Filter [STA]
+          Endif
+
+       Endif
+
+       For [STA]STA1 Where VCRTYP=4 & VCRNUM=[F:SDH]SDHNUM  & VCRLIN=[F:SDD]SDDLIN & ALLTYP=2
+
+          # Lecture du stock
+          Read [STO]STO0=[F:STA]STOFCY;[F:STA]STOCOU
+          If fstat
+             Call RSTA("STO",[F:STA]STOFCY-[F:STA]ITMREF-num$([F:STA]STOCOU)) From GLOCK
+             GOK=0 : Break 2
+          # Ligne de stock bloquée pour inventaire
+          Elsif [F:ITF]CUNFLG=2 & [F:STO]CUNLOKFLG=2
+             Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STO]ITMREF-[F:STO]LOT
+&                           -[F:STO]LOC-":"-mess(126,184,1),1) From GESECRAN
+             GOK=0 : Break 2
+
+          # Emplacement en attente de rangement
+          Elsif [F:STO]LOCCAT=2 & [F:STA]ITMREF<>[F:STO]ITMREF
+             # Contrôle que les lignes de stock en attente de rangement sont complètes
+             Call CTLPLFLOC([F:STO]ITMREF,"",LRET) From STKSOR
+             If LRET<>0
+
+                Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STO]ITMREF-
+&                              [F:STO]LOC-":"-mess(378,199,1),1) From GESECRAN
+                GMESSAGE = mess(377,199,1)-":"
+                Case LRET
+                 When 1 : GMESSAGE += mess(43,197,1)-","-mess(456,197,1)
+                 When 2 : GMESSAGE += mess(453,197,1)
+                 When 3 : GMESSAGE += mess(43,197,1)-","-mess(456,197,1)-","-mess(453,197,1)
+                Endcase
+                Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+                GOK=0 : Break 2
+             Endif
+          Endif
+
+          # Contrôle statuts autorisés
+          If !evalue(WCRITSTO1)
+             If GSTOADMIN=2
+                Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STO]ITMREF-
+&                    mess(399,198,1)-[F:STO]STA-":"-mess(366,199,1),0) From GESECRAN
+             Else
+                Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STO]ITMREF-
+&                    mess(399,198,1)-[F:STO]STA-":"-mess(366,199,1),1) From GESECRAN
+                GOK=0 : Break 2
+             Endif
+          Endif
+
+          # Lots périmés interdits
+          If [F:SRU]SHLLOT<>3          # hcb v6dlu  nouvelle gestion
+             Read [STL]STL0=[F:STO]ITMREF;[F:STO]LOT;[F:STO]SLO
+             If !fstat
+                If [F:SRU]SHLLOT= 2
+                   WDATPER = [F:STL]DLUDAT+val(NBDAY)
+                Else
+                   WDATPER = [F:STL]SHLDAT
+                Endif
+                If WDATPER <>[0/0/0]
+                   If WDATPER<[F:SDH]DLVDAT
+                      If GSTOADMIN=2
+                         Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STO]ITMREF-
+&                             ":"-mess(398,199,1)-[F:STO]LOT,0) From GESECRAN
+                      Else
+                         Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STO]ITMREF-
+&                             ":"-mess(398,199,1)-[F:STO]LOT,1) From GESECRAN
+                         GOK=0 : Break 2
+                      Endif
+                   Endif
+                Endif
+             Endif
+          Endif
+
+          # No série en sortie non saisis et pas de compteur série
+          If [F:ITM]SERMGTCOD=2 & [F:ITM]SERCOU=""
+              #--- TS Bug 72375
+              #MAE, le 27/09/2010, bg 67175, si inter-site et intra-société, pas de n° série a saisir
+              #If [M:STW]TRFFCY="" & [M:STW]BETCPY = 2
+              If !([F:SDH]BETFCY=2 & [F:SDH]BETCPY<>2)
+              #---
+                  If [F:STA]SERNUM=""
+                      Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STO]ITMREF-
+&                        ":"-mess(312,184,1),1) From GESECRAN
+                      GOK=0 : Break 2
+                  Endif
+              Endif
+         Endif
+         #--- Issue 110327
+         # No série en E/S global non associé à l'allocation
+         If [F:ITM]SERMGTCOD=4 & [F:STA]SERNUM=""
+           Call ECR_TRACE([F:SDH]SDHNUM-[F:STO]ITMREF-":"-mess(312,184,1),1) From GESECRAN
+           GOK=0 : Break 2
+         Endif
+         #---
+       Next
+
+       # Vérification pour les manquants
+       # Issue X3-41004 - 2017-05-29 by CPO : Analyze mass delivery validation to increase performance - Spike 2
+       #--inner ifs are not depending of the STA loop
+       #For [STA]STA1 Where VCRTYP=4 & VCRNUM=[F:SDH]SDHNUM  & VCRLIN=[F:SDD]SDDLIN & ALLTYP=4
+       #   # No série en sortie non saisis et pas de compteur série
+       #   If [F:ITM]SERMGTCOD=2 & [F:ITM]SERCOU=""
+       #       #--- TS Bug 72375
+       #       #MAE, le 27/09/2010, bg 67175, si inter-site et intra-société, pas de n° série a saisir
+       #       #If [M:STW]TRFFCY="" & [M:STW]BETCPY = 2
+       #       If !([F:SDH]BETFCY=2 & [F:SDH]BETCPY<>2)
+       #       #---
+       #          If [F:STA]SERNUM=""
+       #             Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STA]ITMREF-
+       #&                    ":"-mess(312,184,1),1) From GESECRAN
+       #              GOK=0 : Break 2
+       #           Endif
+       #        Endif
+       #   Endif
+       # Next
+       # No série en sortie non saisis et pas de compteur série
+       If [F:ITM]SERMGTCOD=2 & [F:ITM]SERCOU=""
+         #--- TS Bug 72375
+         #MAE, le 27/09/2010, bg 67175, si inter-site et intra-société, pas de n° série a saisir
+         #If [M:STW]TRFFCY="" & [M:STW]BETCPY = 2
+         If !([F:SDH]BETFCY=2 & [F:SDH]BETCPY<>2)
+         #---
+           Filter [STA] Where VCRTYP=4 & VCRNUM=[F:SDH]SDHNUM  & VCRLIN=[F:SDD]SDDLIN & ALLTYP=4
+&                           & SERNUM=""
+           Read [F:STA] First
+           If !fstat
+             Call ECR_TRACE(mess(54,198,1)-[F:SDH]SDHNUM-"/"-[F:STA]ITMREF-":"-mess(312,184,1),1) From GESECRAN
+             GOK=0
+             Filter [STA]
+             Break
+           Endif
+           Filter [STA]
+         Endif
+       Endif
+       # End issue X3-41004
+    Endif
+Next
+
+If GOK=0 End Endif
+
+# --> lock fichier entête livraison
+SYMBOLE1 = "SDH"+[F:SDH]SDHNUM
+Lock = SYMBOLE1
+If fstat
+   # modification en cours sur un autre poste
+   Call ECR_TRACE("$SDELIVERY :"-[F:SDH]SDHNUM-mess(10,100,1),1) From GESECRAN
+   GOK=0 : End
+Endif
+#Unlock = SYMBOLE1                      : # Bug 35575
+
+# Issue X3-69499 - 2018-02-14 by TS
+Filter [SDD] Where SDHNUM=[F:SDH]SDHNUM
+WNBLIN = rowcount([SDD])
+Filter [SDD] Where SDHNUM=[F:SDH]SDHNUM & LINCFMFLG=2
+WNBLINCFM = rowcount([SDD])
+Filter [SDD]
+#---
+
+# --> Appel de la transaction
+Call DEBTRANS From GLOCK
+Gosub TRT1
+
+  # Il y a eu un problème
+  # FGR 14/04/2014 : X3SUIVI98575 (début)
+  #If GOK<1 End Endif
+  #--- Issue 69499 2018-09-10 By TS
+  #If GOK < 1 Then
+  If GOK<1 & (GVALIDLIN<>1 | (GVALIDLIN=1 & WNBLINWIP=0))
+  #---
+    # Issue X3-69499
+    Call ECR_TRACE(mess(54,198,1)-mess(100,107,1)-":"-[F:SDH]SDHNUM,1) From GESECRAN
+    #---
+    Gosub UNLOCK_SYMBOLE1   # FGR 14/04/2014 : X3SUIVI98575
+    End
+  Endif
+  # FGR 14/04/2014 : X3SUIVI98575 (fin)
+
+  If [F:SDH]BPDNAM(0) <> ""
+    WBPDNAM=[F:SDH]BPDNAM(0)
+  Elsif [F:BPD]BPCNUM <> [F:SDH]BPCORD
+    Read [BPD]BPD0 = [F:SDH]BPCORD; [F:SDH]BPAADD
+    If fstat Raz [F:BPD] : Endif
+    WBPDNAM=[F:BPD]BPDNAM
+  Endif
+
+  # Issue X3-69499 - 2018-04-27 By TS
+  # Validation par ligne et livraison validée partiellement
+  If GVALIDLIN=1 & WLIVPAR=1
+    Call ECR_TRACE(mess(283,191,1)-":"-[F:SDH]SDHNUM-mess(42,191,1)-
+&                ":"-[F:SDH]BPCORD-[F:SDH]BPAADD-WBPDNAM,0) From GESECRAN
+  Else
+  #---
+    Call ECR_TRACE(mess(54,198,1)-mess(3,429,1)-":"-[F:SDH]SDHNUM-mess(42,191,1)-
+&                ":"-[F:SDH]BPCORD-[F:SDH]BPAADD-WBPDNAM,0) From GESECRAN
+  # Issue X3-69499 - 2018-04-27 By TS
+  Endif
+  #---
+
+  # Issue X3-69499 - 2018-04-27 By TS
+  # Validation par ligne et livraison validée partiellement
+  # ne pas faire les maj annexes de fin de validation
+  If GVALIDLIN=1 & WLIVPAR=1
+    Goto VALIDATION_FIN
+  Endif
+  #---
+
+  # Si livraison de sous-traitance régularisation des manquants sous-traitance
+  If [F:SDH]SCO=2
+    Gosub REGUL_MFGMAT
+  Endif
+
+  # FGR 04/01/2011 : X3SUIVI70100 (début) déplacé dans la transaction
+  # Si présence module Support Client, gestion du parc client
+  #If GMODU(12)=2
+  #   Gosub TRT_MACRULE
+  #Endif
+  # FGR 04/01/2011 : X3SUIVI70100 (fin) déplacé dans la transaction
+
+# BRBAN 07/07/2014 SAM #93745 US2
+Local Integer PORDIGSIGN : [L]PORDIGSIGN = func PORLEGLIB.DIGSIGN("", [F:SDH]CPY)
+If [L]PORDIGSIGN = 1
+  If [F:SDH]ATDTCOD <> ""
+     If clalev ([F:DKD]) = 0  : Local File DKSDATA [DKD] : Endif
+
+     Read [F:DKD]DKD0 = "SAFT-PT";[F:SDH]SDHTYP;[F:SDH]SDHNUM
+     If !fstat
+        If [F:DKD]ATDTCOD <> ""
+           Call ECR_TRACE(mess(125,7711,1),1) From GESECRAN #This document already has a transport code.
+        Else
+           [F:DKD]ATDTCOD    = [F:SDH]ATDTCOD
+           [F:DKD]ATDTCOMSTA = "0"
+           [F:DKD]ATDTINPTYP = 1
+           [F:DKD]RECTYP     = [F:TSD]RECTYP
+           Rewrite [F:DKD]
+           If fstat
+              Call ECR_TRACE(mess(126,7711,1),1) From GESECRAN #Error while saving manual code.
+           Endif
+        Endif
+     Else
+        Call ECR_TRACE(mess(127,7711,1),1) From GESECRAN #The document is not signed.
+     Endif
+  Else
+     Local Char    AUTCOM(1)
+     Local Integer RETSTAT
+
+     Call PARAML([F:SDH]STOFCY, "AUTCOMAT", [L]AUTCOM) From ADOVAL      # FGR 28/07/2015 : X3SUIVI108078 : Plus Call PARAM (performances)
+     GPOINT="AUTCOMAT" : Gosub ENTREE From EXEFNC                       # Issue X3-111577 – 2018-12-06 by VAVIL
+     If [L]AUTCOM = "2"
+       # BRBAN 24-03-2015 #106027
+       If  [F:SDH]BPDCRY='PT' & func PORLEGLIB.DOCCTR(2,[F:SDH]BPCORD ,[F:SDH]SDHTYP,[F:SDH]STOFCY)=1 & func PORLEGLIB1.CTRL_COMDAT([F:SDH]STOFCY,[F:SDH]DPEDAT,[F:SDH]ETD)=1
+          Call SENDDTTOAT([F:SDH]SDHNUM, 2, [L]RETSTAT) From PORLEGLIB1
+       Endif
+     Endif
+     If GFONCTION = "GESSDH" & [F:SDH]CFMFLG = 2 & GTRACE <> ""
+      If GFONCTION = "GESSDH" : Call TEMPOFF From GESECRAN : Endif
+      Call LEC_TRACE   From LECFIC
+     Endif
+  Endif
+Endif
+
+  #RMA * 20-05-2013 * #89900 - Entry point after validation transaction
+  GPOINT="AFTSDHVAL" : Gosub ENTREE From EXEFNC
+
+  If GOK=1
+    Call WORKFLOW("F_FUNCFMDLV","","") From SUBAMSC
+  Endif
+
+  # Issue X3-69499 - 2018-04-27 By TS
+  $VALIDATION_FIN
+  # -------------------
+  Gosub UNLOCK_SYMBOLE1   # FGR 14/04/2014 : X3SUIVI98575
+End
+
+$UNLOCK_SYMBOLE1
+  # FGR 14/04/2014 : X3SUIVI98575 : si nécessaire
+  If GFONC1 = "GESSDH" Then
+    GBIDC2 = "M" : Gosub AUTORIS_OPT From CONTX3
+    If !GBIDI2 Then
+      Unlock = SYMBOLE1
+    Endif
+  Endif
+Return
+
+#-----------------------------------------------------------------------#
+#    Transaction sur entête de livraison                                #
+#-----------------------------------------------------------------------#
+$TRT1
+GOK=1
+# Issue X3-69499 - 2018-02-14 by TS
+WNBLINWIP = 0
+
+If adxlog<>1
+   Trbegin [SOQ],[SDH],[MVC],[LCM]
+   WTRBEGIN=1
+Endif
+
+#-- Verrouillage entête livraison
+Readlock [SDH]SDH0 = SDHNUM
+If    fstat=1  GOK=-1 : GLOCK="$SDELIVERY"+SDHNUM          : Goto ROL_TRT1
+Elsif fstat    GOK=0  : Call RSTA("SDH",SDHNUM) From GLOCK : Goto AB_TRT1
+Endif
+
+#85785
+Local Integer PORDIGSIGN : [L]PORDIGSIGN = func PORLEGLIB.DIGSIGN("", [F:SDH]CPY)
+
+# Issue X3-69499 - 2018-02-14 by TS
+# Si une ligne est déjà validée, les maj de début ont déjà été réalisées
+If WNBLINCFM > 0 : Goto FOR_SDD : Endif
+#---
+
+# BRBAN 03/07/2014 SAM 93745 US2
+If [L]PORDIGSIGN = 1
+  Local Char AUTARV(30) : [L]AUTARV = ''
+  Call PARAML([F:SDH]STOFCY, "ARVDATAUT", [L]AUTARV) From ADOVAL      # FGR 28/07/2015 : X3SUIVI108078 : Plus Call PARAM (performances)
+
+  Case GFONCTION
+    When 'FUNCFMDLV',"FUNCFMDLV2"
+      # BRBAN 107861
+      If [F:SD2]SCO=2
+        If [M:DIA1]ENA = 2
+          [F:SDH]DPEDAT   = [F:SDH]SHIDAT + [M:DIA1]STRDAYS
+          [F:SDH]ETD        = ctrans([M:DIA1]STRHOU,":","")
+          If [L]AUTARV='2'
+            [F:SDH]ARVDAT   = [F:SDH]DLVDAT + [M:DIA1]ENDDAYS
+            [F:SDH]ETA        = ctrans([M:DIA1]ENDHOU,":","")
+          Endif
+        Endif
+      Else
+        If [M:DIA]ENA = 2
+          [F:SDH]DPEDAT   = [F:SDH]SHIDAT + [M:DIA]STRDAYS
+          [F:SDH]ETD        = ctrans([M:DIA]STRHOU,":","")
+          If [L]AUTARV='2'
+            [F:SDH]ARVDAT   = [F:SDH]DLVDAT + [M:DIA]ENDDAYS
+            [F:SDH]ETA        = ctrans([M:DIA]ENDHOU,":","")
+          Endif
+        Endif
+      Endif
+    When 'FUNAUTDLV'
+       If [M:DIA]ENA = 2
+        [F:SDH]DPEDAT   = [F:SDH]SHIDAT + [M:DIA]STRDAYS
+        [F:SDH]ETD        = ctrans([M:DIA]STRHOU,":","")
+        If [L]AUTARV='2'
+          [F:SDH]ARVDAT   = [F:SDH]DLVDAT + [M:DIA]ENDDAYS
+          [F:SDH]ETA        = ctrans([M:DIA]ENDHOU,":","")
+        Endif
+      Endif
+    When 'FUNPREDLV'
+      If [M:PDL]ENA = 2
+        [F:SDH]DPEDAT   = [F:SDH]SHIDAT + [M:PDL]STRDAYS
+        [F:SDH]ETD        = ctrans([M:PDL]STRHOU,":","")
+        If [L]AUTARV='2'
+          [F:SDH]ARVDAT   = [F:SDH]DLVDAT + [M:PDL]ENDDAYS
+          [F:SDH]ETA        = ctrans([M:PDL]ENDHOU,":","")
+        Endif
+      Endif
+    When 'GESSDH'
+      If [F:SDH]DPEDAT= [0/0/0]
+        [F:SDH]DPEDAT = [M:SDH1]SHIDAT
+      Endif
+      If [L]AUTARV='2'
+        If [F:SDH]ARVDAT = [0/0/0]
+          [F:SDH]ARVDAT = [M:SDH1]DLVDAT
+        Endif
+      Endif
+  Endcase
+Endif
+
+# ---------------------------------------------------------- #
+# Branchement du point d'entree MODCPTLIV                    #
+# --> Attribution d'un nouveau compteur pour les livraisons  #
+# ---------------------------------------------------------- #
+GPOINT="MODCPTLIV" : Gosub ENTREE From EXEFNC
+If GOK < 1 Goto AB_TRT1 Endif
+
+#------------------------------------------------------------#
+# Attribution du compteur définitif des livraisons           #
+# si code activité KIL est actif                             #
+#------------------------------------------------------------#
+#85785
+#If GSDHENDNBR = 2
+If GSDHENDNBR = 2 | [L]PORDIGSIGN = 1
+   Local Char LNUM(GLONVCR)
+
+   # 75115 : V7 : Extension of Digital Signature : New field delivery type
+   # Récupération du compteur définitif
+   # Utilisation d'une locale pour ne pas casser la globale GCPT
+   Local Char WCPT(GLONANM)
+   # Récupération depuis le type de livraison
+   If [F:SDH]SDHTYP<>""
+      If clalev ([F:TSD]) <= 0 Local File TABSDHTYP [TSD] Endif
+      Call LEC_TSD_LEG(GCURLEG,[F:SDH]SDHTYP,WRET) From TRTLECLEG
+      If WRET<>0 Raz [F:TSD] : Endif
+      # FGR 05/04/2013 : X3SUIVI75115 (début)
+      #WCPT=[F:TSD]CODNUMEND
+#      If func AFNC.ACTIV("DKS") Then
+#        # Code activité activé
+#        If [F:SDH]BETFCY <> G_YES and [F:SDH]BETCPY <> G_YES Then
+#          # Si c'est une livraison normale
+#          WCPT = [F:TSD]CODNUMEND
+#        Else
+#          Local Char DKSORIG
+#          Local Integer DKSRET
+#
+#          DKSORIG = "SDH"
+#          DKSRET  = 1
+#          Gosub DKS_SIGN_TRIGGER From DKSLIB  # On regarde si le DKS est activé pour le site
+#          If DKSRET = 0 Then
+#            # On n'appliquera pas de compteur définitif, le document conservera son numéro
+#          Else
+#            # On va rechercher les compteurs définitifs qui vont bien
+#            If [F:SDH]BETFCY = G_YES and [F:SDH]BETCPY <> G_YES Then
+#              # Livraison intersite
+#              WCPT = [F:TSD]CODNUMFCYD
+#            Elsif [F:SDH]BETFCY = G_YES and [F:SDH]BETCPY = G_YES Then
+#              # Livraison intersociété
+#              WCPT = [F:TSD]CODNUMCPYD
+#            Endif
+#            If WCPT = "" Then
+#              # S'il n'y a pas de compteur ça n'est pas une erreur on ne change pas le numéro existant
+#              WCPT = string$(GLONANM, "~")
+#            Endif
+#          Endif
+#        Endif
+#      Else
+#        # Dans tous les cas on utilise ce compteur définitif
+#        WCPT=[F:TSD]CODNUMEND
+#      Endif
+      # FGR 15/04/2013 : Mail Cyrille 12/04/2013 (DKS US 428) : disponible pour tout le monde
+      If [F:SDH]BETFCY <> G_YES and [F:SDH]BETCPY <> G_YES Then
+        # Si c'est une livraison normale
+        WCPT = [F:TSD]CODNUMEND
+      Else
+        # On va rechercher les compteurs définitifs qui vont bien
+        If [F:SDH]BETFCY = G_YES and [F:SDH]BETCPY <> G_YES Then
+          # Livraison intersite
+          WCPT = [F:TSD]CODNUMFCYD
+        Elsif [F:SDH]BETFCY = G_YES and [F:SDH]BETCPY = G_YES Then
+          # Livraison intersociété
+          WCPT = [F:TSD]CODNUMCPYD
+        Endif
+        # Mail CH du 16/04/2013 13:51 (RE: DKS US 428). Toujours se replier sur le compteur dans GESTCA
+        #If WCPT = "" Then
+        #  # S'il n'y a pas de compteur ça n'est pas une erreur on ne change pas le numéro existant
+        #  WCPT = string$(GLONANM, "~")
+        #Endif
+      Endif
+      # FGR 05/04/2013 : X3SUIVI75115 (fin)
+   Endif
+   If WCPT <> string$(GLONANM, "~") Then         # FGR 05/04/2013 : X3SUIVI75115 : ajout de ce test
+     If WCPT=""
+        #85785
+        If [L]PORDIGSIGN = 1
+          GERR=1 : GMESSAGE=mess(140,7711,1) : GOK=0 : Goto AB_TRT1
+        Endif
+        # Pb à la récupération du compteur depuis le type de livraison
+        # --> Récupération depuis la table des affectations compteur
+        If clalev ([F:TCA]) <= 0 Local File TABCOUAFF [TCA] Endif
+        Call LECTCA(5,WRET) From SUBTCA
+        If fstat | !WRET
+            GERR=1 : GMESSAGE=mess(58,105,1)-mess(5,14,1)-mess(250,199,1) : GOK=0 : Goto AB_TRT1
+        Endif
+        #GMANCOU=[F:TCA]MANCOU(0) : GCPT=[F:TCA]CODNUM(0)
+        WCPT=[F:TCA]CODNUM(13)
+     Endif
+     #--CPO 75115 Le compteur et le compteur définitif doivent être différents
+
+     #85785
+     If [L]PORDIGSIGN = 1
+       If func PORLEGLIB.ANM_OK(WCPT, GMESSAGE) <> 1
+         GERR=1 : GOK=0 : Goto AB_TRT1
+       Endif
+       If [F:TSD]DATUPDFLG = 2 |[F:TSD]RECTYP = 1
+         If [F:SDH]SHIDAT <> date$
+           [F:SDH]SHIDAT = date$
+
+            If  [F:SDH]DPEDAT < [F:SDH]SHIDAT
+              Call ECR_TRACE(mess(324,7711,1)- mess(399,192,1) ,1) From GESECRAN
+              GERR=1 : GOK=0 : Goto AB_TRT1
+            Endif
+            If [F:SDH]DPEDAT >= [F:SDH]SHIDAT
+              Call CALC_DLVDAT([F:SDH]SHIDAT,[F:SDH]DAYLTI,[F:SDH]BPAADD,[F:SDH]BPCORD, 0, 0, [F:SDH]DLVDAT) From TRTVENDAT
+              If [F:TSD]DATUPDFLG <> 2
+                Call ECR_TRACE(mess(318,7711,1),-1) From GESECRAN
+              Endif
+            Endif
+           Endif
+      Endif
+     Endif
+     # Attribution no livraison définitif
+  #   Call NUMERO([F:TCA]CODNUM(13),[F:SDH]STOFCY,[F:SDH]SHIDAT,"",LNUM,WRET) From SUBANM
+     Call NUMERO(WCPT,[F:SDH]STOFCY,[F:SDH]SHIDAT,"",LNUM,WRET) From SUBANM
+     # 75115 : V7 : Extension of Digital Signature : New field delivery type
+     If GOK<0 Goto ROL_TRT1 Endif
+
+     #--CPO  68322/59141
+     #If WRET <> 0
+     If WRET <> 0 | GOK<1
+       #GERR=1 : GMESSAGE = mess(60,199,1)
+       #GOK=0  : Goto AB_TRT1
+       Local Char MESSA(80)
+       Local Integer SAUV_STAT
+       If dim(STAT)<0 : Local Integer STAT : Endif
+       SAUV_STAT=STAT : STAT=WRET
+       #GMESSAGE=mess(60,199,1)-"("+[F:TCA]CODNUM(13)+") : "
+       GMESSAGE=mess(60,199,1)-"("+WCPT+") : "
+       Gosub MESSAGE From SUBANM
+       STAT=SAUV_STAT
+       GMESSAGE-=MESSA : GERR=1 : GOK=0 : Goto AB_TRT1
+       #--/CPO 68322/59141
+     Endif
+
+     #85785
+     If [L]PORDIGSIGN
+       Gosub CTRL_CHRONOLOGIC
+       Default File [SDH]
+       If GOK=0 : Goto AB_TRT1 : Endif
+     Endif
+
+     # Si fonct validation auto, on est tjs sur la même société, il faut laisser la table ouverte
+     #Close Local File [TCA]
+
+     # Maj fichiers suite à l'attribution du nouveau no livraison
+
+     #VPO 20/04/09 bug51856 renum des pces jointes et commentaires
+     If clalev([F:AOX])=0 : Local File AOBJTXT  [AOX] : Endif
+     If clalev([F:AOM])=0 : Local File AOBJTXTA [AOM] : Endif
+     If clalev([F:ABB])=0 : Local File ABLOB    [ABB] : Endif
+     If clalev([F:ACB])=0 : Local File ACLOB    [ACB] : Endif
+     If clalev([F:BOLH])=0 : Local File BILLLADH  [BOLH] : Endif  # 101090.n
+     If clalev([F:BOLC])=0 : Local File BILLLADC  [BOLC] : Endif  # 101090.n
+     WABREV="SDH"
+
+     Update [AOX] Where ABREV=WABREV & IDENT1=[F:SDH]SDHNUM With IDENT1=LNUM
+     If find(fstat,1,3)
+        GOK=0  : Call FSTA("AOX") From GLOCK
+        Goto AB_TRT1
+     Endif
+     Update [AOM] Where ABREV=WABREV & IDENT1=[F:SDH]SDHNUM With IDENT1=LNUM
+     If find(fstat,1,3)
+        GOK=0  : Call FSTA("AOM") From GLOCK
+        Goto AB_TRT1
+     Endif
+     CBLOB = "PJ_" : # Pour les pieces jointes
+     Update [ACB] Where CODBLB=CBLOB+WABREV & IDENT1=[F:SDH]SDHNUM With IDENT1=LNUM
+     If find(fstat,1,3)
+        GOK=0  : Call FSTA("ACB") From GLOCK
+        Goto AB_TRT1
+     Endif
+     Update [ABB] Where CODBLB=CBLOB+WABREV & IDENT1=[F:SDH]SDHNUM With IDENT1=LNUM
+     If find(fstat,1,3)
+        GOK=0  : Call FSTA("ABB") From GLOCK
+        Goto AB_TRT1
+     Endif
+     CBLOB = "CO_" : # Pour les commentaires
+     Update [ACB] Where CODBLB=CBLOB+WABREV & IDENT1=[F:SDH]SDHNUM With IDENT1=LNUM
+     If find(fstat,1,3)
+        GOK=0  : Call FSTA("ACB") From GLOCK
+        Goto AB_TRT1
+     Endif
+     #FIN VPO 20/04/09 bug51856
+
+     Update [STA] Where VCRTYP=4 & VCRNUM=[F:SDH]SDHNUM With VCRNUM=LNUM
+     If find(fstat,1,3)
+        GOK=0  : Call FSTA("STA") From GLOCK
+        Goto AB_TRT1
+     Endif
+     Update [CAL] Where ABRFIC="SDD" & VCRTYP=0 & VCRNUM=[F:SDH]SDHNUM With VCRNUM=LNUM
+     If find(fstat,1,3)
+        #--CPO 91057 Erreurs dans le programme TRTVENLIVV (Abréviations passées à FSTA...)
+       #GOK=0  : Call FSTA("STA") From GLOCK
+        GOK=0  : Call FSTA("CAL") From GLOCK
+        #--/
+        Goto AB_TRT1
+     Endif
+     # 96708 : Perte des sections analytiques des éléments de facturation
+     Update [CAL] Where ABRFIC="SVF" & VCRTYP=2 & VCRNUM=[F:SDH]SDHNUM With VCRNUM=LNUM
+     If find(fstat,1,3)
+        GOK=0  : Call FSTA("CAL") From GLOCK
+        Goto AB_TRT1
+     Endif
+     # 96708
+     Update [SVV] Where VCRTYP=2 & VCRNUM=[F:SDH]SDHNUM With VCRNUM=LNUM
+     If find(fstat,1,3)
+        #--CPO 91057 Erreurs dans le programme TRTVENLIVV (Abréviations passées à FSTA...)
+       #GOK=0  : Call FSTA("STA") From GLOCK
+        GOK=0  : Call FSTA("SVV") From GLOCK
+        #--/
+        Goto AB_TRT1
+     Endif
+     Update [SVF] Where VCRTYP=2 & VCRNUM=[F:SDH]SDHNUM With VCRNUM=LNUM
+     If find(fstat,1,3)
+        #--CPO 91057 Erreurs dans le programme TRTVENLIVV (Abréviations passées à FSTA...)
+       #GOK=0  : Call FSTA("STA") From GLOCK
+        GOK=0  : Call FSTA("SVF") From GLOCK
+        #--/
+        Goto AB_TRT1
+     Endif
+     Update [PRH] Where SDHNUM=[F:SDH]SDHNUM With SDHNUM=LNUM
+     If find(fstat,1,3)
+        #--CPO 91057 Erreurs dans le programme TRTVENLIVV (Abréviations passées à FSTA...)
+       #GOK=0  : Call FSTA("STA") From GLOCK
+        GOK=0  : Call FSTA("PRH") From GLOCK
+        #--/
+        Goto AB_TRT1
+     Endif
+
+     # 78411 : Sage Exchange - Update SDH Num in table SEAUTH
+     Local Integer WRET
+     If func AFNC.ACTIV("SEPP") & func SEPPLIB.SEPP_DOC([F:SDH]PTE)
+        Call TRANSFER(4,[F:SDH]SDHNUM,4,LNUM,WRET) From SEPPLIB
+        If WRET : Raz GOK : Goto AB_TRT1 : Endif
+     Endif
+
+     # Bill of lading : 101090.sn
+     Update [BOLH] Where DOCNUM=[F:SDH]SDHNUM With DOCNUM=LNUM
+     If find(fstat,1,3)
+       GOK=0  : Call FSTA("BOLH") From GLOCK
+       Goto AB_TRT1
+     Endif
+     Update [BOLC] Where DOCNUMCON=[F:SDH]SDHNUM With DOCNUMCON=LNUM
+     If find(fstat,1,3)
+       GOK=0  : Call FSTA("BOLC") From GLOCK
+       Goto AB_TRT1
+     Endif
+     # 101090.en
+
+     For [SDD]SDD0 Where SDHNUM = [F:SDH]SDHNUM
+        If [F:SDD]SOHNUM <> ""
+            Readlock [SOQ]SOQ0=[F:SDD]SOHNUM;[F:SDD]SOPLIN;[F:SDD]SOQSEQ
+            If fstat=1
+               #--CPO 76661
+               #GOK=-1 : GLOCK="$SORDERQ"+SOHNUM+num$(SOPLIN)+num$(SOQSEQ) : Break
+               GOK=-1 : GLOCK="$SORDERQ"+[F:SDD]SOHNUM+num$([F:SDD]SOPLIN)+num$([F:SDD]SOQSEQ) : Break
+               #--CPO
+            Elsif fstat
+               #--CPO 76661 Suite erreur variable inexistante
+               #GOK=0  : Call RSTA("SOQ",SDHNUM-num$(SOPLIN)-num$(SOQSEQ)) From GLOCK : Break
+               GOK=0  : Call RSTA("SOQ",[F:SDD]SOHNUM-num$([F:SDD]SOPLIN)-num$([F:SDD]SOQSEQ)) From GLOCK : Break
+               #--CPO
+            Endif
+            [F:SOQ]SDHNUM=LNUM
+            Rewrite [SOQ]
+            If fstat
+               GOK=0 : Call FSTA("SOQ") From GLOCK
+               Break
+            Endif
+            Update [SOH] Where SOHNUM=[F:SOQ]SOHNUM & LASDLVNUM=[F:SDH]SDHNUM With LASDLVNUM=LNUM
+            If find(fstat,1,3)
+               GOK=0 : Call FSTA("SOH") From GLOCK
+               Break
+            Endif
+        Endif
+        [F:SDD]SDHNUM = LNUM
+        Rewrite [SDD]
+        If fstat
+           GOK=0 : Call FSTA("SDD") From GLOCK
+           Break
+        Endif
+     Next
+     If GOK=0  Goto AB_TRT1  Endif
+     If GOK=-1 Goto ROL_TRT1 Endif
+
+     For [SPH]SPH0 Where VCRTYP=4 & VCRNUM=[F:SDH]SDHNUM
+         #Readlock [SPH]SPH0=[F:SPH]VCRTYP;[F:SPH]VCRNUM;[F:SPH]PACSEQ #gbn-83395-Manque PACNUM
+         Readlock [SPH]SPH0=[F:SPH]VCRTYP;[F:SPH]VCRNUM;[F:SPH]PACNUM;[F:SPH]PACSEQ  #gbn-83395-Manque PACNUM
+         If fstat=1
+             GOK=-1 : GLOCK="$SPACK"+[F:SPH]VCRNUM+num$([F:SPH]PACSEQ) : Break
+         Elsif fstat
+             GOK=0  : Call RSTA("SPH",[F:SPH]VCRNUM-num$([F:SPH]PACSEQ)) From GLOCK : Break
+         Endif
+
+         For [SPD]SPD0 Where VCRTYP=4 & VCRNUM=[F:SDH]SDHNUM & PACSEQ=[F:SPH]PACSEQ
+             #Gbn983395-Mauvais éléments de lecture pour cet index.
+             #Readlock [SPD]SPD0=[F:SPD]VCRTYP;[F:SPD]VCRNUM;[F:SPD]PACSEQ;[F:SPD]VCRLIN;[F:SPD]VCRSEQ
+             Readlock [SPD]SPD0=[F:SPD]VCRTYP;[F:SPD]VCRNUM;[F:SPD]VCRLIN;[F:SPD]PACNUM;[F:SPD]PACIND;[F:SPD]PACSEQ;[F:SPD]VCRSEQ
+             If fstat=1
+                 # FGR 13/03/2015 : X3SUIVI104580 (début)
+                 #GOK=-1 : GLOCK="$SPACKD"+[F:SPD]VCRNUM+num$([F:SPD]PACSEQ)+num$([F:SPD]VCRLIN)+num$([F:SPD]VCRSEQ) : Break
+                 GOK=-1
+                 GLOCK="$SPACKD"+num$([F:SPD]VCRTYP)+[F:SPD]VCRNUM+num$([F:SPD]VCRLIN)+[F:SPD]PACNUM+num$([F:SPD]PACIND)+num$([F:SPD]PACSEQ)+num$([F:SPD]VCRSEQ)
+                 Break
+                 # FGR 13/03/2015 : X3SUIVI104580 (fin)
+             Elsif fstat
+                 # FGR 13/03/2015 : X3SUIVI104580 (début)
+                 #GOK=0  : Call RSTA("SPD",[F:SPD]VCRNUM-num$([F:SPD]PACSEQ)-num$([F:SPD]VCRLIN)-num$([F:SPD]VCRSEQ)) From GLOCK : Break
+                 GOK=0
+                 Call RSTA("SPD",num$([F:SPD]VCRTYP)+[F:SPD]VCRNUM+num$([F:SPD]VCRLIN)+[F:SPD]PACNUM+num$([F:SPD]PACIND)+num$([F:SPD]PACSEQ)+num$([F:SPD]VCRSEQ)) From GLOCK
+                 Break
+                 # FGR 13/03/2015 : X3SUIVI104580 (fin)
+             Endif
+             [F:SPD]VCRNUM=LNUM
+             Rewrite [SPD]
+             If fstat
+                 GOK=0 : Call FSTA("SPD") From GLOCK
+                 Break
+             Endif
+         Next
+
+         [F:SPH]VCRNUM = LNUM
+         Rewrite [SPH]
+         If fstat
+            GOK=0 : Call FSTA("SPH") From GLOCK
+            Break
+         Endif
+     Next
+     If GOK=0  Goto AB_TRT1  Endif
+     If GOK=-1 Goto ROL_TRT1 Endif
+
+     # 75115 : V7 : Extension of Digital Signature : New field delivery type
+     # Stockage du n°temporaire de la livraison
+     [F:SDH]TMPSDHNUM = [F:SDH]SDHNUM
+
+     [F:SDH]SDHNUM = LNUM
+     Rewrite [SDH]
+     If fstat
+        GOK=0 : Call FSTA("SDH") From GLOCK
+        Goto AB_TRT1
+     Endif
+     Readlock [SDH]SDH0 = LNUM
+     If fstat=1
+        GOK=-1 : GLOCK="$SDELIVERY"+SDHNUM : Goto ROL_TRT1
+     Elsif fstat
+        GOK=0  : Call RSTA("SDH",SDHNUM) From GLOCK : Goto AB_TRT1
+     Endif
+     #If clalev([M:SDH0])>0 [M:SDH0]SDHNUM = LNUM Endif   # FGR 26/01/2015 : X3SUIVI105701 pas une bonne idée de le mettre là. c'est tôt ça peut échouer ensuite
+   Endif                                         # FGR 05/04/2013 : X3SUIVI75115 : ajout de ce test
+Endif
+
+# Issue X3-69499 - 2018-02-14 by TS
+$FOR_SDD
+
+#-- traitement du détail livraison
+#For [SDD]SDD0 Where SDHNUM = [F:SDH]SDHNUM
+For [SDD] Where SDHNUM=[F:SDH]SDHNUM & LINCFMFLG<>2
+   # Validation par ligne
+   If GVALIDLIN=1
+      If WTRBEGIN=1 & WNBLINWIP>0
+         # Commit ou Rollback de la ligne précédente
+         If GOK=1
+            Commit
+         Else
+            Rollback
+         Endif
+         # Début de transaction de la ligne courant
+         Trbegin [SDD]
+         WTRBEGIN=1
+         GOK=1
+      Endif
+   Endif
+   # End issue X3-69499
+
+   #--- Issue X3-69499 verrue
+   # Verrue pour forcer la non validation de la deuxième ligne
+   #If GVALIDLIN=1 & ([F:SDD]SDDLIN=1000|[F:SDD]SDDLIN=3000)
+   #  Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+   #  Goto NEXT_SDD
+   #Endif
+   #---
+
+   # Réajustement date expé des lignes avec date expé entête
+   [F:SDD]SHIDAT = [F:SDH]SHIDAT
+
+   If [F:SDD]SOHNUM <> "" & [F:SDD]SOQSEQ <> 0
+      #-- maj détail commande
+      Gosub MAJ_SOQ
+      # Issue X3-69499 - 2018-02-14 by TS
+      #If GOK < 1 : Break : Endif
+      If GOK<1
+         If GVALIDLIN=1     : # Validation par ligne
+            If WNBLINWIP=0  : # Validation première ligne: interruption validation livraison
+               Break
+            Else            : # Sinon, passage à la ligne suivante
+               Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+               Goto NEXT_SDD
+            Endif
+         Else               : # Validation globale: interruption validation livraison
+            Break
+         Endif
+      Endif
+      # End issue X3-69499
+
+      #-- suppression encours
+      If [F:SDD]STOMGTCOD <> 1
+         Gosub ENCOURS
+         # Issue X3-69499 - 2018-02-14 by TS
+         #If GOK < 1 : Break : Endif
+         If GOK<1
+            If GVALIDLIN=1     : # Validation par ligne
+               If WNBLINWIP=0  : # Validation première ligne: interruption validation livraison
+                  Break
+               Else            : # Sinon, passage à la ligne suivante
+                  Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+                  Goto NEXT_SDD
+               Endif
+            Else               : # Validation globale: interruption validation livraison
+               Break
+            Endif
+         Endif
+         # End issue X3-69499
+
+         # v6 affectations
+         Gosub MAJ_MTO_SOQ From SALMTOLIB
+      Endif
+   Endif
+
+   # Issue X3-64479/73584 - 2019-11-19 by MUARN : task
+   If [F:SDD]VCRTYPORI = 40
+     Gosub MAJ_JTT
+     If GOK<1
+         If GVALIDLIN=1     : # Validation par ligne
+            If WNBLINWIP=0  : # Validation première ligne: interruption validation livraison
+               Break
+            Else            : # Sinon, passage à la ligne suivante
+               Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+               Goto NEXT_SDD
+            Endif
+         Else               : # Validation globale: interruption validation livraison
+            Break
+         Endif
+     Endif
+   Endif
+   # End issue X3-64479/73584
+
+   # Si livraison d'un besoin de réappro sous-traitance,
+   # suppression de celui-ci
+   If [F:SDH]SCO=2 & [F:SDH]BPCLOC<>"" & [F:SDD]VCRNUMORI=""
+      Readlock [REO]REO0=[F:SDH]STOFCY;[F:SDH]BPCLOC;[F:SDD]ITMREF
+      # Pas de test de fstat car on est pas sûr de trouver un STOREO
+      If !fstat
+         Delete [REO]
+      Endif
+   Endif
+
+   # Maj détail livraison
+   # Recalcul du prix de revient
+   Gosub MAJ_SDD
+   # Issue X3-69499 - 2018-02-14 by TS
+   #If GOK < 1 : Break : Endif
+   If GOK<1
+      If GVALIDLIN=1     : # Validation par ligne
+         If WNBLINWIP=0  : # Validation première ligne: interruption validation livraison
+            Break
+         Else            : # Sinon, passage à la ligne suivante
+            Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+            Goto NEXT_SDD
+         Endif
+      Else               : # Validation globale: interruption validation livraison
+         Break
+      Endif
+   Endif
+   # End issue X3-69499
+
+   # Bug 59587 : Import livraison validée facturée : Pas de maj des stocks (Import à des fins statistiques)
+   #--CPO 80936 Pb de non mise à jour du stock si INVFLG=0
+   If [F:SDD]STOMGTCOD <> 1 & [F:SDH]INVFLG<>2 :#[F:SDH]INVFLG=1
+      # Chargement écran travail pour interface maj stock
+      Gosub CHARGE_STW
+      # Interface pour la maj des stocks
+      Call ALISTOWORK(1,0,LQTA,LSHT,LNBR,LNBJ,LRET) From STKINT
+      If LRET=0
+         # La qté à livrer est différente de la qté allouée + rupture
+         If LQTA+LSHT <> [F:SDD]QTYSTU
+            Call ECR_TRACE([F:SDH]SDHNUM-[F:SDD]ITMREF+"\"+mess(255,192,1),1)
+&                          From GESECRAN
+            # Issue X3-69499 - 2018-02-14 by TS
+            #Raz GOK : Break
+            If GVALIDLIN=1     : # Validation par ligne
+               If WNBLINWIP=0  : # Validation première ligne: interruption validation livraison
+                  Raz GOK : Break
+               Else            : # Sinon, passage à la ligne suivante
+                  Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+                  Goto NEXT_SDD
+               Endif
+            Else               : # Validation globale: interruption validation livraison
+               Raz GOK : Break
+            Endif
+            # End issue X3-69499
+         Endif
+
+         # Point d'entrée pour intervenir sur la mise à jour des stocks
+         Raz GPE
+         GPOINT="CFMSTKMAJ" : Gosub ENTREE From EXEFNC
+
+         # Issue X3-51175 - 2017-08-04 by CPO : post a delivery with an analytic section inactive
+         #--before validation, we have to check analytical sections
+         #--Done after the GPOINT hence the possibity to be able to modify those values in the Entry point, if needed
+         #--/!\ Only warning message as the user can modify the values after the delivery beeing validated
+         #--Controling values loaded by ALISTOWORK into [M:STW] (future stock entries analytical sections)
+         #--all analytical values are identical for all stock lines associated to a delivery line, we only control first NBLIG value
+         If [M:STW]NBLIG>0
+           Local Char SAV_DEF_MSK(255) : SAV_DEF_MSK=dbgstr(1)
+           Default Mask [M:STW] #--as CTRL_CCE uses default [M] to access CCE properties...
+
+           nolign=1
+           For IJDIE = 1 To 20
+             If evalue("type([M:STW]CCE" + num$(IJDIE) + "(nolign-1)) >= 0") Then
+               SAXECTRL = evalue("[M:STW]CCE" + num$(IJDIE) + "(nolign-1)")
+               If SAXECTRL <> "" Then
+                 Raz mkstat
+                 Call CTRL_CCE(SAXECTRL, IJDIE, "", GFINRSP, [F:SDH]DLVDAT) From TRTX3CPT
+                 If mkstat Then
+                   GMESSAGE = mess(54,198,1)-[F:SDH]SDHNUM-mess(162,154,1)-[F:SDD]ITMREF-mess(574,197,1)-":"-mess(3,7784,1)-":"-GMESSAGE
+                   Call ECR_TRACE(GMESSAGE,-1) From GESECRAN
+                   Raz GMESSAGE : Raz mkstat
+                 Endif
+               Endif
+             Endif
+           Next
+           Default Mask SAV_DEF_MSK
+         Endif
+         # End issue X3-51175
+
+         If !GPE
+            # Mise à jour des stocks
+            Call MAJ_STOCK From STKMAJ
+         Endif
+         # Issue X3-69499 - 2018-02-14 by TS
+         #If GOK < 1 : Break : Endif
+         If GOK<1
+            If GVALIDLIN=1                  : # Validation par ligne
+               If WNBLINWIP=0 & WNBLINCFM=0 : # Validation première ligne: interruption validation livraison
+                  Break
+               Else            : # Sinon, passage à la ligne suivante
+                  Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+                  Goto NEXT_SDD
+               Endif
+            Else               : # Validation globale: interruption validation livraison
+               Break
+            Endif
+         Endif
+         # End issue X3-69499
+
+         # Si livraison d'un manquant sous-traitant,
+         # allocation de la matière sur l'emplacement sous-traitant
+         If find([F:SDD]VCRTYPORI,10,36) & [F:SDD]VCRNUMORI<>""
+            Gosub MAJ_ALL_SCO
+         #--- Bug 81161
+         # Si livraison d'une préparation issu d'un manquant sous-traitant,
+         # allocation de la matière sur l'emplacement sous-traitant
+         Elsif [F:SDD]VCRTYPORI=3 & [F:SDD]VCRNUMORI<>""
+            Read [PRE]PRE0=[F:SDD]VCRNUMORI;[F:SDD]VCRLINORI
+            If !fstat & find([F:PRE]ORITYPSCO,10,36) & [F:PRE]ORINUM<>""
+               Gosub MAJ_ALL_SCO
+            Endif
+         #---
+         Endif
+
+      Else
+         # Issue X3-69499 - 2018-02-14 by TS
+         #Raz GOK : Break
+         If GVALIDLIN=1     : # Validation par ligne
+            If WNBLINWIP=0  : # Validation première ligne: interruption validation livraison
+               Raz GOK : Break
+            Else            : # Sinon, passage à la ligne suivante
+               Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+               Goto NEXT_SDD
+            Endif
+         Else               : # Validation globale: interruption validation livraison
+            Raz GOK : Break
+         Endif
+         # End issue X3-69499
+      Endif
+   Else                                                                                      # hcb 86563
+      If clalev([M:SDH1]) <> 0  & [M:SDH1]BETFCY = 2                                         # hcb 87767
+         Call STKMAJITV([M:SDH1]PRHFCY,[F:SDD]ITMREF,2,[F:SDD]QTYSTU,1,LRET) From STKLIB     # hcb 86563
+         # Issue X3-69499 - 2018-02-14 by TS
+         #If LRET : GOK = 0 : Break : Endif                                                   # hcb 86563
+         If LRET
+            If GVALIDLIN=1     : # Validation par ligne
+               If WNBLINWIP=0  : # Validation première ligne: interruption validation livraison
+                  Raz GOK : Break
+               Else            : # Sinon, passage à la ligne suivante
+                  Call ECR_TRACE([F:SDD]SDHNUM-[F:SDD]ITMREF-mess(327,183,1)-mess(100,107,1),1) From GESECRAN
+                  Goto NEXT_SDD
+               Endif
+            Else               : # Validation globale: interruption validation livraison
+               Raz GOK : Break
+            Endif
+         Endif
+         # End issue X3-69499
+      Endif                                                                                  # hcb 86563
+   Endif
+
+   # Issue X3-69499 - 2018-02-14 By TS
+	 WNBLINWIP+=1
+   $NEXT_SDD
+   #---
+Next
+#--- Issue 69499 -2018-09-10 By TS
+#If GOK < 1 Goto AB_TRT1 Endif
+If GOK < 1
+  If GVALIDLIN=1
+    Rollback
+    Raz WTRBEGIN
+  Else
+    Goto AB_TRT1
+  Endif
+Endif
+#--- End issue 69499
+
+# Issue X3-69499 - 2018-02-14 By TS
+# Validation par ligne
+Raz WLIVPAR
+If GVALIDLIN=1
+  # Aucune ligne n'a été validée
+  If WNBLINWIP=0
+    Goto TRT1_FIN
+  # Si toute les lignes ne sont pas validées, il ne faut pas faire les majs finales
+  # sauf la réécriture de SDH pour récupérer les infos de transport
+  Elsif WNBLINCFM + WNBLINWIP < WNBLIN
+
+    If adxlog<>1 & WTRBEGIN=0
+       Trbegin [SDH]
+       WTRBEGIN=1
+       GOK=1
+    Endif
+
+    WLIVPAR=1
+    Call REWSDH From TRTVENLIV
+    If fstat : GOK=0 : Call FSTA("SDH") From GLOCK : Endif
+    If GOK < 1 Goto AB_TRT1 Endif
+    Goto TRT1_FIN
+  Endif
+Endif
+#---
+
+#-- mise à jour des mouvements client
+# Maj sf si livraison intra-société
+# Maj sf si livraison pour fsous-traitance (Bug 52920)
+
+# X3-1152 : Non invoiceable deliveries
+#If !([F:SDH]BETFCY=2 & [F:SDH]BETCPY<=1) & [F:SDH]SCO<>2
+If !([F:SDH]BETFCY=2 & [F:SDH]BETCPY<=1) & [F:SDH]SCO<>2
+& & [F:SDH]SDHCAT<>4
+# X3-1152 : Non invoiceable deliveries
+
+   Gosub MAJ_MVC
+   If GOK < 1 Goto AB_TRT1 Endif
+Endif
+
+#-- mise à jour entête livraison
+Gosub MAJ_SDH
+If GOK < 1 Goto AB_TRT1 Endif
+
+#-- suppression des enregistrements correspondants
+#-- de la liste de préparation s'il y en avait une
+Gosub MAJ_PRL
+If GOK < 1 Goto AB_TRT1 Endif
+
+#-- Maj des statistiques détails
+For [SDD]SDD0 Where SDHNUM = [F:SDH]SDHNUM
+    Call VALSTA("SDD",1) From SUBPS2
+    If GOK < 1 Break Endif
+Next
+If GOK<1 Goto AB_TRT1 Endif
+
+#-- Maj des statistiques entête
+Call VALSTA("SDH",1) From SUBPS2
+If GOK < 1 Goto AB_TRT1 Endif
+
+# BRBAN 08/07/2014 SAM #93745 US2
+If [L]PORDIGSIGN=1
+  If find([F:TSD]RECTYP,2,3,4)
+    If [F:SDH]MANDOC=''
+    Case GFONCTION
+      When "GESSDH"
+        GERR=1
+        If find([F:TSD]RECTYP,2,3)
+          GMESSAGE=mess(128,7711,1) #Should fill the manual/backup document number.
+        Else #4
+          GMESSAGE=mess(196,7711,1) #Should fill the manual document field with the external document number.
+        Endif
+        GOK = 0
+      When "FUNCFMDLV","FUNCFMDLV2"
+        If find([F:TSD]RECTYP,2,3)
+          Call ECR_TRACE(mess(128,7711,1),1) From GESECRAN #Should fill the manual/backup document number.
+        Else #4
+          Call ECR_TRACE(mess(196,7711,1),1) From GESECRAN #Should fill the manual document field with the external document number.
+        Endif
+        GOK = 0
+    Endcase
+    Endif
+  Endif
+  If GOK < 1 Goto AB_TRT1 Endif
+Endif
+
+# Pour mettre à jour des fichiers spécifiques
+GPOINT="CFMDLVMAJ" : Gosub ENTREE From EXEFNC
+If GOK < 1 Goto AB_TRT1 Endif
+
+# FGR 04/01/2011 : X3SUIVI70100 (début) c'est mieux dans la transaction
+# Si présence module Support Client, gestion du parc client
+#If GMODU(12)=2                                         : # Bug 84870 : Pas de gestion du parc si inter-site
+If GMODU(12)=2 & !([F:SDH]BETFCY=2 & [F:SDH]BETCPY<>2)  : # Bug 84870
+   Gosub TRT_MACRULE
+   If GOK < 1 Goto AB_TRT1 Endif  # ... et ajout de la gestion d'erreur
+Endif
+# FGR 04/01/2011 : X3SUIVI70100 (fin) c'est mieux dans la transaction
+
+#85785 * RMA
+If [L]PORDIGSIGN
+  Gosub DIGSIGN
+  If GOK < 1
+    GERR = 1
+    Goto AB_TRT1
+  Endif
+Endif
+
+# Issue X3-69499 - 2018-02-14 By TS
+$TRT1_FIN
+#---
+
+# FGR 26/01/2015 : X3SUIVI105701 (début) là c'est mieux
+  If dim(LNUM) > 0 Then
+    If clalev([M:SDH0]) > 0 Then
+      [M:SDH0]SDHNUM = LNUM
+    Endif
+  Endif
+# FGR 26/01/2015 : X3SUIVI105701 (fin)
+
+If WTRBEGIN=1 : Commit : Endif
+Return
+
+#-----------------------------------------------------------------------#
+#    Rollback                                                           #
+#-----------------------------------------------------------------------#
+#--> rollback + nouvelle tentative
+$ROL_TRT1
+# FGR 06/11/2009 : X3SUIVI58745 : tester WTRBEGIN
+#Rollback
+If WTRBEGIN = 1 Then
+  Rollback
+  Call ROLL From GLOCK
+  If   GROLL
+     #--  rollback suite à une erreur dans la transaction
+     Call ECR_TRACE(SDHNUM-mess(17,107,1),1)From GESECRAN
+     If GMESSAGE <> "" : Call ECR_TRACE(GMESSAGE,1) From GESECRAN : Endif #RMA * 85785
+  Else Goto TRT1
+  Endif
+Endif
+Return
+
+#--> rollback
+$AB_TRT1
+# FGR 06/11/2009 : X3SUIVI58745 : tester WTRBEGIN
+#Rollback
+If WTRBEGIN = 1 Then
+  Rollback
+Endif
+Call ECR_TRACE(SDHNUM-mess(17,107,1),1) From GESECRAN
+If GMESSAGE <> "" : Call ECR_TRACE(GMESSAGE,1) From GESECRAN : Endif #RMA * 85785
+Return
+
+#-----------------------------------------------------------------------#
+#    Allocation des matières livrées sur l'emplacement sous-traitant    #
+#-----------------------------------------------------------------------#
+$MAJ_ALL_SCO
+Local Decimal LSTOCOU
+Local Integer LRET
+Local Date    WRETDAT
+Local Decimal WTRTQTY          : # Qté restant à allouer sur OF/EO
+Local Decimal WMATQTY          : # Qté restant à allouer (initiale) sur OF/EO
+Local Decimal WSHTQTY          : # Qté en rupture (initiale) sur OF/EO
+Local Decimal WACTQTY, WQTYSTU : # Qtés à allouer en UA et US (origine mvt)
+Local Decimal WQTY             : # Qté allouée (résultante) sur OF/EO
+Local Decimal WDIMQTY          : # Qté en rupture à diminuer sur OF/EO
+Local Decimal WALL, WSHT
+Local Decimal WTOTALLQTY, WTOTSHTQTY
+Local Char    WSER(GLONSER)    : #--- Issue 110327
+
+#--- Bug 81161
+Local Char    WNUMORI
+Local Integer WLINORI, WSEQORI, WTYPORI
+If find([F:SDD]VCRTYPORI,10,36)
+   WTYPORI = [F:SDD]VCRTYPORI
+   WNUMORI = [F:SDD]VCRNUMORI
+   WLINORI = [F:SDD]VCRLINORI
+   WSEQORI = [F:SDD]VCRSEQORI
+Elsif [F:SDD]VCRTYPORI=3 & [F:SDD]VCRNUMORI<>""
+   WTYPORI = [F:PRE]ORITYPSCO
+   WNUMORI = [F:PRE]ORINUM
+   WLINORI = [F:PRE]ORILIN
+   WSEQORI = [F:PRE]ORISEQ
+Endif
+#---
+
+If !clalev([F:STJ1]) Local File STOJOU  [STJ1] Endif
+If !clalev([F:STO1]) Local File STOCK   [STO1] Endif
+If !clalev([F:SCM])  Local File SCOMAT  [SCM]  Endif
+If GMODU(8)=2
+   If !clalev([F:MFM]) Local File MFGMAT [MFM] Endif
+Endif
+
+Raz WTRTQTY, WMATQTY, WSHTQTY, WDIMQTY
+#--- Bug 81161
+#If [F:SDD]VCRTYPORI=10
+#   Read [MFM]MFM0=[F:SDD]VCRNUMORI;[F:SDD]VCRLINORI;[F:SDD]VCRSEQORI
+If WTYPORI=10
+   Read [MFM]MFM0=WNUMORI;WLINORI;WSEQORI
+#---
+   If !fstat
+      WMATQTY = [F:MFM]RETQTY-[F:MFM]USEQTY-[F:MFM]ALLQTY
+      WSHTQTY = [F:MFM]SHTQTY
+      WRETDAT = [F:MFM]RETDAT
+   Endif
+#--- Bug 81161
+#Elsif [F:SDD]VCRTYPORI=36
+#   Read [SCM]SCM0=[F:SDD]VCRNUMORI;[F:SDD]VCRLINORI;[F:SDD]VCRSEQORI
+Elsif WTYPORI=36
+   Read [SCM]SCM0=WNUMORI;WLINORI;WSEQORI
+#---
+   If !fstat
+      WMATQTY = [F:SCM]RETQTY-[F:SCM]USEQTY-[F:SCM]ALLQTY
+      WSHTQTY = [F:SCM]SHTQTY
+      WRETDAT = [F:SCM]DLVDAT
+   Endif
+Endif
+WTRTQTY = WMATQTY
+
+Raz WQTY
+# Recherche des mouvements d'entrée sur l'emplacement sous-traitant
+For [STJ1] Where STOFCY=[F:SDD]STOFCY & VCRTYP=4 & VCRNUM=[F:SDD]SDHNUM &
+&                VCRLIN=[F:SDD]SDDLIN & QTYSTU>0
+   # Recherche de la ligne de stock correspondante
+   #--- Issue 110327
+   If [F:ITM]SERMGTCOD=4
+      WSER=""
+   Else
+      WSER=[F:STJ1]SERNUM
+   Endif
+   # Remplacement de [F:STJ1]SERNUM par WSER dans appel à CLESTOFUN
+   #---
+   #--- Issue X3-53322 : ajout LPN
+   LSTOCOU = func STKLIB.CLESTOFUN([F:STJ1]STOFCY,[F:STJ1]ITMREF,[F:STJ1]LOT,
+&                                  [F:STJ1]SLO,[F:STJ1]PALNUM,[F:STJ1]CTRNUM,
+&                                  [F:STJ1]STA,[F:STJ1]LOC,[F:STJ1]PCU,
+&                                  [F:STJ1]PCUSTUCOE,WSER,
+&                                  [F:STJ1]QLYCTLDEM,[F:STJ1]OWNER,
+&                                  [F:STJ]STOFLD1,[F:STJ]STOFLD2,"STO1",[F:STJ]LPNNUM)
+   If LSTOCOU<>0
+      Read [STO1]STO0=[F:STJ1]STOFCY;LSTOCOU
+      If !fstat
+         # La qté matière restant à allouer est >= à la qté livrée
+         If WTRTQTY>=[F:STJ1]ACTQTY
+            WACTQTY = [F:STJ1]ACTQTY
+            WQTYSTU = [F:STJ1]QTYSTU
+         # La qté matière restant à allouer est > 0 et < à la qté livrée
+         Elsif WTRTQTY<[F:STJ1]ACTQTY & WTRTQTY>0
+            WACTQTY = WTRTQTY
+            #--- Bug 56621
+            #WQTYSTU = [F:STJ1]QTYSTU*[F:STJ1]ACTQTY/WTRTQTY
+            WQTYSTU = WACTQTY*[F:STJ1]QTYSTU/[F:STJ1]ACTQTY
+            #---
+         Endif
+         # Allocation de la matière sur l'emplacement sous-traitant
+         #--- Bug 81161
+#         Call CREALL(2,[F:STJ1]STOFCY,[F:STJ1]ITMREF,LSTOCOU,[0/0/0],
+#&                    WQTYSTU,WACTQTY,[F:SDD]VCRTYPORI,[F:SDD]VCRNUMORI,
+#&                    [F:SDD]VCRLINORI,[F:SDD]VCRSEQORI,"",WRETDAT,"","",
+#&                    "","","","",0,0,"","",[F:SDD]BPCORD,[F:SDD]BPAADD,2,LRET)
+#&                    From STKALL
+         #--- TS 106217 ajout paramètre LECC (avant dernier)
+         Call CREALL(2,[F:STJ1]STOFCY,[F:STJ1]ITMREF,LSTOCOU,[0/0/0],
+&                    WQTYSTU,WACTQTY,WTYPORI,WNUMORI,WLINORI,WSEQORI,
+&                    "",WRETDAT,"","","","","","",0,0,"","",[F:SDD]BPCORD,
+&                    [F:SDD]BPAADD,2,"",LRET) From STKALL
+         #---
+         If LRET=0
+            WQTY    += WACTQTY
+            WTRTQTY -= WACTQTY
+            If WTRTQTY<=0 : Break : Endif
+         Endif
+      Endif
+   Endif
+Next
+
+# Si la qté rupture initiale est > qté à allouée initiale - qté allouée
+# diminution de la qté rupture de cette diférence
+#--- Bug 81161
+#If [F:SDD]VCRTYPORI=10
+If WTYPORI=10
+#---
+   If WSHTQTY > WMATQTY-WQTY
+      WDIMQTY = WSHTQTY-(WMATQTY-WQTY)
+      #--- Bug 81161
+      #      Call DIMALL([F:SDD]VCRTYPORI,[F:SDD]VCRNUMORI,[F:SDD]VCRLINORI,[F:SDD]VCRSEQORI,
+      #&                 [F:SDD]ITMREF,2,WDIMQTY,WALL,WSHT,LRET) From STKALL
+      Call DIMALL(WTYPORI,WNUMORI,WLINORI,WSEQORI,[F:SDD]ITMREF,2,
+&                 WDIMQTY,WALL,WSHT,LRET) From STKALL
+      #---
+      If LRET=0
+         WDIMQTY = WSHT
+      Else
+         WDIMQTY = 0
+      Endif
+   Endif
+# La quantité rupture est décrémentée à la création, pas à la validation
+#--- Bug 81161
+#Elsif [F:SDD]VCRTYPORI=36
+Elsif WTYPORI=36
+#---
+   WDIMQTY=0
+Endif
+
+# GA 09/2006 il manque les maj de ALLSTA + statistiques sur [F:MFG], [F:SCO] => utiliser MAJALLMAT
+# Maj de la qté allouée dans l'OF ou l'EO
+#--- Bug 81161
+#If [F:SDD]VCRTYPORI=10
+If WTYPORI=10
+#---
+   WTOTALLQTY = [F:MFM]ALLQTY + WQTY
+   If [F:MFM]SHTQTY<>0 & WDIMQTY>0
+      WTOTSHTQTY = max(0,[F:MFM]SHTQTY-WDIMQTY)
+   Endif
+   #--- Bug 81161
+   #   Call MAJALLMAT([F:SDD]VCRNUMORI,[F:SDD]VCRLINORI,[F:SDD]VCRSEQORI,
+   #&                 [F:SDD]ITMREF,WTOTALLQTY,WTOTSHTQTY,2,LRET) From MFGALL
+   Call MAJALLMAT(WNUMORI,WLINORI,WSEQORI,[F:SDD]ITMREF,WTOTALLQTY,
+&                 WTOTSHTQTY,2,LRET) From MFGALL
+#Elsif [F:SDD]VCRTYPORI=36
+Elsif WTYPORI=36
+   #---
+   WTOTALLQTY = [F:SCM]ALLQTY + WQTY
+   #--- Bug 56621
+   #If [F:SCM]SHTQTY<>0 & WDIMQTY>0
+   #   WTOTSHTQTY = max(0,[F:SCM]SHTQTY-WDIMQTY)
+   #Endif
+   # Le manquant est maj à la création de la livraison --> pas d'évolution
+   WTOTSHTQTY = [F:SCM]SHTQTY
+   #---
+   # Maj de la quantité livrée
+   #--- Bug 81161
+   #Readlock [SCM]SCM0=[F:SDD]VCRNUMORI;[F:SDD]VCRLINORI;[F:SDD]VCRSEQORI
+   Readlock [SCM]SCM0=WNUMORI;WLINORI;WSEQORI
+   #---
+   If !fstat
+      [F:SCM]DLVQTY += [F:SDD]QTYSTU
+      Rewrite [SCM]
+   Endif
+   #--- Bug 81161
+   #   Call MAJALLMAT([F:SDD]VCRNUMORI,[F:SDD]VCRLINORI,[F:SDD]VCRSEQORI,
+   #&                 [F:SDD]ITMREF,WTOTALLQTY,WTOTSHTQTY,2,LRET) From SCOALL
+   Call MAJALLMAT(WNUMORI,WLINORI,WSEQORI,[F:SDD]ITMREF,WTOTALLQTY,
+&                 WTOTSHTQTY,2,LRET) From SCOALL
+   #---
+Endif
+
+Return
+
+#-----------------------------------------------------------------------#
+#    Mise a jour détail commande                                        #
+#-----------------------------------------------------------------------#
+$MAJ_SOQ
+#--> lock de la commande entière
+SYMBOLE2 = "SOH"+[F:SDD]SOHNUM
+Lock = SYMBOLE2 With lockwait=0
+If   fstat=1
+     GOK=-1
+     Call ECR_TRACE([F:SDD]SOHNUM-mess(10,100,1),1) From GESECRAN
+     Return
+Endif
+
+#--> décrémentation en-cours livraison et incrémentation livré
+Readlock [SOQ]SOQ0 = [F:SDD]SOHNUM; [F:SDD]SOPLIN; [F:SDD]SOQSEQ
+If   fstat
+     GOK=0
+     Call RSTA("SOQ",[F:SDD]SOHNUM-num$([F:SDD]SOPLIN)-num$([F:SDD]SOQSEQ)) From GLOCK
+     Return
+Endif
+
+If [F:SOQ]SOQSTA=3
+ #Gbn-Fq79837-On distingue livraison partielle + solde manuel et livraisons partielles qui soldent la commande
+ #If [F:SOQ]QTYSTU=[F:SOQ]ODLQTYSTU+[F:SOQ]DLVQTYSTU #Gbn-84615
+ If [F:SOQ]QTYSTU<=[F:SOQ]LPRQTYSTU+[F:SOQ]OPRQTYSTU+[F:SOQ]PREQTYSTU+[F:SOQ]ODLQTYSTU+[F:SOQ]DLVQTYSTU
+   #WMOINSSTU = min(0,[F:SDD]QTYSTU,[F:SOQ]QTYSTU-[F:SOQ]DLVQTYSTU)
+    WMOINSSTU = min([F:SDD]QTYSTU,max(0,[F:SOQ]QTYSTU-[F:SOQ]DLVQTYSTU)) #Gbn-84615
+ Else
+   #Gbn-Fq84615-Gbn
+   Local Decimal LCLOQTYSTU # Closed quantity for the current order line
+   #LCLOQTYSTU=max(0,[F:SOQ]QTYSTU-([F:SOQ]LPRQTYSTU+[F:SOQ]OPRQTYSTU+[F:SOQ]PREQTYSTU+[F:SOQ]ODLQTYSTU+[F:SOQ]DLVQTYSTU))
+   LCLOQTYSTU=min([F:SOQ]QTYSTU,([F:SOQ]LPRQTYSTU+[F:SOQ]OPRQTYSTU+[F:SOQ]PREQTYSTU+[F:SOQ]ODLQTYSTU+[F:SOQ]DLVQTYSTU))
+   WMOINSSTU=min(LCLOQTYSTU,[F:SDD]QTYSTU)
+ Endif
+Else
+   WMOINSSTU = min([F:SDD]QTYSTU,[F:SOQ]QTYSTU-[F:SOQ]DLVQTYSTU)
+Endif
+
+[F:SOQ]ODLQTY    -= [F:SDD]QTY
+[F:SOQ]ODLQTYSTU -= [F:SDD]QTYSTU
+[F:SOQ]DLVQTY    += [F:SDD]QTY
+[F:SOQ]DLVQTYSTU += [F:SDD]QTYSTU
+
+Rewrite [SOQ]
+If fstat : GOK=0 : Call FSTA("SOQ") From GLOCK : Goto AB_TRT1 : Endif
+Unlock =SYMBOLE2
+
+# Si commande sold��e et c'est la dernière livraison --> solde de l'en-cours
+#If [F:SOQ]SOQSTA=3 & [F:SOQ]ODLQTYSTU=0
+#   WMOINSSTU += max(0,[F:SOQ]QTYSTU-[F:SOQ]DLVQTYSTU)
+#Endif
+
+# Maj de l'en-cde client dans les mouvements article
+# --> Si cde signée ou Si paramètre maj encours article cde non signée à Oui
+# --> Si article géré en stock
+If [F:SOH]SOHNUM<>[F:SDD]SOHNUM | [F:SOH]APPFLG=0 : #-- X3Suivi 86293
+    Read [SOH]SOH0 =[F:SDD]SOHNUM
+    If fstat
+        GOK=0
+        Call RSTA("SOH", [F:SDD]SOHNUM) From GLOCK
+        Return
+    Endif
+Endif
+
+If ([F:SOH]APPFLG>2 | GSOHAPPORD=2) & [F:SDD]STOMGTCOD <> 1
+   Call MAJITVVEN([F:SOQ]ITMREF,[F:SOQ]STOFCY,WMOINSSTU,"-","S",WRET) From TRTVENMAJ
+   If GOK < 1 Return Endif
+Endif
+#--------------
+
+Return
+
+# Issue X3-64479/73584 - 2019-11-19 by MUARN : task
+$MAJ_JTT
+Local Integer IPJMRET
+If dim(ZTECALLITM) < 0 Then
+  Local Instance ZTECALLITM Using C_TECALLITM
+Endif
+If ZTECALLITM = null Then
+  ZTECALLITM = NewInstance C_TECALLITM AllocGroup null
+Endif
+
+# COMMENTS TO EXPLAIN
+#    IPJMRET = fmet ZTECALLITM.SAL_ADD_LINE([F:SDD]PJT, [F:SDD]ITMREF, [F:SDD]STU,
+#&                                          ([F:SDD]QTYSTU * SIGN),   # Delivered qty when delivery NOT validated
+#&                                          ([F:SDD]QTYSTU * SIGN))   # Delivered qty when delivery validated
+#&                                          ([F:SDD]OALQTYSTU * SIGN) # Order qty alloc. STU
+#&                                         )
+
+Local Decimal NODLQTY
+Local Decimal DLVQTY
+
+NODLQTY = [F:SDD]QTYSTU * -1
+DLVQTY = [F:SDD]QTYSTU
+
+IPJMRET = fmet ZTECALLITM.SAL_ADD_LINE([F:SDD]PJT, [F:SDD]ITMREF, [F:SDD]STU, NODLQTY, DLVQTY, 0)
+
+Gosub PJM_TECALLITM From SUBSDHA
+If GOK < 1 : Return : Endif
+
+Return
+
+#-----------------------------------------------------------------------#
+#    Suppression de l'encours                                           #
+#-----------------------------------------------------------------------#
+$ENCOURS
+#-- suppression encours si ligne cde soldée
+Local  Char     WPJT(20), WSALFCY(GLONFCY), WTRTORD
+Local  Decimal  WCPLQTY
+
+If !clalev ([F:SOH]) Local File SORDER [SOH] Endif
+If [F:SOH]SOHNUM<>[F:SDD]SOHNUM
+    Read [SOH]SOH0 =[F:SDD]SOHNUM
+    If fstat
+        GOK=0
+        Call RSTA("SOH", [F:SDD]SOHNUM) From GLOCK
+        Return
+    Endif
+Endif
+
+#WCPLQTY = [F:SOQ]ODLQTYSTU + [F:SOQ]DLVQTYSTU
+WCPLQTY = [F:SOQ]DLVQTYSTU
+
+WTRTORD = "M"
+
+## Gestion des signatures : Si la cde n'est pas si signée et pas de maj des encours si cde non signée
+## Qté prévue = Reste à livrer et non la qté cdée
+#If [F:SOH]APPFLG=1 & GSOHAPPORD=1 WTRTORD = "S" Endif
+
+# Si ligne soldée et il n'y a plus d'en-cours de livraison
+If [F:SOQ]SOQSTA = 3 & [F:SOQ]ODLQTYSTU = 0
+   WTRTORD = "A"
+Endif
+
+Gosub APPELWIP From TRTVENMAJ
+If GOK < 1 Return Endif
+Return
+
+#-----------------------------------------------------------------------#
+# Chargement écran travail pour interface maj stock                     #
+#-----------------------------------------------------------------------#
+$CHARGE_STW
+
+Raz [M:STW]
+[M:STW]STOFCY    = [F:SDH]STOFCY
+[M:STW]TRSTYP    = 4
+If [F:SDH]LND=2
+   [M:STW]TRSTYP = 17
+Elsif [F:SDH]SCO=2
+   [M:STW]TRSTYP = 20
+Endif
+[M:STW]VCRTYP    = 4
+[M:STW]VCRNUM    = [F:SDH]SDHNUM
+[M:STW]VCRLIN    = [F:SDD]SDDLIN
+[M:STW]ITMREF    = [F:SDD]ITMREF
+[M:STW]MVTDES    = ""            : # Contenu dans l'allocation
+[M:STW]BPRNUM    = [F:SDH]BPCORD
+[M:STW]BPAADD    = [F:SDH]BPAADD
+[M:STW]CUR       = [F:SDH]CUR
+[M:STW]ENTCOD    = [F:SDH]ENTCOD
+[M:STW]CCECOD    = "STKLIV"
+#--- Issue X3-118317
+#[M:STW]PJT       = [F:SDH]PJT
+[M:STW]PJT       = [F:SDD]PJT
+#---
+[M:STW]TRSFAM    = [F:SDH]TRSFAM
+[M:STW]TRSCOD    = [F:SDH]TRSCOD
+[M:STW]IPTDAT    = [F:SDH]SHIDAT
+# Inter-sites
+If [F:SDH]BETFCY=2
+   [M:STW]TRFFCY = [F:SDH]PRHFCY
+   [M:STW]BETCPY = [F:SDH]BETCPY
+Else
+   [M:STW]TRFFCY = ""
+   [M:STW]BETCPY = 1
+Endif
+# Emplacement prêt ou sous-traitance
+If find([M:STW]TRSTYP,17,20)
+   [M:STW]LOCENT = [F:SDH]BPCLOC
+Else
+   Raz [M:STW]LOCENT
+Endif
+# Livraison pour sous-traitance
+If [F:SDH]SCO=2
+   If [F:SDD]VCRNUMORI<>""
+      [M:STW]VCRTYPORI = [F:SDD]VCRTYPORI
+      [M:STW]VCRNUMORI = [F:SDD]VCRNUMORI
+      [M:STW]VCRLINORI = [F:SDD]VCRLINORI
+      [M:STW]VCRSEQORI = [F:SDD]VCRSEQORI
+   Else
+      [M:STW]VCRTYPORI = 0
+      [M:STW]VCRNUMORI = ""
+      [M:STW]VCRLINORI = 0
+      [M:STW]VCRSEQORI = 0
+   Endif
+# Livraison de commande
+Elsif [F:SDD]SOHNUM<>""
+   [M:STW]VCRTYPORI = 2
+   [M:STW]VCRNUMORI = [F:SDD]SOHNUM
+   [M:STW]VCRLINORI = [F:SDD]SOPLIN
+   [M:STW]VCRSEQORI = [F:SDD]SOQSEQ
+Else
+   [M:STW]VCRTYPORI = 0
+   [M:STW]VCRNUMORI = ""
+   [M:STW]VCRLINORI = 0
+   [M:STW]VCRSEQORI = 0
+Endif
+[M:STW]PRIORDH   = 0
+[M:STW]PRIPUR    = 0
+[M:STW]SEQ       = 0
+
+Return
+
+# Bug 80451 : PE CALPFM1 non appelé
+#-----------------------------------------------------------------------#
+#    Mise à jour détail livraison                                       #
+#    --> Recalcul du prix de revient et de la marge                     #
+#-----------------------------------------------------------------------#
+#$MAJ_SDD
+## Article non géré en stock
+#If [F:SDD]STOMGTCOD<2 Goto MAJ_SDD_SUI Endif
+## Bug 43723 : Calcul du prix de revient pour les gratuits
+##If [F:SDD]NETPRI = 0 & [F:SDD]FOCFLG = 3 Goto MAJ_SDD_SUI  Endif
+#
+#Local Decimal COUTHT, COUTHTC, COEF, WQTY
+#Local Integer LOK, WNATPRI
+#
+#If [F:ITM]ITMREF <> [F:SDD]ITMREF
+#   Read [ITM]ITM0 = [F:SDD]ITMREF
+#   If fstat
+#     GOK=0
+#     Call RSTA("ITM", [F:SDD]ITMREF) From GLOCK
+#     Return
+#   Endif
+#Endif
+#If [F:ITS]ITMREF <> [F:SDD]ITMREF
+#   Read [ITS]ITS0 = [F:SDD]ITMREF
+#   If fstat
+#     GOK=0
+#     Call RSTA("ITS", [F:SDD]ITMREF) From GLOCK
+#     Return
+#   Endif
+#Endif
+#WQTY   = [F:SDD]QTYSTU
+## Recalcul du prix de revient
+## --> Si article géré en stock : recalcul
+#Call DEFCPR ([F:SDD]ITMREF,[F:SDH]STOFCY,4,[F:SDH]SDHNUM,[F:SDD]SDDLIN,-1,
+#&            [F:SDH]SHIDAT,WQTY,COUTHT,LOK) From STKVAL
+#If LOK <> 0
+##   Pas de récup du prix de revient donc pas de recalcul de la marge
+#    Return
+#Else
+#    # Si devise document <> devise base calcul marge (société du site expé)
+#    If [F:SDH]CUR <> GLOCALDEV & COUTHT <> 0
+#        Local Integer STAT
+#        Call CONVERT (GLOCALDEV, [F:SDH]CUR, GLOCALDEV, [F:SDH]CHGTYP, [F:SDH]SHIDAT, COUTHT, COUTHTC, STAT) From TRTDEV
+#        COUTHT=COUTHTC
+#    Endif
+#    # Si Prix de revient récupéré à 0 : S'il était renseigné on ne fait rien
+#    If COUTHT = 0 & [F:SDD]CPRPRI <> 0
+#        Return
+#    Else
+#        # Le prix de revient est exprimé en US : Le convertir en UV
+#        COUTHT=COUTHT*[F:SDD]SAUSTUCOE
+#    Endif
+#Endif
+#Gosub CALSPEPFM From TRTVENPRI
+#Readlock [SDD] Curr
+#If   fstat
+#    GOK=0
+#    Call RSTA("SDD", [F:SDD]SDHNUM-num$([F:SDD]SDDLIN)) From GLOCK
+#    Return
+#Endif
+##[F:SDD]CPRPRI=arr(COUTHT,10^-GDECPRI)
+#If GSALRND = 2
+#    Call ARRDEV(COUTHT,[F:SDH]CUR) From TRTDIV
+#    [F:SDD]CPRPRI=COUTHT
+#Else
+#    [F:SDD]CPRPRI=arr(COUTHT,10^-GDECPRI)
+#Endif
+#
+## Pas de calcul de marge pour les gratuits
+#If [F:SDD]NETPRI<>0 | [F:SDD]FOCFLG<>3
+#    # Calcul de marge pour les articles vendus ou les articles livrables ayant un prix net
+#    If [F:ITM]SALFLG=2 | ([F:ITM]SALFLG=1 & [F:SDD]NETPRINOT<>0)
+#        # --> Calcul de la marge
+#        [F:SDD]PFM = [F:SDD]NETPRINOT - [F:SDD]CPRPRI
+#        #Call ARRDEV([F:SDD]PFM,[F:SDH]CUR) From TRTDIV
+#    Endif
+#Endif
+#
+#$MAJ_SDD_SUI
+#[F:SDD]SHIDAT = [F:SDH]SHIDAT
+#Call REWSDD From TRTVENLIV    : # Bug 70034
+#If fstat : GOK=0 : Call FSTA("SDD") From GLOCK : Return : Endif
+#Return
+
+#-----------------------------------------------------------------------#
+#    Mise à jour détail livraison                                       #
+#    --> Recalcul du prix de revient et de la marge                     #
+#-----------------------------------------------------------------------#
+$MAJ_SDD
+# Article non géré en stock
+If [F:SDD]STOMGTCOD<2 Goto MAJ_SDD_SUI Endif
+# Bug 43723 : Calcul du prix de revient pour les gratuits
+#If [F:SDD]NETPRI = 0 & [F:SDD]FOCFLG = 3 Goto MAJ_SDD_SUI  Endif
+
+Local Decimal COUTHT, COUTHTC, COEF, WQTY
+Local Integer LOK, WNATPRI
+
+Local Decimal PHTNET              : # 95792 : Variable inexistante dans PE CALPFM
+Local Decimal XCRPPRI, XPFM
+
+If [F:ITM]ITMREF <> [F:SDD]ITMREF
+   Read [ITM]ITM0 = [F:SDD]ITMREF
+   If fstat
+     GOK=0
+     Call RSTA("ITM", [F:SDD]ITMREF) From GLOCK
+     Return
+   Endif
+Endif
+If [F:ITS]ITMREF <> [F:SDD]ITMREF
+   Read [ITS]ITS0 = [F:SDD]ITMREF
+   If fstat
+     GOK=0
+     Call RSTA("ITS", [F:SDD]ITMREF) From GLOCK
+     Return
+   Endif
+Endif
+
+XCPRPRI  = [F:SDD]CPRPRI
+XPFM     = [F:SDD]PFM
+PHTNET   = [F:SDD]NETPRINOT       : # 95792 : Variable inexistante dans PE CALPFM
+
+WQTY   = [F:SDD]QTYSTU
+# Recalcul du prix de revient
+Call DEFCPR ([F:SDD]ITMREF,[F:SDH]STOFCY,4,[F:SDH]SDHNUM,[F:SDD]SDDLIN,-1,
+&            [F:SDH]SHIDAT,WQTY,COUTHT,LOK) From STKVAL
+If LOK = 0
+    # Si devise document <> devise base calcul marge (société du site expé)
+    If [F:SDH]CUR <> GLOCALDEV & COUTHT <> 0
+        Local Integer STAT
+        # Issue X3-98052
+        # No rounding, to be consistent with what is done in TRTVENPRI
+        #Call CONVERT (GLOCALDEV, [F:SDH]CUR, GLOCALDEV, [F:SDH]CHGTYP, [F:SDH]SHIDAT, COUTHT, COUTHTC, STAT) From TRTDEV
+        Call CONVERT2(GLOCALDEV, [F:SDH]CUR, GLOCALDEV, [F:SDH]CHGTYP, [F:SDH]SHIDAT, COUTHT, COUTHTC, STAT) From TRTDEV
+        # End issue X3-98052
+        COUTHT=COUTHTC
+    Endif
+    If COUTHT <> 0 | [F:SDD]CPRPRI = 0
+        # Le prix de revient est exprimé en US : Le convertir en UV
+        COUTHT=COUTHT*[F:SDD]SAUSTUCOE
+
+        #  Point d'entree calcul d'un cout supplémentaire pour le calcul de la marge
+        Gosub CALSPEPFM From TRTVENPRI
+
+        If GSALRND = 2
+            Call ARRDEV(COUTHT,[F:SDH]CUR) From TRTDIV
+            XCPRPRI=COUTHT
+        Else
+            XCPRPRI=arr(COUTHT,10^-GDECPRI)
+        Endif
+        # Pas de calcul de marge pour les gratuits
+        If [F:SDD]NETPRI<>0 | [F:SDD]FOCFLG<>3
+            # Calcul de marge pour les articles vendus ou les articles livrables ayant un prix net
+            If [F:ITM]SALFLG=2 | ([F:ITM]SALFLG=1 & [F:SDD]NETPRINOT<>0)
+                # --> Calcul de la marge
+                XPFM = [F:SDD]NETPRINOT - XCPRPRI
+            Endif
+        Endif
+    Else
+        # Si Prix de revient récupéré à 0 : S'il était renseigné on ne fait rien
+    Endif
+Endif
+
+# Point d'entree pour recalcul de la marge
+Gosub CALSPEPFM1 From TRTVENPRI
+
+Readlock [SDD] Curr
+If   fstat
+      GOK=0
+      Call RSTA("SDD", [F:SDD]SDHNUM-num$([F:SDD]SDDLIN)) From GLOCK
+      Return
+Endif
+
+[F:SDD]CPRPRI= XCPRPRI
+[F:SDD]PFM   = XPFM
+
+$MAJ_SDD_SUI
+# Issue X3-69499 - 2018-02-14 by TS
+[F:SDD]LINCFMFLG = 2
+#---
+[F:SDD]SHIDAT = [F:SDH]SHIDAT
+Call REWSDD From TRTVENLIV    : # Bug 70034
+If fstat : GOK=0 : Call FSTA("SDD") From GLOCK : Return : Endif
+Return
+# Bug 80451
+
+
+#-----------------------------------------------------------------------#
+#    Mise a jour mouvement client                                       #
+#-----------------------------------------------------------------------#
+$MAJ_MVC
+# --> maj mouvement client (diminution en-cours livraison)
+Call  MAJMVC ([F:SDH]BPCORD, [F:SDH]CUR, [F:SDH]CHGTYP, 0, [F:SDH]SHIDAT, [F:SDH]SDHNUM, [F:SDH]SALFCY,
+&   0, [F:SDH]DLVATI, "-", "O", "", [F:SDH]LND) From TRTBPMVT
+If GOK < 1 Return Endif
+
+# --> maj mouvement client (augmentation livré)
+Call  MAJMVC ([F:SDH]BPCORD, [F:SDH]CUR, [F:SDH]CHGTYP, 0, [F:SDH]SHIDAT, [F:SDH]SDHNUM, [F:SDH]SALFCY,
+&   0, [F:SDH]DLVATI, "+", "D", "V", [F:SDH]LND) From TRTBPMVT
+If GOK < 1 Return Endif
+Return
+
+#-----------------------------------------------------------------------#
+#    Mise a jour entête livraison                                       #
+#-----------------------------------------------------------------------#
+$MAJ_SDH
+#--> position du status validé à OUI
+[F:SDH]CFMFLG = 2
+
+Call REWSDH From TRTVENLIV    : # Bug 70034
+If fstat : GOK=0 : Call FSTA("SDH") From GLOCK : Return : Endif
+Return
+
+#-----------------------------------------------------------------------#
+#    Mise a jour de la liste de préparation                             #
+#-----------------------------------------------------------------------#
+$MAJ_PRL
+#--> Recherche des BP à l'origine de la livraison
+For [PRH]PRH3 Where SDHNUM=[F:SDH]SDHNUM
+   #--> Suppression des enregistrements liste prépa de ce BP
+   Delete [PRL] Where PRHNUM=[F:PRH]PRHNUM
+Next
+Return
+
+#----------------------------------------------------------------------------------#
+#   Livraison de sous-traitance : Régularisation des OF                            #
+#----------------------------------------------------------------------------------#
+$REGUL_MFGMAT
+
+If !clalev([F:STJ2]) : Local File STOJOU  [STJ2] : Endif
+#-- Relecture des détails livraison
+For [SDD]SDD0 Where SDHNUM=[F:SDH]SDHNUM
+    # Régularisation des mouvements et manquants
+    Call REGFROMENT(1,"STJ2","VCRTYP=4&VCRNUM=[F:SDH]SDHNUM&VCRLIN=[F:SDD]SDDLIN",
+&                   "ITMREF",[F:SDH]STOFCY) From TRTSHTCOM
+Next
+Return
+
+##########################################################################################
+#---------------------------------------#
+#   Gestion du parc client              #
+#---------------------------------------#
+$TRT_MACRULE
+Local Integer I, WTYP, WERR
+Local Char    WSERNUM(GLONSER), WSERNUMF(GLONSER)
+
+  Raz WRET
+  If !clalev ([M:MACW]) : Local Mask MACW [MACW] : Endif
+  If !clalev([F:CCV8]) : Local File CONTCOV [CCV8] : Endif # FGR 28/10/2015 : X3SUIVI112034
+  #
+  For [SDD]SDD0 Where SDHNUM=[F:SDH]SDHNUM
+    If [F:ITM]ITMREF <> [F:SDD]ITMREF Then
+      Read [ITM]ITM0 = [F:SDD]ITMREF
+      If fstat Then
+        Raz [F:ITM]
+      Endif
+    Endif
+    If [F:SDD]SAUSTUCOE = 0 Then
+      [F:SDD]SAUSTUCOE = 1
+    Endif
+    If [F:SDH]LND = 2 Then
+      WTYP = 4
+    Else
+      WTYP = 2
+    Endif
+    If [F:ITM]SERMGTCOD < 2 Then
+      # Pas de gestion des no série
+      Gosub CHARGE_MACW
+      # Appel au composant d'intégration
+      Call MACRULE(WTYP, [F:SDH]BPCORD, WRET) From TRTMACRULE
+      If WRET Then
+        Gosub ERR_MACRULE
+        Break                           # FGR 04/01/2011 : X3SUIVI70100
+      Endif
+    Else
+      # Gestion des no séries
+      For [STJ]STJ1 Where STOFCY=[F:SDH]STOFCY and VCRTYP=4 and VCRNUM=[F:SDD]SDHNUM
+&                     and VCRLIN=[F:SDD]SDDLIN and REGFLG<>2 and QTYSTU<0
+        # No série géré en sortie
+        If [F:ITM]SERMGTCOD = 2 Then
+          WSERNUM = [F:STJ]SERNUM
+          Gosub CHARGE_MACW
+          # Appel au composant d'intégration
+          Call MACRULE(WTYP, [F:SDH]BPCORD, WRET) From TRTMACRULE
+          If WRET Then
+            Gosub ERR_MACRULE
+            Break                       # FGR 04/01/2011 : X3SUIVI70100
+          Elsif abs([F:STJ]QTYSTU) >= 2 Then
+            For I=2 To abs(int([F:STJ]QTYSTU))
+              Call PLUS_UN(WSERNUM, WSERNUMF, WRET) From STKLIB
+              If WRET Break Endif
+              WSERNUM = WSERNUMF
+              Gosub CHARGE_MACW
+              # Appel au composant d'intégration
+              Call MACRULE(WTYP, [F:SDH]BPCORD, WRET) From TRTMACRULE
+              If WRET Then
+                Gosub ERR_MACRULE
+                Break
+              Endif
+            Next I
+            If WRET Then                # FGR 04/01/2011 : X3SUIVI70100
+              Break
+            Endif
+          Endif
+        Else
+          WSERNUM = [F:STJ]SERNUM
+          Gosub CHARGE_MACW
+          # Appel au composant d'intégration
+          Call MACRULE(WTYP, [F:SDH]BPCORD, WRET) From TRTMACRULE
+          If WRET Then
+            Gosub ERR_MACRULE
+            Break                       # FGR 04/01/2011 : X3SUIVI70100
+          Endif
+        Endif
+      Next
+      If WRET Then                      # FGR 04/01/2011 : X3SUIVI70100
+        Break
+      Endif
+    Endif
+  Next
+Return
+
+##########################################################################################
+# Traitement des erreurs
+$ERR_MACRULE
+  GOK = 0                               # FGR 04/01/2011 : X3SUIVI70100
+  If WERR = 0 Then
+    Call ECR_TRACE (mess(90,182,2),0) From GESECRAN
+    WERR = 1
+  Endif
+  If WSERNUM = "" Then
+    Call ECR_TRACE ([F:SDD]ITMREF-":"-mess(WRET,182,2),0) From GESECRAN
+  Else
+    Call ECR_TRACE ([F:SDD]ITMREF-WSERNUM-":"-mess(WRET,182,2),0) From GESECRAN
+  Endif
+Return
+
+##########################################################################################
+# Chargement du masque [MACW]
+$CHARGE_MACW
+  Raz [M:MACW]
+  [M:MACW]MACPDTCOD  = [F:SDD]ITMREF
+  [M:MACW]MACORIVCR  = [F:SDD]SDHNUM
+  [M:MACW]MACORIVCRL = [F:SDD]SDDLIN
+  #
+  [M:MACW]SALFCY     = [F:SDH]SALFCY # FGR 19/11/2010 : X3SUIVI69227 : ici c'est mieux
+  # FGR 16/06/2008 : X3SUIVI48039 Déduire la société du site ... (début)
+  If clalev ([F:FCY])<=0 Local File FACILITY [FCY] : Endif
+  If [M:MACW]SALFCY <> "" Then
+    # Déduit le code société
+    Read [FCY]FCY0=[M:MACW]SALFCY
+    If !fstat Then
+      [M:MACW]CPY = [F:FCY]LEGCPY
+    Endif
+  Endif
+  # FGR 16/06/2008 : X3SUIVI48039 Déduire la société du site (fin)
+  #
+  #[M:MACW]SALFCY     = [F:SDH]SALFCY # FGR 19/11/2010 : X3SUIVI69227 : C'est un peu tard !
+  If [F:SDH]LND <> 2 Then
+   [M:MACW]CUR        = [F:SDH]CUR
+   # FGR 28/08/2012 : X3SUIVI82665 (début)
+   #[M:MACW]MACSALPRI  = [F:SDD]NETPRINOT  # FGR 02/11/2011 : X3SUIVI77136 : on ne divise pas le parc #/[F:SDD]SAUSTUCOE
+   # FGR 28/08/2012 : X3SUIVI82665 (fin)
+   [M:MACW]MACPURDAT  = [F:SDH]SHIDAT
+   [M:MACW]FCYITN     = [F:SDH]BPAADD
+  Else
+   [M:MACW]MACITNDAT  = [F:SDH]SHIDAT
+  Endif
+  If [F:ITM]SERMGTCOD < 2 Then
+   [M:MACW]MACQTY     = [F:SDD]QTYSTU
+   # FGR 28/08/2012 : X3SUIVI82665 (début)
+   If [F:SDH]LND <> 2 Then
+     [M:MACW]MACSALPRI  = [F:SDD]NETPRINOT * [F:SDD]QTY
+     Call ARRDEV([M:MACW]MACSALPRI, [M:MACW]CUR) From TRTDIV
+   Endif
+   # FGR 28/08/2012 : X3SUIVI82665 (fin)
+  Else
+   [M:MACW]MACQTY     = 1
+   [M:MACW]MACSERNUM  = WSERNUM
+   # FGR 28/08/2012 : X3SUIVI82665 (début)
+   If [F:SDH]LND <> 2 Then
+     [M:MACW]MACSALPRI  = arr([F:SDD]NETPRINOT / [F:SDD]SAUSTUCOE,10^-GDECPRI)
+     Call ARRDEV([M:MACW]MACSALPRI, [M:MACW]CUR) From TRTDIV
+   Endif
+   # FGR 28/08/2012 : X3SUIVI82665 (fin)
+  Endif
+
+  [M:MACW]VACBPR = [F:SDH]VACBPR       # Issue X3-68002 - 2018-02-22 by FGR
+
+  # FGR 12/11/2009 : X3SUIVI56282 (début)
+  Local Char SZMACWCNT(GLONDES)
+  Local Char SZMACWPRE(GLONDES)
+
+  SZMACWCNT = "TRTVENLIVV"
+  SZMACWPRE = ""
+  Gosub PE_MACWAUTO From TRTCRMPE
+  # FGR 12/11/2009 : X3SUIVI56282 (fin)
+Return
+######################################################################
+######################################################################
+$DIGSIGN
+#85785
+Local Char CURTIM          : [L]CURTIM = time$
+Local Date CURDAT          : [L]CURDAT = date$
+Local Char MESSTOSIGN(250)
+
+[L]MESSTOSIGN = format$("D:YYYY[-]MM[-]DD",[F:SDH]SHIDAT) + ";" + format$("D:YYYY[-]MM[-]DD",[L]CURDAT) + "T" + [L]CURTIM + ";" + [F:SDH]SDHTYP-[F:SDH]SDHNUM + ";" +
+& ctrans(vireblc(format$("N20.2",[F:SDH]DLVINVATIL),4),",",".") + ";"
+#NUM, VCRTYP, TYP, MESTOSIGN, ANM, DATDOC, LASDAT, TIM, ISEXTDOC, RETVAL
+Call SIGNDOC_NEW ([F:SDH]SDHNUM, 2, [F:SDH]SDHTYP,[L]MESSTOSIGN,[L]WCPT,[F:SDH]SHIDAT,
+&             [L]CURDAT,[L]CURTIM,[F:TSD]RECTYP,[F:TSD]SAFTTRNTYP,[L]LRET)                           From DKSLIB
+
+If [L]LRET > 1
+  GOK = 0
+Endif
+
+Return
+######################################################################
+# Chronologic control of deliveries
+######################################################################
+$CTRL_CHRONOLOGIC
+#85785
+Local Integer SEQ
+Local Char    DOCNUM(GLONVCR) : DOCNUM=[L]LNUM
+If clalev([F:SDHB])=0 Local File SDELIVERY [SDHB] Endif
+
+Repeat
+ Call NUMERO_PREC(WCPT,[F:SDH]STOFCY,[F:SDH]SHIDAT,"",[L]DOCNUM,SEQ,WRET) From SUBANM
+ If WRET<>0
+    GMESSAGE = WCPT-DOCNUM-mess(60,199,1) : GOK=0 : Break
+ Endif
+ If SEQ>=1
+    Read [F:SDHB]SDH0=DOCNUM
+    If !fstat
+       If [F:SDHB]SHIDAT>[F:SDH]SHIDAT
+          GOK=0 :GMESSAGE = mess(145,7711,1)
+       Endif
+       SEQ=0
+    Endif
+ Endif
+Until SEQ<=1
+Close Local File [SDHB]
+Return
+######################################################################
+######################################################################
