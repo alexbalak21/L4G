@@ -1,0 +1,17 @@
+$ACTION
+Case ACTION
+When "ALISOQSDH" Gosub ALICDESDD
+Endcase
+Return
+
+$ALICDESDD
+Infbox "ALIMZSUIVI"
+Read [F:ITM]ITM0 = [F:SDD]ITMREF
+Infbox [F:SDD]ITMREF
+If fstat = 0
+  Infbox "Read Ok"
+  [F:SDD]ZSUIVI = [F:ITM]ZSUIVI
+  Write [F:SDD]
+  If fstat <> 0 :Infbox "Error writing ZSUIVI in the table SDELIVERYD" : Endif
+Endif
+Return
