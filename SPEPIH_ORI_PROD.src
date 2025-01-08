@@ -1,0 +1,58 @@
+# OPR 18/12/24 1012225 : Reprise de l'étiquette zPCTDIF depuis la PG
+# OP le 16/12/24 : CR-83301 - Affectation Demande KPM - Modéré - "GROUPE HPG - 3004631 / 5003315
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+Case ACTION
+  When "AP_FILLBOX" : Gosub AP_FILLBOX
+Endcase
+Return
+
+
+# OP le 16/12/24 : CR-83301 - Affectation Demande KPM - Modéré - "GROUPE HPG - 3004631 / 5003315
+# OP le 06/01/25 : CR-83301 - ajout du flag de préchargement sur écran critère picking (PCI1) et prise en compte de ce flag
+$AP_FILLBOX
+If currbox=GBOXPT1 Then
+ If dim([M:PCIW]ZPRECHARG)>=0 Then
+  If [M:PCIW]ZPRECHARG=2 Then
+
+ Filter [PTD_] Where evalue(CRITERE) & evalue(FILGAUSUP) & evalue(FILSUITE)
+&       Order By Key PTD0
+
+    Gosub DEB_PICK From SUBPIHA
+    For [PTD_]
+      Gosub PICKE From SUBPIHA
+    Next
+    Gosub FIN_PICK From SUBPIHA
+
+  Endif
+ Endif
+Endif
+Return
+
+###############################################################################
+## Etiquette ajoutée par le superviseur (écran PIH0) 09/11/2005 14:48:20 (OPR)
+######################################################################################
+Subprog AV_LIBPAZ(VALEUR)
+Variable Char    VALEUR()
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran PIH3) 21/02/2006 17:22:18 (SS)
+######################################################################################
+Subprog IB_NBLIG
+End
+
+######################################################################################
+# OPR 18/12/24 1012225 : Reprise de l'étiquette zPCTDIF depuis la PG
+######################################################################################
+Funprog ZPCTDIF
+If [M]CLCLINAMT<>0
+ End [M]DIFLINAMT/[M]CLCLINAMT*100
+Else
+ End 0
+Endif
+End
+End

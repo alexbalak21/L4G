@@ -1,0 +1,2882 @@
+# Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+# Issue 121105 mm 02.2017 : deletion of AB7_NBLIG action (unusefull code produced for ticket 104943 )
+# Issue X3-261581 - 2023-02-22 by BAKHA : If 'All access codes' ticked then do not check for access code.
+# Issue X3-306176 - 2024-01-25 by MABOS : Add blocking control When GBOUT2 = Plan/Initiate & back-to-back WO already exists
+
+#---------------------------------------------------------------------------#
+# Action FMFGB Planning global
+#---------------------------------------------------------------------------#
+$ACTION
+If pat(ACTION,"BB*_NBLIG")
+   Gosub RECHARG_PARAM
+   Gosub LECTURE_BTS : # Issue 96456 GH 14/06/2018 - More general than before (buttons 3 4 and 5)
+Endif
+Case ACTION
+    When "INIT"          : Gosub INIT
+    When "SEL_LISTE"     : Gosub SEL_LISTE
+    When "FIN_LISTE"     : Gosub FIN_LISTE
+    When "CONTROLE"      : Gosub CONTROLE
+    When "OUVRE"         : Gosub OUVRE
+    When "TITRE"         : Gosub TIT
+    When "DEBUT"         : Gosub DEBUT
+    When "SETBOUT"       : Gosub SETBOUT
+    When "AVANT_BOUTON"  : Gosub AVANT_BOUTON
+    When "BOUTON"        : Gosub BOUTON
+    When "MEN"           : Gosub BOUTON
+    When "AP_CHOIX"      : Gosub AP_CHOIX
+    When "EDI"           : Gosub EDITION
+    When "TERMINE"       : Gosub TERMINE
+    When "AB2_NBLIG"     : Gosub AB2_NBLIG : # Issue X3-306176
+    When "AB4_NBLIG"     : Gosub AB4_NBLIG
+    When "AB14_NBLIG"    : Gosub AB14_NBLIG
+    When "BB14_NBLIG"    : Gosub BB14_NBLIG
+    When "AB9_NBLIG"     : Gosub MEM_VCR From BENCHLIB
+    When "AB17_NBLIG"    : Gosub MEM_VCR From BENCHLIB
+    When "AB18_NBLIG"    : Gosub MEM_VCR From BENCHLIB
+Endcase
+Return
+
+#########################################################################
+$INIT
+Global Char    GMGLNUM(GLONTRS)
+GMGLNUM = ""
+Return
+
+###########################################################################
+# selection de la transaction
+$SEL_LISTE
+# sr 10.05 demande 32570
+Local Char     TABACS(10)(100)
+Local Integer  NBACS
+Local Char    TEX(30)(0..100) , TEXTE(50)(0..100)
+Local Char    TIT(30)
+Local Integer NBTEX
+Local Char    WFCY(GLONFCY), WORI # Issue X3-5412 - 2016-11-07 by ALSHE : Read entry transaction from Parameter PJMORDTRA
+If clalev ([F:BTS])=0  : Local File BENCHTRS [BTS] : Endif
+If clalev([F:ACC]) = 0 : Local File ACCES [ACC] : Endif
+
+# Issue X3-5412 - 2016-11-07 by ALSHE : Read entry transaction from Parameter PJMORDTRA
+# Issue X3-82039 - 2019-07-04 by STWIL : Project task management function name has changed
+If find(GFONCTION,"PJMACTTAS")
+    WFCY=PARAM(1)
+    WORI=PARAM(8)
+    Raz GFLAG
+    If WORI = "T"
+        Call PARAMUTIL("PJMORDTRA",GFLAG,GUSER,WFCY) From SUBAUS
+        Read [BTS]BTS0=51;GFLAG
+    Endif
+Endif
+# End issue X3-5412
+
+CRITERE = "BTSTYP=51&ENAFLG=2"
+# sr 10.05 demande 32570
+# Issue X3-261581 - only applies if all access codes flag is set to No
+If GPROFIL <> GSUPER & GUSRACS <> 2
+    For [ACC]CODACC Where USR=GUSER
+       If [F:ACC]EXEC=2 [L]TABACS(NBACS)=vireblc([F:ACC]CODACC,1) : NBACS +=1
+       Endif
+       If NBACS>99 Break : Endif
+    Next
+    CRITERE += "& (ACSCOD = ''  | find(ACSCOD,TABACS(0..99)))"
+Endif
+
+If GFLAG=""
+    Filter [BTS] Where evalue(CRITERE)
+    If rowcount([BTS])=1
+        Read [BTS] First
+        If !fstat
+            GFLAG=[F:BTS]BTSNUM
+        Endif
+    Endif
+    Filter [BTS]
+Endif
+If GFLAG<>""
+    Filter [BTS] Where evalue(CRITERE)
+    Read [BTS]BTS0=51;GFLAG
+    Filter [BTS]
+    If !fstat
+        GMGLNUM = [F:BTS]BTSNUM
+        OK=0
+    Endif
+Endif
+If GMGLNUM=""
+    For [F:BTS] Where evalue(CRITERE)
+        NBTEX+= 1
+        TEX(NBTEX)   =[F:BTS]BTSNUM
+        Call LECTEXTRA(TEXTE(NBTEX),"BENCHTRS","DESAXX",num$([F:BTS]BTSTYP),[F:BTS]BTSNUM) From ATEXTRA
+        TEXTE(NBTEX) = TEX(NBTEX)-TEXTE(NBTEX)
+    Next
+    TIT(0) = mess(3,126,1) # Choix transactions
+Endif
+Return
+
+###########################################################################
+$FIN_LISTE
+GMGLNUM = TEX(CHOIX)
+Return
+
+###########################################################################
+$CONTROLE
+If clalev ([F:BTS]) <= 0  : Local File BENCHTRS [BTS] : Endif
+Read [BTS]BTS0=51;GMGLNUM
+If fstat  | [F:BTS]ENAFLG = 1 : FIN = 1 : Return : Endif
+Return
+
+###########################################################################
+# Initialisation/ouverture tables/substitution fenêtre
+#########################################################################
+$OUVRE
+Local Char     WFCY(GLONFCY)
+Local Char     WPLN(GLONAUS)  : # Planificateur
+Local Date     WDAT
+Local Char     WITM(GLONITM), WITMD(GLONITM), WITMF(GLONITM)
+Local Char     WPJT(GLONPJT), WBPR(GLONBPR), WORI
+Local Char     WDATC
+Local Date     WSTRDAT, WENDDAT
+Local Integer  WSRT
+Local Char     CODE(3)
+Local Integer  RETOUR
+Local Integer  L,I,WLEC,WFLGLAST, WFLGFIRST,WPOS
+Local Char     WNUM(GLONVCR)
+Local Char     WITD(GLONITM)
+Local Char     WITF(GLONITM)
+Local Char     WPJD(GLONPJT)
+Local Char     WPJF(GLONPJT)
+Local Char     WFIL(1)
+Local Integer  WRPL
+Local Integer  WSEQ
+Local Integer  WSWO
+Local Integer  WSPO
+Local Integer  WSEL
+Local Integer  WTYPS
+Local Char     WNUMS(GLONVCR)
+Local Char     WITMS(GLONITM)
+Local Date     WDATBES
+Local Char     WVCRNUM(GLONVCR)
+Local Char     WPJT(GLONPJT)
+Local Integer  WSTA, WFLT
+Local Integer  WTYPE, WAPP, WPRO, WINT, WSCO
+Local Integer  WTRI
+Local Integer  WRET : WRET = 0
+Local Char     WMASQUE
+Local Integer  ISINTERCPY
+Local Integer  WOK
+Local Integer  ALGCNT       #98144
+Local Char     CURALG(1)    #98144
+Local Integer  ALGMISS      #98144
+
+Global Integer GLRET : GLRET = 0
+Global Integer GKILL
+If dim(GVCR) < 0
+    Global Char    GVCR
+    Global Integer GLIN
+    Global Integer GSEQ
+    Kill GKILL
+Endif
+# pour zoom encours associés
+Global Integer GZOOM
+Global Char    GZOOMFCY(GLONFCY)
+Global Char    GZOOMITM(GLONITM)
+
+# ouverture des tables
+If clalev ([F:ORD]) <= 0 : Local File ORDERS     [ORD]    : Endif
+If clalev ([F:ITM]) <= 0 : Local File ITMMASTER  [ITM]    : Endif
+If clalev ([F:ITF]) <= 0 : Local File ITMFACILIT [ITF]    : Endif
+If clalev ([F:ITV]) <= 0 : Local File ITMMVT     [ITV]    : Endif
+If clalev ([F:TUN]) <= 0 : Local File TABUNIT    [TUN]    : Endif
+If clalev ([F:TFO]) <= 0 : Local File TABFOR     [TFO]    : Endif
+If clalev ([F:BTS]) <= 0 : Local File BENCHTRS   [BTS]    : Endif
+If clalev ([F:TRP]) <= 0 : Local File TABREOPOL  [TRP]    : Endif  # 22206 MM 01.05
+If clalev ([F:PCB]) <= 0 : Local File PARMRP     [PCB]    : Endif  # 22206 MM 01.05
+If clalev([F:CAL])  <=0  : Local File CPTANALIN  [CAL]    : Endif
+If clalev([F:DTR])  <=0  : Local File DIETRS     [DTR]    : Endif
+
+#-------------------Pour Intersociété- MM 01.04 -----------------------------------#
+If clalev ([F:BPD]) <= 0  : Local File BPDLVCUST  [BPD] : Endif
+If clalev ([F:BPR]) <= 0  : Local File BPARTNER   [BPR] : Endif
+If clalev ([F:BPC]) <= 0  : Local File BPCUSTOMER [BPC] : Endif
+If clalev ([F:FCY]) <= 0  : Local File FACILITY   [FCY] : Endif
+If dim(GRCPFCY)<0 : Global Char GRCPFCY(GLONFCY) : Endif
+
+If GMODU(8) = 2
+    If clalev ([F:MFG]) <= 0 : Local File MFGHEAD   [MFG] : Endif
+    If clalev ([F:MFI]) <= 0 : Local File MFGITM    [MFI] : Endif
+    If clalev ([F:MTS]) <= 0 : Local File MFGTRS    [MTS] : Endif
+    If clalev ([F:TCA]) <= 0 : Local File TABCOUAFF [TCA] : Endif
+    ## GH 19/05/2014 bug 100108 société et législation non encore déterminées ici
+    #Call LECTCA(8,WOK) From SUBTCA
+    #If WOK=0 : Call ERREUR(mess(58,105,1)-mess(8,14,1)-":"-mess(250,199,1)) From GESECRAN : Return : Endif
+    #GOPS    = [F:TCA]CODNUM(4)   # compteur suggestion opération
+Endif
+
+If GMODU(6) = 2
+    If clalev ([F:PTR]) <= 0 : Local File PURTRS     [PTR] : Endif
+    If clalev ([F:POH]) <= 0 : Local File PORDER     [POH] : Endif
+    If clalev ([F:POP]) <= 0 : Local File PORDERP    [POP] : Endif
+    If clalev ([F:POQ]) <= 0 : Local File PORDERQ    [POQ] : Endif
+    If clalev ([F:PSD]) <= 0 : Local File PREQUISD   [PSD] : Endif
+    If clalev ([F:POC]) <= 0 : Local File PORDERC    [POC] : Endif
+    If clalev ([F:SCO]) <= 0 : Local File SCOHEAD    [SCO] : Endif
+    If clalev ([F:SCI]) <= 0 : Local File SCOITM     [SCI] : Endif
+Endif
+
+If GMODU(5) = 2
+    If clalev ([F:SOH]) <= 0 : Local File SORDER     [SOH] : Endif
+    If clalev ([F:SOP]) <= 0 : Local File SORDERP    [SOP] : Endif
+    If clalev ([F:SOQ]) <= 0 : Local File SORDERQ    [SOQ] : Endif
+    If clalev ([F:SOC]) <= 0 : Local File SORDERC    [SOC] : Endif
+Endif
+
+# masque pour paramètres mises à jour
+Local Mask ORCK [ORCK]
+Local Mask MFGK [MFGK]
+Local Mask SCOK [SCOK]  : # GA 02/2006
+If clalev ([M:ORDK]) <= 0 : Local Mask ORDK [ORDK] : Endif # Issue 108577 - by GA 07/2015
+
+# pour memo
+If clalev ([M:MFB1]) <= 0 : Local Mask MFGBCRIT1    [MFB1] : Endif
+
+# V6 Affectations
+Gosub OPEN_MTO From MTOLINKLIB
+
+# mise en relief affectations
+Gosub OPEN_HL_TABLIN From HLIGHTLIB
+
+# chargement des paramètres action
+WFCY  = PARAM(1)
+WPLN  = PARAM(2)
+WSRT  = val(PARAM(3))
+WITM  = PARAM(4)
+WPJT  = PARAM(5)
+WBPR  = PARAM(6)
+WDATC = PARAM(7)
+WORI  = PARAM(8)
+Gosub LECTURE_BTS
+WAPP = 0
+WPRO = 0
+WINT = 0
+WSCO = 0
+GGRPFCY = [F:BTS]GFY
+
+If [F:BTS]APPSUG = 2 : WAPP += 1 : Endif
+If [F:BTS]APPPLN = 2 : WAPP += 2 : Endif
+If [F:BTS]APPLAN = 2 : WAPP += 4 : Endif
+If [F:BTS]PLNSUG = 2 : WPRO += 1 : Endif
+If [F:BTS]PLNPLN = 2 : WPRO += 2 : Endif
+If [F:BTS]PLNLAN = 2 : WPRO += 4 : Endif
+If [F:BTS]INTSUG = 2 : WINT += 1 : Endif
+If [F:BTS]INTPLN = 2 : WINT += 2 : Endif
+If [F:BTS]INTLAN = 2 : WINT += 4 : Endif
+If [F:BTS]SCOSUG = 2 : WSCO += 1 : Endif
+If [F:BTS]SCOPLN = 2 : WSCO += 2 : Endif
+If [F:BTS]SCOLAN = 2 : WSCO += 4 : Endif
+
+# substitution fenêtre
+BOITE     = "WFMFGB"+GMGLNUM
+WMASQUE   = "WT51"+GMGLNUM+"1"
+Gosub CHANGE_AWI From BENCHLIB
+
+# mise en relief affectations
+[M:HLIK]ABB          = "MGB"
+[M:HLIK]VARABS       = "NBLIG"
+[M:HLIK]NBREX        = 0
+
+Return
+
+#########################################################################
+$TIT
+Call LECTEXTRA(TIT,"BENCHTRS","DESAXX",num$([F:BTS]BTSTYP),[F:BTS]BTSNUM) From ATEXTRA
+Call TITAWI(BOITE,GMESSAGE) From OBJDIV
+TIT = GMESSAGE-[F:BTS]BTSNUM-":"-TIT
+GMESSAGE=""
+Return
+
+#########################################################################
+# alimentation initiale écran
+$DEBUT
+Raz [M:MGB]
+
+# FQ 74895 GA 07/2011 déplacé avant recopie des autres critères et déclenché de façon systématique, même si appel en tunnel
+# 15806 MM 05.05 : application memo STD
+# If [M:MGB]FUNORI =""
+    Raz [M:MFB1]
+    If filinfo(filpath("ETM",GUSER+"_"+GMGLNUM+"_"+"STD","mfb",0),0)>=0
+        Call LECMEMO("STD","[M:MFB1]",GMGLNUM+"~mfb") From GMEMO
+        # Chargement des critères stoqués dans le fichier mémo STD
+        [M:MGB]     = [M:MFB1]
+    Endif
+# Endif
+
+If WFCY <> "" : GFCY = WFCY : Else Call FIND_GFCYDEF(7) From TRTX3 : Endif
+[M:MGB]FCY = GFCY : Gosub CHARG_PARAM
+# Issue X3-82039 - 2019-07-04 by STWIL : Project task management function name has changed
+If find(GFONCTION,"PJMACTTAS") : [M:MGB]FCY = "" : Endif ## Issue 107498/18 - 2016-08-31 by ALSHE : FCY is emtpy when comming from PJM
+If GMODU(8)=2 & GOPS="" : Raz [M:MGB]FCY : Endif : ## GH 19/05/2014 bug 100108
+If WPLN <> "" : [M:MGB]PLANNER = WPLN : Else : [M:MGB]PLANNER = GUSER      : Endif
+# Issue X3-82039 - 2019-07-04 by STWIL : Project task management function name has changed
+If find(GFONCTION,"PJMACTTAS") : [M:MGB]PLANNER = "" : Endif ## Issue 107498/18 - 2016-08-31 by ALSHE : PLANNER is emtpy when comming from PJM
+If WSRT<>0 : # GH 05/12/12 bug 86277
+    [M:MGB]SRTCOD     = WSRT
+Endif
+If [M:MGB]SRTCOD  = 0 : [M:MGB]SRTCOD = 1 : Endif
+If WITM<>""
+   [M:MGB]ITMREFSTR  = WITM
+   [M:MGB]ITMREFEND  = WITM
+Endif
+If WPJT<>""
+   [M:MGB]PJTSTR     = WPJT
+   [M:MGB]PJTEND     = WPJT
+   # Issue X3-8415 - 2017-04-13 by FGR : BEGIN
+   If dim([M:MGB]PJTDSPALL) >= 0 Then
+     If WPJT = func PIMPL_CSTD_PROGS.PJM_KEY_SPLIT_OPPNUM(GACTX, WPJT) Then
+       [M:MGB]PJTDSPALL = [V]CST_AYES
+     Else
+       [M:MGB]PJTDSPALL = [V]CST_ANO
+     Endif
+   Endif
+   # Issue X3-8415 - 2017-04-13 by FGR : END
+Endif
+If WBPR<>""
+   [M:MGB]BPRNUMSTR  = WBPR
+   [M:MGB]BPRNUMEND  = WBPR
+Endif
+If WDATC <> ""
+    If instr(1,WDATC,"/")
+        WENDDAT = "["+WDATC+"]"
+    Else
+        WENDDAT = WDATC
+    Endif
+Endif
+If WENDDAT <> [0/0/0]
+    [M:MGB]ENDDATSTR  = [0/0/0]
+    [M:MGB]ENDDATEND  = WENDDAT
+Elsif [M:MGB]ENDDATEND = [0/0/0] # GH 04/08/14 bug 101859
+    [M:MGB]ENDDATSTR  = [0/0/0]
+    [M:MGB]ENDDATEND  = date$+(GPLNHOR*7)
+Endif
+# Issue X3-5412 - 2016-11-07 by ALSHE : fill GRID with selected record
+# Issue X3-82039 - 2019-07-04 by STWIL : Project task management function name has changed
+If find(GFONCTION,"PJMACTTAS")
+    [M:MGB]ENDDATEND = [0/0/0] ## Issue 107498/18 - 2016-08-31 by ALSHE : ENDDATEND is emtpy when comming from PJM
+    If WORI="T"                ## Issue X3-5412 - 2016-11-07 by ALSHE : Display related data immediately when comming from PJM material task line
+        Raz [M:MGB]ITMREFSTR
+        Raz [M:MGB]ITMREFEND
+        Gosub RECHERCHER
+    Endif
+Endif
+
+[M:MGB]FUNORI = WORI
+
+# Issue 110957 - 2015-10-07 by GH
+If dim([M:MGB]CCMFLG)>0 & [M:MGB]CCMFLG=0 : [M:MGB]CCMFLG=3 : Endif
+
+# mémorisation contexte habilitation suivant transaction
+Gosub ANALYSE_CTX
+If WSRT <> 0
+    I = GLRET
+    [M:MGB]REACT = 2
+    Gosub REACTUALISATION
+    [M:MGB]REACT = 1
+    GLRET = I
+Endif
+
+# Issue 110957 - 2015-10-07 by GH
+If dim([M:MGB]CRID)>0
+   Diszo [MGB]CRID
+Endif
+
+Diszo [M:MGB]15
+Affzo [M:MGB]5-15
+
+Return
+
+#########################################################################
+# état des boutons
+$SETBOUT
+ETABOU(GSPE1) = 1                                     # recherche
+ETABOU(GSPE2) = 1                                     # critères
+# interX
+If (WAPP >= 1 | WINT >= 1) & GMODU(6) = 2             # appro
+   ETABOU(GSPE3) = 1
+Else
+    ETABOU(GSPE3) = 0
+Endif
+If WPRO >= 1 & GMODU(8) = 2                           # fabrication - 14102 mm 06.06
+    ETABOU(GSPE4) = 1
+Else
+    ETABOU(GSPE4) = 0
+Endif
+If WSCO >= 1 & GMODU(6) = 2                           # achat sous-traitance
+    ETABOU(GSPE5) = 1
+Else
+    ETABOU(GSPE5) = 0
+Endif
+If WORI = "D"                                         # plan de travail
+    ETABOU(GSPE6) = 0
+Else
+    ETABOU(GSPE6) = 1
+Endif
+If WORI = "P"                                         # regroupement
+    ETABOU(GSPE7) = 0
+Else
+    ETABOU(GSPE7) = 1
+Endif
+ETABOU(GBFIN) = 1                                     # fin
+ETABOU(GEDIT) = 1                                     # hardcopy
+Return
+
+########################################################################
+$AVANT_BOUTON
+If BOUT = "6" : GSTATUT = 0 : Endif
+Return
+
+########################################################################
+$BOUTON
+Case BOUT
+    When "1"       :     Gosub RECHERCHER
+    When "2"       :     Gosub CRITERES
+    When "3"       :     Gosub ACHAT
+    When "4"       :     Gosub FABRICATION
+    When "5"       :     Gosub SOUSTRAIT
+    When "6"       :     Gosub PLANTRAVAIL
+    When "7"       :     Gosub REGROUPEMENT
+    When "T"       :     Gosub LECTURE_BTS                # rechargement BTS après visualisation
+Endcase
+FIN=0
+Return
+
+#########################################################################
+$AP_CHOIX
+# interception de la touche return
+If REPONSE = GSTARET
+    Gosub RECHERCHER
+Endif
+Return
+
+#########################################################################
+$RECHERCHER
+Gosub LECTURE_BTS
+I = GLRET
+[M:MGB]REACT = 2
+Gosub REACTUALISATION
+[M:MGB]REACT = 1
+GLRET = I
+Return
+
+#########################################################################
+$CRITERES
+Gosub REACTUALISATION
+Return
+
+#########################################################################
+$ACHAT
+$FABRICATION
+$SOUSTRAIT
+$PLANTRAVAIL
+$REGROUPEMENT
+
+Gosub RECHARG_PARAM
+Gosub LECTURE_BTS
+If [M:MGB]ITMREFSTR = [M:MGB]ITMREFEND & [M:MGB]NBLIG <> 0
+    Gosub REACTUALISATION
+Else
+    [M:MGB]REACT = 1
+Endif
+Return
+
+#########################################################################
+$REACTUALISATION
+If [M:MGB]REACT = 2
+    Gosub CHARGE_MGB
+    If nolign = WMAX : GMESSAGE = mess(168,190,1) : GERR = 2 : Endif
+    [M:MGB]REACT = 1
+    GLRET = 2
+Endif
+Return
+
+############################################################################
+$EDITION
+GPE = 0
+# Point d'entrée permettant d'imprimer un état spécifique demande 32262
+# mettre 1 dans  GPE pour inhiber le traitement standard
+GPOINT = "PRTGBENCH" : Gosub ENTREE From EXEFNC
+If !GPE
+    Call PRTSCR(WMASQUE,"MGB","",0,0) From ATRTX3
+    # Issue 77648 - 2011-11-08 by VPO : edition partait à la sortie de la fonction
+    Call IMPSCR From ATRTX3
+Endif
+Return
+
+#########################################################################
+$TERMINE
+PARAM(9) = num$(GLRET)
+If dim(GKILL) <= 0
+    If dim(GVCR) > 0 : Kill GVCR : Endif
+    If dim(GLIN) > 0 : Kill GLIN : Endif
+    If dim(GSEQ) > 0 : Kill GSEQ : Endif
+Else
+    Kill GKILL
+Endif
+Call IMPSCR From ATRTX3
+Return
+
+########################################################################
+# Analyse et mémorisation contexte
+########################################################################
+$ANALYSE_CTX
+[M:MGB]PLNHAB = WPRO
+[M:MGB]APPHAB = WAPP
+[M:MGB]INTHAB = WINT
+[M:MGB]SCOHAB = WSCO
+
+[M:MGB]ITMFILTER = "1=1"
+
+# pour les sélections article/site
+If [F:BTS]PLANNER = 2 & [F:BTS]BUYER = 1
+    [M:MGB]ITMCAT = "23"
+Endif
+If [F:BTS]PLANNER = 1 & [F:BTS]BUYER = 2
+    [M:MGB]ITMCAT = "14"
+Endif
+If [F:BTS]PLANNER = 2 & [F:BTS]BUYER = 2
+    [M:MGB]ITMCAT = "1234"
+Endif
+
+#   filtre sur planificateur
+If [F:BTS]APPLAN = 1 | GBUYFLT = 1
+    Case GPLNFLT
+        When 2: [M:MGB]ITMFILTER = 'PLANNER=[M:MGB]PLANNER|PLANNER=""'
+        When 3: [M:MGB]ITMFILTER = 'PLANNER=[M:MGB]PLANNER'
+    Endcase
+Else
+    # GH 24/08/11 bug 75840
+    # Case GPLNFLT
+    #    When 2: [M:MGB]ITMFILTER = 'PLANNER=[M:MGB]PLANNER|PLANNER=""|BUY=[M:MGB]PLANNER'
+    #    When 3: [M:MGB]ITMFILTER = 'PLANNER=[M:MGB]PLANNER|BUY=[M:MGB]PLANNER'
+    # Endcase
+    Case GPLNFLT
+        When 1: [M:MGB]ITMFILTER = 'BUY=[M:MGB]PLANNER|BUY=""'
+        When 2: [M:MGB]ITMFILTER = 'PLANNER=[M:MGB]PLANNER|PLANNER=""|BUY=[M:MGB]PLANNER|BUY=""'
+        When 3: [M:MGB]ITMFILTER = 'PLANNER=[M:MGB]PLANNER|BUY=[M:MGB]PLANNER|BUY=""'
+    Endcase
+Endif
+
+[M:MGB]TRS     = [F:BTS]DBENCHTRS
+[M:MGB]RTRS    = [F:BTS]PICKTRS
+
+If [M:MGB]MEMO="" : # GH 05/12/12 bug 86277
+    [M:MGB]FORMULE = [F:BTS]DEFFOR
+
+    # 21180 MM 01.05 : filtre "origine des suggestions" provenant de la transaction, appliqué par défaut
+    [M:MGB]MRPFLG = [F:BTS]MRPFLG
+Endif
+
+Return
+
+########################################################################
+# Préparation du filtre sur la table encours                           #
+########################################################################
+$LOAD_FILTER
+Raz XCRITERE
+Raz XCRITERE1
+Raz XCRITERE2
+Raz XCRITERE3
+Raz XCRITERE4
+
+######################################
+# SOx = Commandes Client             #
+######################################
+# ordres de type SOS
+If [F:BTS]SUG(0) = 2
+    XCRITERE  = "(WIPTYP=1&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type SOP
+If [F:BTS]PLN(0) = 2
+    XCRITERE  = "(WIPTYP=1&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type SOF
+If [F:BTS]LAN(0) = 2
+    If [F:BTS]CRIT(0) = 2
+        XCRITERE  = "(WIPTYP=1&WIPSTA=1)"
+    Else
+        XCRITERE  = "(WIPTYP=1&WIPSTA=1&ENDDAT>=TODAY&FMI<>5&SHTQTY=0)"
+    Endif
+    Gosub LOAD_CRITERE
+Else
+    If [F:BTS]CRIT(0) = 2
+        If [F:BTS]RET = 2    # retards
+                XCRITERE  = "(WIPTYP=1&WIPSTA=1&ENDDAT<TODAY)"
+                Gosub LOAD_CRITERE
+        Endif
+        If [F:BTS]FMI = 2    # demandes de production
+                XCRITERE  = "(WIPTYP=1&WIPSTA=1&FMI=5)"
+                Gosub LOAD_CRITERE
+        Endif
+        If [F:BTS]RUP = 2    # ruptures
+                XCRITERE  = "(WIPTYP=1&WIPSTA=1&SHTQTY<>0)"
+                Gosub LOAD_CRITERE
+        Endif
+    Endif
+Endif
+
+######################################
+# POx = Commandes Fournisseur        #
+######################################
+# ordres de type POS
+If [F:BTS]SUG(1) = 2
+    XCRITERE  = "(WIPTYP=2&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type POP
+If [F:BTS]PLN(1) = 2
+    XCRITERE  = "(WIPTYP=2&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type POF
+If [F:BTS]LAN(1) = 2
+    If [F:BTS]CRIT(1) = 2
+        XCRITERE  = "(WIPTYP=2&WIPSTA=1)"
+    Else
+        XCRITERE  = "(WIPTYP=2&WIPSTA=1&MRPMES<=1)"
+    Endif
+    Gosub LOAD_CRITERE
+Else
+    If [F:BTS]CRIT(1) = 2 & [F:BTS]RES = 2
+        XCRITERE  = "(WIPTYP=2&WIPSTA=1&MRPMES>1)"
+        Gosub LOAD_CRITERE
+    Endif
+Endif
+
+######################################
+# MSx = Matières sous-traitance      #
+######################################
+# ordres de type MSS
+If [F:BTS]SUG(2) = 2
+    XCRITERE  = "(WIPTYP=3&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type MSP
+If [F:BTS]PLN(2) = 2
+    XCRITERE  = "(WIPTYP=3&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+
+# ordres de type MSF
+If [F:BTS]LAN(2) = 2
+    XCRITERE  = "(WIPTYP=3&WIPSTA=1)"
+    Gosub LOAD_CRITERE
+Endif
+
+######################################
+# SCx = Services sous-traitance      #
+######################################
+# ordres de type SCS
+If [F:BTS]SUG(3) = 2
+    XCRITERE  = "(WIPTYP=4&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type SCP
+If [F:BTS]PLN(3) = 2
+    XCRITERE  = "(WIPTYP=4&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+
+# ordres de type SCF
+If [F:BTS]LAN(3) = 2
+    XCRITERE  = "(WIPTYP=4&WIPSTA=1)"
+    Gosub LOAD_CRITERE
+Endif
+
+######################################
+# WOx = Ordres de fabrication        #
+######################################
+# ordres de type WOS
+If [F:BTS]SUG(4) = 2
+    XCRITERE  = "(WIPTYP=5&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type WOP
+If [F:BTS]PLN(4) = 2
+    XCRITERE  = "(WIPTYP=5&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type WOF
+If [F:BTS]LAN(4) = 2
+    If [F:BTS]CRIT(4) = 2
+        XCRITERE  = "(WIPTYP=5&WIPSTA=1)"
+    Else
+        XCRITERE  = "(WIPTYP=5&WIPSTA=1&MRPMES<=1)"
+    Endif
+    Gosub LOAD_CRITERE
+Else
+    If [F:BTS]CRIT(4) = 2 & [F:BTS]RES = 2
+        XCRITERE  = "(WIPTYP=5&WIPSTA=1&MRPMES>1)"
+        Gosub LOAD_CRITERE
+    Endif
+Endif
+
+######################################
+# MWx = Besoins matière              #
+######################################
+# ordres de type MWS
+If [F:BTS]SUG(5) = 2
+    XCRITERE  = "(WIPTYP=6&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type MWP
+If [F:BTS]PLN(5) = 2
+    XCRITERE  = "(WIPTYP=6&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+
+# ordres de type MWF
+If [F:BTS]LAN(5) = 2
+    If [F:BTS]CRIT(5) = 2
+        XCRITERE  = "(WIPTYP=6&WIPSTA=1)"
+    Else
+        XCRITERE  = "(WIPTYP=6&WIPSTA=1&SHTQTY=0)"
+    Endif
+    Gosub LOAD_CRITERE1
+Else
+    If [F:BTS]CRIT(5) = 2 & [F:BTS]RUP = 2
+        XCRITERE  = "(WIPTYP=6&WIPSTA=1&SHTQTY<>0)"
+        Gosub LOAD_CRITERE1
+    Endif
+Endif
+
+######################################
+# TRx = Ordres intersite             #
+######################################
+# ordres de type TRS
+If [F:BTS]SUG(6) = 2
+    XCRITERE  = "(WIPTYP=7&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type TRP
+If [F:BTS]PLN(6) = 2
+    XCRITERE  = "(WIPTYP=7&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type TRF
+If [F:BTS]LAN(6) = 2
+    If [F:BTS]CRIT(6) = 2
+        XCRITERE  = "(WIPTYP=7&WIPSTA=1)"
+    Else
+        XCRITERE  = "(WIPTYP=7&WIPSTA=1&MRPMES<=1)"
+    Endif
+    Gosub LOAD_CRITERE1
+Else
+    If [F:BTS]CRIT(6) = 2 & [F:BTS]RES = 2
+        XCRITERE  = "(WIPTYP=7&WIPSTA=1&MRPMES>1)"
+        Gosub LOAD_CRITERE1
+    Endif
+Endif
+
+######################################
+# TPx = Demandes intersite           #
+######################################
+# ordres de type TPS
+If [F:BTS]SUG(7) = 2
+    XCRITERE  = "(WIPTYP=8&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type TPP
+If [F:BTS]PLN(7) = 2
+    XCRITERE  = "(WIPTYP=8&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type TPF
+If [F:BTS]LAN(7) = 2
+    If [F:BTS]CRIT(7) = 2
+        XCRITERE  = "(WIPTYP=8&WIPSTA=1)"
+    Else
+        XCRITERE  = "(WIPTYP=8&WIPSTA=1&ENDDAT>=TODAY&SHTQTY=0)"
+    Endif
+    Gosub LOAD_CRITERE1
+Else
+    If [F:BTS]CRIT(7) = 2
+        If [F:BTS]RET = 2    # retards
+            XCRITERE  = "(WIPTYP=8&WIPSTA=1&ENDDAT<TODAY)"
+            Gosub LOAD_CRITERE1
+        Endif
+        If [F:BTS]RUP = 2    # ruptures
+            XCRITERE  = "(WIPTYP=8&WIPSTA=1&SHTQTY<>0)"
+            Gosub LOAD_CRITERE1
+        Endif
+    Endif
+Endif
+
+######################################
+# BWx = Sous-produits                #
+######################################
+# ordres de type BWS
+If [F:BTS]SUG(8) = 2
+    XCRITERE  = "(WIPTYP=9&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type BWP
+If [F:BTS]PLN(8) = 2
+    XCRITERE  = "(WIPTYP=9&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+
+# ordres de type BWF
+If [F:BTS]LAN(8) = 2
+    XCRITERE  = "(WIPTYP=9&WIPSTA=1)"
+    Gosub LOAD_CRITERE1
+Endif
+
+######################################
+# ordres de type CRF
+If [F:BTS]LAN(9) = 2
+    XCRITERE  = "(WIPTYP=12&WIPSTA=1)"
+    Gosub LOAD_CRITERE1
+Endif
+
+######################################
+# EOx = Ordre de sous-traitance      #
+######################################
+# ordres de type EOS
+If [F:BTS]SUG(10) = 2
+    XCRITERE  = "(WIPTYP=13&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type EOP
+If [F:BTS]PLN(10) = 2
+    XCRITERE  = "(WIPTYP=13&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+
+# Issue X3-287350 - 2023-04-18 by JUSYN : Refine selections on EOF firm / firm critical
+# ordres de type EOF
+If [F:BTS]LAN(10) = 2
+    If [F:BTS]CRIT(10) = 2
+        XCRITERE  = "(WIPTYP=13&WIPSTA=1)"
+    Else
+        XCRITERE  = "(WIPTYP=13&WIPSTA=1&MRPMES<=1)"
+    Endif
+    Gosub LOAD_CRITERE1
+Else
+    If [F:BTS]CRIT(10) = 2 & [F:BTS]RES = 2
+        XCRITERE  = "(WIPTYP=13&WIPSTA=1&MRPMES>1)"
+        Gosub LOAD_CRITERE1
+    Endif
+Endif
+# Issue number #107498/9
+######################################
+# MTx = Project demand
+######################################
+# order type MTF
+
+#If [F:BTS]LAN(11) = 2
+#    XCRITERE  = "(WIPTYP=14&WIPSTA=1)"
+#    Gosub LOAD_CRITERE1
+#Endif
+# Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+If func AFNC.ACTIV("PJM")
+    If [F:BTS]LAN(11) = 2
+            XCRITERE  = "(WIPTYP=14&WIPSTA=1)"
+        Gosub LOAD_CRITERE1
+    Endif
+    # End issue number #107498/9
+
+    # Order type MTP  Issue 107498/102
+    If [F:BTS]PLN(11) = 2
+        XCRITERE  = "(WIPTYP=14&WIPSTA=2)"
+        Gosub LOAD_CRITERE1
+    Endif
+Endif
+# End issue 107498/102
+Return
+
+########################################################################
+$LOAD_FILTER2
+Raz XCRITERE11
+Raz XCRITERE12
+Raz XCRITERE13
+Raz XCRITERE14
+Raz XCRITERE15
+
+# si aucun ordre sélectionné
+If XCRITERE1 = "" &
+&  XCRITERE3 = ""
+    Return
+Endif
+
+XCRITERE11 = "1=1"
+XCRITERE12 = "1=1"
+# critères dynamiques, dépendant des paramètres
+# site
+If [M:MGB]FCY <> ""
+   XCRITERE = "STOFCY=[M:MGB]FCY"                # filtre site
+   Gosub LOAD_CRITERE2
+Endif
+
+If [F:BTS]APPLAN = 1 | GBUYFLT = 1
+    # planificateur
+    Case GPLNFLT
+        When 2:  XCRITERE = '([F:ITF]PLANNER=[M:MGB]PLANNER|[F:ITF]PLANNER="")'   # filtre planificateur
+                 Gosub LOAD_CRITERE2
+        When 3:  XCRITERE = '[F:ITF]PLANNER=[M:MGB]PLANNER'   # filtre planificateur
+                 Gosub LOAD_CRITERE2
+    Endcase
+Else
+    # planificateur
+    # GH 24/08/11 bug 75840
+    # Case GPLNFLT
+    #    When 2:  XCRITERE = '([F:ITF]PLANNER=[M:MGB]PLANNER|[F:ITF]PLANNER=""|[F:ITF]BUY=[M:MGB]PLANNER)'
+    #             Gosub LOAD_CRITERE2
+    #    When 3:  XCRITERE = '([F:ITF]PLANNER=[M:MGB]PLANNER|[F:ITF]BUY=[M:MGB]PLANNER)'
+    #             Gosub LOAD_CRITERE2
+    # Endcase
+    Case GPLNFLT
+        When 1:  XCRITERE = '([F:ITF]BUY=[M:MGB]PLANNER|[F:ITF]BUY="")'
+                 Gosub LOAD_CRITERE2
+        When 2:  XCRITERE = '([F:ITF]PLANNER=[M:MGB]PLANNER|[F:ITF]PLANNER=""|[F:ITF]BUY=[M:MGB]PLANNER|[F:ITF]BUY="")'
+                 Gosub LOAD_CRITERE2
+        When 3:  XCRITERE = '([F:ITF]PLANNER=[M:MGB]PLANNER|[F:ITF]BUY=[M:MGB]PLANNER|[F:ITF]BUY="")'
+                 Gosub LOAD_CRITERE2
+    Endcase
+Endif
+
+# article
+If [M:MGB]ITMREFSTR <> ""
+    XCRITERE = "ITMREF>=[M:MGB]ITMREFSTR"      # borne début article
+    Gosub LOAD_CRITERE2
+Endif
+If [M:MGB]ITMREFEND<>""
+    XCRITERE = "ITMREF<=[M:MGB]ITMREFEND"      # borne fin   article
+    Gosub LOAD_CRITERE2
+Endif
+
+# affaire
+# Issue X3-8415 - 2017-04-13 by FGR : BEGIN
+#If [M:MGB]PJTSTR <> ""
+#   XCRITERE = "PJT>=[M:MGB]PJTSTR"               # borne début affaire
+#   Gosub LOAD_CRITERE2
+#Endif
+#If [M:MGB]PJTEND <> ""
+#   XCRITERE = "PJT<=[M:MGB]PJTEND"               # borne fin   affaire
+#   Gosub LOAD_CRITERE2
+#Endif
+If dim([M:MGB]PJTDSPALL) >= 0 and [M:MGB]PJTDSPALL = [V]CST_AYES Then
+  Local Char SPJTOUT(GLONPIM)
+  Local Char SBUDGET(GLONTAC)
+  Local Char STASK(GLONPBU)
+  Local Integer IRET
+
+  IRET = func PIMPL_CSTD_PROGS.PJM_KEY_SPLIT(GACTX, [M:MGB]PJTSTR, SPJTOUT, SBUDGET, STASK)
+  XCRITERE += "&pat(PJT,'" + SPJTOUT + "*')<>0"
+  Gosub LOAD_CRITERE2
+Else
+  If [M:MGB]PJTSTR <> "" Then
+     XCRITERE = "PJT>=[M:MGB]PJTSTR"               # borne début affaire
+     Gosub LOAD_CRITERE2
+  Endif
+  If [M:MGB]PJTEND <> "" Then
+     XCRITERE = "PJT<=[M:MGB]PJTEND"               # borne fin   affaire
+     Gosub LOAD_CRITERE2
+  Endif
+Endif
+# Issue X3-8415 - 2017-04-13 by FGR : END
+
+# pièce
+If [M:MGB]VCRNUMSTR <> ""
+   XCRITERE = "VCRNUM>=[M:MGB]VCRNUMSTR"         # borne début pièce
+   Gosub LOAD_CRITERE2
+Endif
+If [M:MGB] VCRNUMEND <> ""
+   XCRITERE = "VCRNUM<=[M:MGB]VCRNUMEND"         # borne fin   pièce
+   Gosub LOAD_CRITERE2
+Endif
+
+# Pièce origine
+If [M:MGB]VCRORISTR <> ""
+   XCRITERE ="VCRNUMORI>=[M:MGB]VCRORISTR"       # borne début pièce origine
+   Gosub LOAD_CRITERE2
+Endif
+If [M:MGB]VCRORIEND <>""
+   XCRITERE = "VCRNUMORI <=[M:MGB]VCRORIEND"     # borne fin pièce origine
+   Gosub LOAD_CRITERE2
+Endif
+
+# tiers
+If [M:MGB]BPRNUMSTR <> ""
+   XCRITERE = "BPRNUM>=[M:MGB]BPRNUMSTR"         # borne début tiers
+   Gosub LOAD_CRITERE2
+Endif
+If [M:MGB]BPRNUMEND <> ""
+   XCRITERE = "BPRNUM<=[M:MGB]BPRNUMEND"         # borne fin   tiers
+   Gosub LOAD_CRITERE2
+Endif
+
+# date fin
+If [M:MGB]ENDDATSTR <> [0/0/0]
+   XCRITERE = "ENDDAT>=[M:MGB]ENDDATSTR"         # borne date fin
+   Gosub LOAD_CRITERE2
+Endif
+If [M:MGB]ENDDATEND <> [0/0/0]
+   XCRITERE = "ENDDAT<=[M:MGB]ENDDATEND"         # borne date fin
+   Gosub LOAD_CRITERE2
+Endif
+
+# date début
+If [M:MGB]STRDATSTR <> [0/0/0]
+   XCRITERE = "STRDAT>=[M:MGB]STRDATSTR"         # borne date début
+   Gosub LOAD_CRITERE3
+Endif
+If [M:MGB]STRDATEND <> [0/0/0]
+   XCRITERE = "STRDAT<=[M:MGB]STRDATEND"         # borne date début
+   Gosub LOAD_CRITERE3
+Endif
+
+# catégorie
+If [M:MGB]TCLCODSTR <> ""
+   XCRITERE = "[F:ITM]TCLCOD>=[M:MGB]TCLCODSTR"         # borne catégorie
+   Gosub LOAD_CRITERE3
+Endif
+If [M:MGB]TCLCODEND <> ""
+   XCRITERE = "[F:ITM]TCLCOD<=[M:MGB]TCLCODEND"         # borne catégorie
+   Gosub LOAD_CRITERE3
+Endif
+
+If dim([M:MGB]TSICODSTR) > 0                # familles statistiques
+    For I = 0 To dim([M:MGB]TSICODSTR)-1
+        If [M:MGB]TSICODSTR(I) <> ""
+            XCRITERE = "[F:ITM]TSICOD("+num$(I)+")>=[M:MGB]TSICODSTR("+num$(I)+")"
+            Gosub LOAD_CRITERE3
+        Endif
+        If [M:MGB]TSICODEND(I) <> ""
+            XCRITERE = "[F:ITM]TSICOD("+num$(I)+")<=[M:MGB]TSICODEND("+num$(I)+")"
+            Gosub LOAD_CRITERE3
+        Endif
+    Next I
+Endif
+
+
+Return
+
+############################################################
+$LOAD_CRITERE
+If len(XCRITERE)+len(XCRITERE1)+1 < 250
+  If XCRITERE1 <> ""
+      XCRITERE1 += "|"
+  Endif
+  XCRITERE1 += XCRITERE
+Else
+  If XCRITERE2 <> ""
+     XCRITERE2 += "|"
+  Endif
+  XCRITERE2 += XCRITERE
+Endif
+
+Return
+
+############################################################
+$LOAD_CRITERE1
+If len(XCRITERE)+len(XCRITERE3)+1 < 250
+  If XCRITERE3 <> ""
+      XCRITERE3 += "|"
+  Endif
+  XCRITERE3 += XCRITERE
+Else
+  If XCRITERE4 <> ""
+     XCRITERE4 += "|"
+  Endif
+  XCRITERE4 += XCRITERE
+Endif
+
+Return
+
+############################################################
+$LOAD_CRITERE2
+If len(XCRITERE)+len(XCRITERE11)+1 < 250
+  If XCRITERE11 <> ""
+      XCRITERE11 += "&"
+  Endif
+  XCRITERE11 += XCRITERE
+Else
+  If XCRITERE12 <> ""
+     XCRITERE12 += "&"
+  Endif
+  XCRITERE12 += XCRITERE
+Endif
+Return
+
+############################################################
+$LOAD_CRITERE3
+If len(XCRITERE)+len(XCRITERE13)+1 < 250
+  If XCRITERE13 <> ""
+      XCRITERE13 += "&"
+  Endif
+  XCRITERE13 += XCRITERE
+Else
+  If len(XCRITERE)+len(XCRITERE14)+1 < 250
+    If XCRITERE14 <> ""
+       XCRITERE14 += "&"
+    Endif
+    XCRITERE14 += XCRITERE
+  Else
+    If XCRITERE15 <> ""
+       XCRITERE15 += "&"
+    Endif
+    XCRITERE15 += XCRITERE
+  Endif
+Endif
+Return
+
+###########################################################################
+# Chargement du masque de détail des allocations
+$CHARGE_MGB
+Local Integer WMAX,WORDX_OK    # FQ 69505 GA 11/2010 ajout WORDX_OK
+Local Char    XCRITERE(255)
+Local Char    XCRITERE1(255)
+Local Char    XCRITERE2(255)
+Local Char    XCRITERE3(255)
+Local Char    XCRITERE4(255)
+Local Char    XCRITERE11(255)
+Local Char    XCRITERE12(255)
+Local Char    XCRITERE13(255)
+Local Char    XCRITERE14(255)
+Local Char    XCRITERE15(255)
+
+Local Char    FORMULE1(255)
+Local Char    CUSFLT(255)
+
+Local Date    TODAY : TODAY = date$
+
+WMAX = dim([M:MGB]WIPTYP)     # mémorisation nombre de ligne maxi
+
+Dela 0,[M:MGB]NBLIG+1,[M:MGB]NBLIG [M:MGB]NBLIG
+
+Gosub LOAD_FILTER
+Gosub LOAD_FILTER2
+
+# si aucun ordre sélectionné
+If XCRITERE1 = "" &
+&  XCRITERE3 = ""
+    Return
+Endif
+
+# point d'entrée filtre supplémentaire
+GPOINT = "MFGBENCH" : Gosub ENTREE From EXEFNC
+#
+# Point d'entrée pour permettre à l'utilisateur de rajouter des sélections
+Raz CUSFLT
+GPOINT = "CUSSELFLT" : Gosub ENTREE From EXEFNC
+If CUSFLT = "" : CUSFLT = "1=1" : Endif
+
+# analyse présence formule de sélection
+If [M:MGB]FORMULE  = ""
+    If FORMULE1 = "" :  FORMULE1 = "1=1" : Endif
+Else
+    Read [F:TFO]TFO0=10;[M:MGB]FORMULE
+    If fstat
+        If FORMULE1 = "" :  FORMULE1 = "1=1" : Endif
+    Else
+        If FORMULE1 = ""
+            FORMULE1  = [F:TFO]FORFOR
+        Else
+            FORMULE1 += "&"
+            FORMULE1 += [F:TFO]FORFOR
+        Endif
+    Endif
+Endif
+
+# criteres en "ET"
+If XCRITERE1  = "" : XCRITERE1  = "1=2" : Endif
+If XCRITERE2  = "" : XCRITERE2  = "1=2" : Endif
+If XCRITERE3  = "" : XCRITERE3  = "1=2" : Endif
+If XCRITERE4  = "" : XCRITERE4  = "1=2" : Endif
+If XCRITERE11 = "" : XCRITERE11 = "1=1" : Endif
+If XCRITERE12 = "" : XCRITERE12 = "1=1" : Endif
+If XCRITERE13 = "" : XCRITERE13 = "1=1" : Endif
+If XCRITERE14 = "" : XCRITERE14 = "1=1" : Endif
+If XCRITERE15 = "" : XCRITERE15 = "1=1" : Endif
+
+Link [ORD] With [ITF]ITF0=[F:ORD]ITMREF;[F:ORD]STOFCY, [ITM]ITM0=[F:ORD]ITMREF As [ORDX]
+&          Where (evalue(XCRITERE1)|evalue(XCRITERE2)|evalue(XCRITERE3)|evalue(XCRITERE4))&
+&                 evalue(XCRITERE11)&evalue(XCRITERE12)&evalue(XCRITERE13)&evalue(XCRITERE14)&
+&                 evalue(XCRITERE15)&evalue(FORMULE1) & evalue(CUSFLT)
+
+nolign=1
+
+# FQ 69505 GA 11/2010
+GPE=0 : GPOINT = "NOHINT"
+Gosub ENTREE From EXEFNC
+If !GPE
+   For [ORDX]
+      If nolign = WMAX  : Break : Endif
+      Gosub TRT_ORDX
+      If WORDX_OK     # FQ 69505 GA 11/2010
+         nolign += 1
+      Endif
+   Next
+Else
+   For [ORDX] With Nohint
+      If nolign = WMAX  : Break : Endif
+      Gosub TRT_ORDX
+      If WORDX_OK     # FQ 69505 GA 11/2010
+         nolign += 1
+      Endif
+   Next
+Endif
+
+[M:MGB]NBLIG  = nolign-1
+Gosub TRI_TAB
+Gosub HIGHLIGHT
+
+Return
+
+$TRT_ORDX
+Local Decimal WSHIQTYSTU                                   # Issue 108577 - by GA 09/2015
+Local Char PROJECT(40)
+Local Char BUDGET(15)
+Local Char TASK(15)
+Local Integer RETSTA
+Local Decimal WQTYPUR                                      # Issue X3-242064 - 2021-09-01 by JUSYN
+
+    WORDX_OK=0   # FQ 69505 GA 11/2010 si sortie avant la fin, pas de chargement de la ligne
+
+    If [F:ORD]WIPTYP <> 1 & [F:ORD]WIPSTA = 3
+        If [M:MGB]MRPFLG = 1  & [F:ORD]ORI <> 5 : Return : Endif
+        If [M:MGB]MRPFLG = 2  & [F:ORD]ORI <> 6 : Return : Endif
+    Endif
+
+    # demande 19497 MM 09.03
+    # point d'entrée permettant de sauter des enregistrements de la sélection
+    GPE=0
+    GPOINT = "CHECKORD" : Gosub ENTREE From EXEFNC
+    If GPE: Return : Endif
+
+    # 98144 - Match the allergens
+    If dim([M:MGB]ALGS)>0 & [M:MGB]ALGS<>"" & func AFNC.ACTIV("FOA")
+        Raz ALGCNT,CURALG,ALGMISS
+
+        For ALGCNT = 1 To len([M:MGB]ALGS)
+            CURALG=mid$([M:MGB]ALGS,ALGCNT,1)
+            If !instr(1,[F:ITM]ALG,CURALG) : ALGMISS=1 : Break : Endif
+        Next
+        If ALGMISS=1 : Return : Endif
+    Endif
+
+    [M:MGB] = [F:ORD]
+    [M:MGB]WIPTYPSTA(nolign-1)  = mess([F:ORD]WIPTYP,341,1)+mess([F:ORD]WIPSTA,342,1)
+    [M:MGB]PLANNER2(nolign-1) = [F:ITF]PLANNER
+    [M:MGB]BUY(nolign-1)      = [F:ITF]BUY
+    If [F:ITM]ITMREF <> [F:ORD]ITMREF : Read [ITM]ITM0=[F:ORD]ITMREF : Endif
+    If dim([M:MGB]ITMDES1(nolign-1)) > 0
+        #[M:MGB]ITMDES1(nolign-1) = [F:ITM]ITMDES1
+        Call CHARGE_DEFITMDES("DES1AXX",GLANGUE,[F:ITM]ITMREF,[M:MGB]ITMDES1(nolign-1), "[F:ITM]") From TRTX3 # FGR 30/06/2009 : X3SUIVI56189
+    Endif
+    If dim([M:MGB]XMRPMES(nolign-1)) > 0
+        If [M:MGB]MRPMES(nolign-1) > 0
+            [M:MGB]XMRPMES(nolign-1) = mess([M:MGB]MRPMES(nolign-1),318,1)
+        Else
+            [M:MGB]XMRPMES(nolign-1) = mess(1,318,1)
+        Endif
+        # rupture sur SOF, MWF, TPF, MTF
+        # Issue 107498/102 - 2016-05-03 by ALSHE : add WIPTYP 14
+        If find([M:MGB]WIPTYP(nolign-1),1,6,8,14) & ([M:MGB]WIPSTA(nolign-1) = 1) & ([M:MGB]SHTQTY(nolign-1) <> 0)
+            [M:MGB]XMRPMES(nolign-1) = mess(132,190,1)
+        Endif
+        # retard sur SOF et TPF
+        If find([M:MGB]WIPTYP(nolign-1),1,8) & ([M:MGB]WIPSTA(nolign-1) = 1) & ([M:MGB]ENDDAT(nolign-1) < TODAY)
+            [M:MGB]XMRPMES(nolign-1) = mess(60,190,1)
+        Endif
+    Endif
+
+    # analyse mises en relief (en cours, inter-société ...)
+    ISINTERCPY = 0
+    If [F:ORD]WIPTYP = 1 & GMODU(5) = 2
+        If [F:ORD]BPRNUM <> ""
+            Read [BPR]BPR0=[F:ORD]BPRNUM
+            If fstat : Raz [F:BPR] : Endif
+
+            # Inter-société ?
+            If [F:BPR]FCY <> ""
+                ISINTERCPY = func BENCHLIBP.ISINTERCPY([F:BPR]FCY, [F:ORD]STOFCY)
+            Endif
+
+            # si on ne veut pas les SO inter-sociétés
+            If ISINTERCPY
+                If [F:BTS]ICPYFLG = 3 : Return : Endif
+                If ISINTERCPY : [M:MGB]WIPTYPSTA(nolign-1) +=  chr$(126) : Endif
+            Endif
+        Endif
+        # si on ne veut que les SO inter-sociétés
+        If !ISINTERCPY & [F:BTS]ICPYFLG = 2 : Return : Endif
+    Endif
+
+    Raz WSHIQTYSTU                                 # Issue 108577 - by GA 09/2015
+    If [F:ORD]WIPTYP = 2 & GMODU(6) = 2
+        If [F:ORD]BPRNUM <> ""
+            Read [BPR]BPR0=[F:ORD]BPRNUM
+            If fstat : Raz [F:BPR] : Endif
+
+            # Inter-société ?
+            If [F:BPR]FCY <> ""
+                ISINTERCPY = func BENCHLIBP.ISINTERCPY([F:BPR]FCY, [F:ORD]STOFCY)
+            Endif
+
+            # si on ne veut pas les PO inter-sociétés
+            If ISINTERCPY
+                If [F:BTS]ICPYFLG = 3 : Return : Endif
+                If ISINTERCPY : [M:MGB]WIPTYPSTA(nolign-1) +=  chr$(126) : Endif
+            Endif
+        Endif
+        # si on ne veut que les PO inter-sociétés
+        If !ISINTERCPY & [F:BTS]ICPYFLG = 2 : Return : Endif
+
+        # Shipped and/or partially receipt ?
+        If [F:ORD]WIPSTA = 1
+            Read [POH]POH0=[F:ORD]VCRNUM
+            If fstat : Raz [F:POH] : Endif
+          # Issue 108577 - by GA 09/2015: Shipment in Enterprise Planning
+            Read [POQ]POQ0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+            If fstat : Raz [F:POQ] : Endif
+            WSHIQTYSTU=[F:POQ]SHIQTYSTU
+            If WSHIQTYSTU>0
+               [M]WIPTYPSTA(nolign-1) += "<"
+               If dim([M]SHIQTYSTU(nolign-1))>0 [M]SHIQTYSTU(nolign-1)=WSHIQTYSTU Endif
+            Endif
+            If [F:POH]RCPFLG = 2 : [M:MGB]WIPTYPSTA(nolign-1) += ">" : Endif
+        Endif
+    Endif
+
+    If [F:ORD]WIPTYP = 5 & find([F:ORD]WIPSTA, 1, 2) & GMODU(8) = 2
+        Read [MFG]MFG0=[F:ORD]VCRNUM
+        If fstat : Raz [F:MFG]
+        Else
+            If [F:MFG]OBJDAT <> [0/0/0]
+                [M:MGB]OBJDAT(nolign-1) = [F:MFG]OBJDAT
+                [M:MGB]ELFLG(nolign-1)  = [F:MFG]OBJDAT - [F:ORD]ENDDAT
+            Else
+                [M:MGB]OBJDAT(nolign-1) = [F:ORD]ENDDAT
+                [M:MGB]ELFLG(nolign-1)  = 0
+            Endif
+            If [F:MFG]MFGSTA = 1 & [F:MFG]MFGTRKFLG = 4 : [M:MGB]WIPTYPSTA(nolign-1) += ">" : Endif
+        Endif
+        If dim([M:MGB]MFGDES(nolign-1)) > 0
+            Read [MFI]MFI0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+            If fstat : Raz [F:MFI]
+            Else
+                [M:MGB]MFGDES(nolign-1) = [F:MFI]MFGDES
+            Endif
+        Endif
+    Endif
+
+    If [F:ORD]WIPTYP = 13 & [F:ORD]WIPSTA = 1 & GMODU(6) = 2
+        Read [SCO]SCO0=[F:ORD]VCRNUM
+        If fstat : Raz [F:SCO]
+        Else
+            If [F:SCO]SCOSTA = 1 & [F:SCO]SCOTRKFLG = 4 : [M:MGB]WIPTYPSTA(nolign-1) += ">" : Endif
+        Endif
+    Endif
+
+    [M:MGB]PURFLG(nolign-1)  = [F:ITM]PURFLG
+    [M:MGB]MFGFLG(nolign-1)  = [F:ITM]MFGFLG
+    [M:MGB]SCPFLG(nolign-1)  = [F:ITM]SCPFLG
+    [M:MGB]SCSFLG(nolign-1)  = [F:ITM]SCSFLG
+    [M:MGB]PHAFLG(nolign-1)  = [F:ITM]PHAFLG
+    [M:MGB]GENFLG(nolign-1)  = [F:ITM]GENFLG
+    [M:MGB]TOOFLG(nolign-1)  = [F:ITM]TOOFLG
+    [M:MGB]DLVFLG(nolign-1)  = [F:ITM]DLVFLG
+    [M:MGB]SALFLG(nolign-1)  = [F:ITM]SALFLG
+    [M:MGB]INTFLG(nolign-1)  = [F:ITM]INTFLG
+    [M:MGB]STU(nolign-1)     = [F:ITM]STU
+
+    # 106430 - Purchase planning - line level fields
+    [M:MGB]LINWEU(nolign-1)     = [F:ITM]WEU
+    [M:MGB]LINWEI(nolign-1)     = [F:ITM]ITMWEI * [M:MGB]RMNEXTQTY(nolign-1)
+    [M:MGB]LINVOU(nolign-1)     = [F:ITM]VOU
+    [M:MGB]LINVOL(nolign-1)     = [F:ITM]ITMVOU * [M:MGB]RMNEXTQTY(nolign-1)
+    # Issue X3-242064 - 2021-09-01 by JUSYN : Including purchase coefficient
+    If [F:ITM]PUUSTUCOE > 0
+        WQTYPUR = [M:MGB]RMNEXTQTY(nolign-1) / [F:ITM]PUUSTUCOE
+        Call QTEARR(WQTYPUR,[F:ITM]PUU) From TRTDIV
+    Else
+        WQTYPUR = [M:MGB]RMNEXTQTY(nolign-1)
+    Endif
+    [M:MGB]LINAMT(nolign-1)     = [F:ITM]PURBASPRI * WQTYPUR
+    # End issue X3-242064
+    [M:MGB]LINAMTCUR(nolign-1)  = GLOCALDEV
+    If GSYSCUR <> GLOCALDEV
+      Local Integer STAT
+      Call CONVERT (GSYSCUR,GLOCALDEV,GLOCALDEV,GCHGTYP,[M:MGB]STRDAT(nolign-1),[M:MGB]LINAMT(nolign-1),[M:MGB]LINAMT(nolign-1),STAT) From TRTDEV
+    Endif
+
+    # 98144
+    If dim([M:MGB]ALGITM)>0
+      [M:MGB]ALGITM(nolign-1) = [F:ITM]ALG
+    Endif
+
+    # récupération données supplémentaires sur document
+#   If find([M:MGB]WIPTYP(nolign-1),1,2,5,7,9,13) : Default Mask [MGB] : Gosub GET_DOCUMENT_DATA From BENCHLIB : Endif
+    #If find([M:MGB]WIPTYP(nolign-1),1,2,4,5,7,9,13) : # GH 14/11/12 bug 85907
+       Default Mask [MGB] : Gosub GET_DOCUMENT_DATA From BENCHLIB
+    #Endif
+
+    # Issue 110957 - 2015-10-07 by GH
+    If dim([M:MGB]CRID)>0 & (varmode([M:MGB]CRID(nolign-1))<>3 | find([M:MGB]CCMFLG,1,2))
+       [M:MGB]CRID(nolign-1) = func TRTX3FNC.CCMID([F:ORD]ITMREF,[F:ORD]ECCVALMAJ,[F:ORD]ECCVALMIN)
+       If [M:MGB]CCMFLG=1 & [M:MGB]CRID(nolign-1)<>"" : Return
+       Elsif [M:MGB]CCMFLG=2 & [M:MGB]CRID(nolign-1)="" : Return
+       Endif
+       If dim([M:MGB]CRFLG)>0
+          [M:MGB]CRFLG(nolign-1) = string$([M:MGB]CRID(nolign-1)<>"","151")
+       Endif
+    Endif
+
+    # mémorisation code objet (pour action tunnel)
+    Case [M:MGB]WIPTYP(nolign-1)
+        When 1:         Case [M:MGB]WIPSTA(nolign-1)
+                            When 1, 2 : Case [M:MGB]ABBFIL(nolign-1)
+                                         When "SOQ" : [M:MGB]CODOBJ(nolign-1)  = "SOH"
+                                                      [M:MGB]CODCLE(nolign-1)  = [M:MGB]VCRNUM(nolign-1)
+                                                      [M:MGB]CODCLE2(nolign-1) = num$([M:MGB]VCRLIN(nolign-1))
+                                         When "SOC" : [M:MGB]CODOBJ(nolign-1)  = "SOQ"
+                                                      [M:MGB]CODCLE(nolign-1)  = num$([M:MGB]VCRLIN(nolign-1))
+                                                      [M:MGB]CODCLE2(nolign-1) = [M:MGB]VCRNUM(nolign-1)
+                                        Endcase
+                            # GH 21/05/2013 bug 89214 SOP géré comme SOF
+                            #When 2 : Case [M:MGB]ABBFIL(nolign-1)
+                            #             When "SOC" : [M:MGB]CODOBJ(nolign-1)  = "SOQ"
+                            #                          [M:MGB]CODCLE(nolign-1)  = num$([M:MGB]VCRLIN(nolign-1))
+                            #                          [M:MGB]CODCLE2(nolign-1) = [M:MGB]VCRNUM(nolign-1)
+                            #         Endcase
+                        Endcase
+        When 2,7:       Case [M:MGB]WIPSTA(nolign-1)
+                            When 1 : Case [M:MGB]ABBFIL(nolign-1)
+                                         When "POQ" : [M:MGB]CODOBJ(nolign-1)  = "POH"
+                                                      [M:MGB]CODCLE(nolign-1)  = [M:MGB]VCRNUM(nolign-1)
+                                                      [M:MGB]CODCLE2(nolign-1) = num$([M:MGB]VCRLIN(nolign-1))
+                                         When "POC" : [M:MGB]CODOBJ(nolign-1)  = "POD"
+                                                      [M:MGB]CODCLE(nolign-1)  = num$([M:MGB]VCRLIN(nolign-1))
+                                                      [M:MGB]CODCLE2(nolign-1) = [M:MGB]VCRNUM(nolign-1)
+                                     Endcase
+                            When 2 : Case [M:MGB]ABBFIL(nolign-1)
+                                         When "PSD" : [M:MGB]CODOBJ(nolign-1)  = "PSH"
+                                                      [M:MGB]CODCLE(nolign-1)  = [M:MGB]VCRNUM(nolign-1)
+                                                      [M:MGB]CODCLE2(nolign-1) = num$([M:MGB]VCRLIN(nolign-1))
+                                         When "POC" : [M:MGB]CODOBJ(nolign-1)  = "POD"
+                                                      [M:MGB]CODCLE(nolign-1)  = num$([M:MGB]VCRLIN(nolign-1))
+                                                      [M:MGB]CODCLE2(nolign-1) = [M:MGB]VCRNUM(nolign-1)
+                                     Endcase
+                        Endcase
+                        # Issue X3-226738 - 2023-08-22 by JUSYN : Tunnel to sales order from TPF
+        When 8:         Case [M:MGB]ABBFIL(nolign-1)
+                            When "SOQ" : [M:MGB]CODOBJ(nolign-1)  = "SOH"
+                                         [M:MGB]CODCLE(nolign-1)  = [M:MGB]VCRNUM(nolign-1)
+                                         [M:MGB]CODCLE2(nolign-1) = ""
+                        Endcase
+        When 5,6,9:   [M:MGB]CODOBJ(nolign-1) = "MFG"
+                      [M:MGB]CODCLE(nolign-1) = [M:MGB]VCRNUM(nolign-1)
+                      [M:MGB]CODCLE2(nolign-1)= num$([M:MGB]VCRLIN(nolign-1))
+        When 4:       If find([M:MGB]WIPSTA(nolign-1),1,2)
+                          Case [M:MGB]ABBFIL(nolign-1)
+                                         When "MFO" : [M:MGB]CODOBJ(nolign-1) = "MFG"
+                                                      [M:MGB]CODCLE(nolign-1) = [M:MGB]VCRNUM(nolign-1)
+                                                      [M:MGB]CODCLE2(nolign-1)= num$([M:MGB]VCRLIN(nolign-1))
+                                         When "SCS" : [M:MGB]CODOBJ(nolign-1) = "SCO"
+                                                      [M:MGB]CODCLE(nolign-1) = [M:MGB]VCRNUM(nolign-1)
+                                                      [M:MGB]CODCLE2(nolign-1)= num$([M:MGB]VCRLIN(nolign-1))
+                          Endcase
+                      Endif
+        When 3,13:    [M:MGB]CODOBJ(nolign-1) = "SCO"
+                      [M:MGB]CODCLE(nolign-1) = [M:MGB]VCRNUM(nolign-1)
+                      [M:MGB]CODCLE2(nolign-1)= num$([M:MGB]VCRLIN(nolign-1))
+# Issue 107498/101 - 2016-05-02 by ALSHE : Action menue
+        When 14:      RETSTA = func PIMPL_CSTD_PROGS.PJM_KEY_SPLIT(GACTX, [M:MGB]PJT(nolign-1), PROJECT, BUDGET, TASK)
+                      [M:MGB]CODOBJ(nolign-1) = "PJM"
+                      [M:MGB]CODCLE(nolign-1) = PROJECT
+                      [M:MGB]CODCLE2(nolign-1)= num$([M:MGB]VCRNUM(nolign-1))
+    Endcase
+
+    # MM 22206 01.05
+    # date besoin
+    If find([F:ORD]WIPTYP,2,5,7,13) & find ([F:ORD]WIPSTA,1,2)    # POP,POF,WOP,WOF,TRP,TRF,EOP,EOF
+        Read [ITF]ITF0=[F:ORD]ITMREF;[F:ORD]STOFCY
+        If fstat : Raz [F:ITF]
+        Else
+            If find([F:ITF]REOMGTCOD,2,3)    # réappro PDP/CBN
+                Read [TRP]TRP0=[F:ITF]REOPOL
+                If fstat : Raz [F:TRP]
+                Else
+                    If [F:TRP]PLNANYCOD=2 & [F:ITF]REOCOD<>1    # replanification + Type suggestion<>pas de suggestion
+                        Read [PCB]PCB0=[F:ORD]STOFCY
+                        If fstat : Raz [F:PCB]
+                        Else
+                            Case [F:ORD]WIPTYP
+                                When 5 :    # WO
+                                            Case[F:ORD]WIPSTA
+                                                When 1 :
+                                                    Case [F:ITF]REOMGTCOD
+                                                    When 2 :  # CBN
+                                                        If [F:PCB]RPLMOD(0)=3 & [F:PCB]MRPANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1) Endif
+                                                    When 3 :  # PDP
+                                                         If [F:PCB]RPLMODS(0)=3 & [F:PCB]MPSANYLTI<>0
+                                                             [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1) Endif
+                                                    Endcase
+                                                When 2 :
+                                                    Case [F:ITF]REOMGTCOD
+                                                    When 2 :  # CBN
+                                                        If[F:PCB]RPLMOD(1)=3  & [F:PCB]MRPANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1) Endif
+                                                    When 3 :  # PDP
+                                                        If [F:PCB]RPLMODS(1)=3 & [F:PCB]MPSANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1) Endif
+                                                    Endcase
+                                            Endcase
+                                When 2 :    # PO
+                                            Case[F:ORD]WIPSTA
+                                                When 1 :
+                                                    Case [F:ITF]REOMGTCOD
+                                                    When 2 :  # CBN
+                                                        If[F:PCB]RPLMOD(2)=3  & [F:PCB]MRPANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1): Endif
+                                                    When 3 :  # PDP
+                                                        If [F:PCB]RPLMODS(2)=3 & [F:PCB]MPSANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1): Endif
+                                                    Endcase
+                                                When 2 :
+                                                    Case [F:ITF]REOMGTCOD
+                                                    When 2 :  # CBN
+                                                        If[F:PCB]RPLMOD(3)=3 & [F:PCB]MRPANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1): Endif
+                                                    When 3 :  # PDP
+                                                        If [F:PCB]RPLMODS(3)=3 & [F:PCB]MPSANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1): Endif
+                                                    Endcase
+                                            Endcase
+                                When 7 :    # TR
+                                            Case[F:ORD]WIPSTA
+                                                When 1 :
+                                                    Case [F:ITF]REOMGTCOD
+                                                    When 2 :  # CBN
+                                                        If[F:PCB]RPLMOD(4)=3 & [F:PCB]MRPANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1): Endif
+                                                    When 3 :  # PDP
+                                                        If [F:PCB]RPLMODS(4)=3 & [F:PCB]MPSANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1): Endif
+                                                    Endcase
+                                                When 2 :
+                                                    Case [F:ITF]REOMGTCOD
+                                                    When 2 :  # CBN
+                                                        If[F:PCB]RPLMOD(5)=3 & [F:PCB]MRPANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1): Endif
+                                                    When 3 :  # PDP
+                                                        If [F:PCB]RPLMODS(5)=3 & [F:PCB]MPSANYLTI<>0
+                                                            [M:MGB]REQDAT(nolign-1) = [M:MGB]MRPDAT(nolign-1): Endif
+                                                    Endcase
+                                            Endcase
+                                When 13:    # EO ...  A FAIRE LLC QUAND LE MRP sera pret ...
+                            Endcase
+                        Endif
+                    Endif
+                Endif
+            Endif
+        Endif
+    Endif
+
+    If [M:MGB]REQDAT(nolign-1)=[0/0/0] [M:MGB]REQDAT(nolign-1)=[M:MGB]ENDDAT(nolign-1) Endif
+
+    # MM 19110 08.03
+    # point d'entrée permettant de renseigner des zones spécifiques
+    GPOINT = "ADDLIN" : Gosub ENTREE From EXEFNC
+
+    WORDX_OK=1   # FQ 69505 GA 11/2010 sortie Ok
+
+Return
+
+###########################################################################
+$TRI_TAB
+If [M:MGB]NBLIG <> 0
+    WTRI = 0
+    GPOINT = "CUSSRT" : Gosub ENTREE From EXEFNC
+    If !WTRI
+        # FQ 67298 GA 09/2010 ajout VCRNUM dans les tris
+        Case [M:MGB]SRTCOD
+            When 1: Sorta [M:MGB]NBLIG [M:MGB]NBLIG Order By [M:MGB]STOFCY(indice),[M:MGB]STRDAT(indice),[M:MGB]VCRNUM(indice)
+            When 2: Sorta [M:MGB]NBLIG [M:MGB]NBLIG Order By [M:MGB]ITMREF(indice),[M:MGB]STRDAT(indice),[M:MGB]VCRNUM(indice)
+            When 3: Sorta [M:MGB]NBLIG [M:MGB]NBLIG Order By [M:MGB]WIPTYPSTA(indice),[M:MGB]STRDAT(indice),[M:MGB]VCRNUM(indice)
+            When 4: Sorta [M:MGB]NBLIG [M:MGB]NBLIG Order By [M:MGB]VCRTYP(indice),[M:MGB]STRDAT(indice),[M:MGB]VCRNUM(indice)
+            When 5: Sorta [M:MGB]NBLIG [M:MGB]NBLIG Order By [M:MGB]STRDAT(indice),[M:MGB]VCRNUM(indice)
+            When 6: Sorta [M:MGB]NBLIG [M:MGB]NBLIG Order By [M:MGB]REQDAT(indice),[M:MGB]VCRNUM(indice) # 22206 MM 01.05
+            When 7: Sorta [M:MGB]NBLIG [M:MGB]NBLIG Order By [M:MGB]BPRNUM(indice),[M:MGB]VCRNUM(indice)
+        Endcase
+    Endif
+Endif
+Return
+
+####################################################################
+$HIGHLIGHT
+Affzo [M:MGB]20
+
+# mise en relief affectations
+[M:HLIK]ABB          = "MGB"
+[M:HLIK]VARABS       = "NBLIG"
+[M:HLIK]NBREX        = 0
+
+# réinitialisation style
+Chgstl [M:MGB]NBLIG  With ""
+
+# application style
+For I =0 To [M:MGB]NBLIG - 1
+    [M:HLIK]LINNUM = I
+    [M:HLIK]STYLE = ""
+
+    If dim(GVCR) > 0 & [M:MGB]VCRNUM(I) = GVCR   # FQ 67481 GVCR inexistant
+        [M:HLIK]STYLE = "MTOLINKD"
+        Goto NXT_HIGH
+    Endif
+    If [M:MGB]SHTQTY(I) > 0 & ([M:MGB]SHTQTY(I) > [M:MGB]MTOQTY(I))
+        [M:HLIK]STYLE = "MTOLINKC"
+        Goto NXT_HIGH
+    Endif
+    If ([M:MGB]MTOQTY(I) > 0 | [M:MGB]ALLQTY(I) > 0)
+        If [M:MGB]RMNEXTQTY(I) <= [M:MGB]MTOQTY(I) + [M:MGB]ALLQTY(I)
+            [M:HLIK]STYLE = "MTOLINKA"
+        Else
+            [M:HLIK]STYLE = "MTOLINKB"
+        Endif
+        Goto NXT_HIGH
+    Endif
+$NXT_HIGH
+    GPOINT = "STYLE" : Gosub ENTREE From EXEFNC : # GH 19/01/12 dm 78713
+    If [M:HLIK]STYLE<>""
+       Gosub STYLE_HL_TABLIN From HLIGHTLIB
+    Endif
+Next I
+Return
+
+########################################################################
+$CHARG_PARAM
+If dim(GMGLNUM)>0    # FQ 61343 GA 01/2010 pb si appel depuis le plan détaillé
+   Call GETCPY(GFCY,"BTS",51,GMGLNUM) From TRTX3CPT
+Elsif dim(GMDLNUM)>0
+   Call GETCPY(GFCY,"BTS",52,GMDLNUM) From TRTX3CPT
+Endif
+
+#----- Variables globales stock
+Call GLOBVAR(GFCY)    From WWGLOBSTO
+#----- Variables globales GPAO
+Call GLOBVAR(GFCY)    From WWGLOBGPA
+#----- Variables globales Achat
+Call GLOBVAR(GFCY)    From WWGLOBACH
+
+## GH 19/05/2014 bug 100108
+If GMODU(8) = 2
+    If clalev ([F:TCA]) <= 0 : Local File TABCOUAFF [TCA] : Endif
+    Local Integer WOK
+    Call LECTCA(8,WOK) From SUBTCA
+    If WOK=0 : GOPS = "" : Else GOPS = [F:TCA]CODNUM(4) : Endif  # compteur suggestion opérations
+Endif
+Return
+
+## GH 13/09/11 bug 76100
+$RECHARG_PARAM
+If GFCY<>[M:MGB]FCY
+ GFCY=[M:MGB]FCY : Gosub CHARG_PARAM
+Endif
+Return
+
+########################################################################
+$LECTURE_BTS
+# Issue 96456 GH 14/06/2016 - Optimisation
+#----- Relecture transaction de saisie  -----#
+If [F:BTS]BTSTYP <> 51 | [F:BTS]BTSNUM <> GMGLNUM
+    Read [BTS]BTS0=51;GMGLNUM
+    If fstat : Raz [F:BTS] : Endif
+Endif
+# 09.05 31994
+If GMODU(8) = 2
+    If clalev ([F:MTS]) <= 0 : Local File MFGTRS    [MTS] : Endif
+    If [F:BTS]MFGTRS<>""
+       If [F:MTS]MTSTYP<>1 | [F:MTS]MTSNUM<>[F:BTS]MFGTRS
+          Read [MTS]MTS0=1;[F:BTS]MFGTRS
+          If fstat : Raz [F:MTS] : Endif
+       Endif
+    Else
+       If [F:MTS]MTSTYP<>1 | [F:MTS]MTSNUM<>GMFGMTSNUM
+          Read [MTS]MTS0=1;GMFGMTSNUM
+          If fstat : Raz [F:MTS] : Endif
+        Endif
+    Endif
+Endif
+# Achats de sous-traitance: transaction de maj auto d'EO
+If GMODU(6) = 2
+    If clalev ([F:PTR]) <= 0 : Local File PURTRS     [PTR] : Endif
+    If dim([F:BTS]SCOTRS)>0 & [F:BTS]SCOTRS<>""
+       If [F:PTR]PTRTYP<>9 | [F:PTR]PTRNUM<>[F:BTS]SCOTRS
+          Read [PTR]PTR0=9;[F:BTS]SCOTRS
+          If fstat : Raz [F:PTR] : Endif
+       Endif
+    Else
+       If [F:PTR]PTRTYP<>9 | [F:PTR]PTRNUM<>GSCOPTRNUM
+          Read [PTR]PTR0=9;GSCOPTRNUM
+          If fstat : Raz [F:PTR] : Endif
+       Endif
+    Endif
+Endif
+Return
+
+###########################################################################
+# ETIQUETTES                                                              #
+###########################################################################
+Subprog IB_NBLIG
+###########################################################################
+# GBOUT1  : SAIMODPOX  demander/commander
+# GBOUT2  : SAIMODWOX  planifier/lancer
+# GBOUT3  : SAIMODEOX  planifier/sous-traiter         - V6 -
+# GBOUT4  : FMFGD      plan de travail
+# GBOUT5  : FMFGR      regroupement
+# GBOUT6  : Objet divers: commande
+# GBOUT7  : CONSSFC    stock
+# GBOUT8  : VISUITF    données de gestion
+# GBOUT9  : FWIPZOOM1  Zoom encours associés (OF)
+# GBOUT10 : FDISPNOW   Disponibilité composants
+# GBOUT11 : FDISPPLN   Disponibilité composants à date
+# GBOUT12 : SAIMFGALL  allocation auto OF
+# GBOUT13 : SAISCOALL  allocation auto EO             - V6 -
+# GBOUT14 : SAISTOALL  allocation manuelle
+# GBOUT15 : SAIMFGSCD  jalonnement
+# GBOUT16 : CONSSDI    stock disponible
+# GBOUT17 : FWIPZOOM2  Zoom encours associés (EO)     - V6 -
+# GBOUT18 : FMLKB      affectations                   - V6 -
+# GBOUT19 : FWIPZOOM4  Zoom shipments associés        - V9 -
+###########################################################################
+Local Integer L     : L = nolign-1
+Local Integer WAPP, WPRO, WINT, WSCO, WRET
+GBOUT1 = ""
+GBOUT2 = ""
+GBOUT3 = ""
+GBOUT4 = ""
+GBOUT5 = ""
+GBOUT6 = ""
+GBOUT7 = ""
+GBOUT8 = ""
+GBOUT9 = ""
+GBOUT10 = ""
+GBOUT11 = ""
+GBOUT12 = ""
+GBOUT13 = ""
+GBOUT14 = ""
+GBOUT15 = ""
+#GBOUT16 = ""    # FQ 51853 GA 02/2009 autoriser l'accès à Stock dispo
+GBOUT17 = ""
+GBOUT18 = ""
+GBOUT19 = ""      # Issue 108577 - by GA 07/2015
+
+# Issue 107498/108 - 2016-05-19 by BEEBE : initialize
+[M:MGB]PARPJT=""
+
+If [M:MGB]NBLIG = 0 : End : Endif
+
+WAPP = 0
+WPRO = 0
+WINT = 0
+WSCO = 0
+If [F:BTS]APPSUG = 2 : WAPP += 1 : Endif
+If [F:BTS]APPPLN = 2 : WAPP += 2 : Endif
+If [F:BTS]APPLAN = 2 : WAPP += 4 : Endif
+If [F:BTS]PLNSUG = 2 : WPRO += 1 : Endif
+If [F:BTS]PLNPLN = 2 : WPRO += 2 : Endif
+If [F:BTS]PLNLAN = 2 : WPRO += 4 : Endif
+If [F:BTS]INTSUG = 2 : WINT += 1 : Endif
+If [F:BTS]INTPLN = 2 : WINT += 2 : Endif
+If [F:BTS]INTLAN = 2 : WINT += 4 : Endif
+If [F:BTS]SCOSUG = 2 : WSCO += 1 : Endif
+If [F:BTS]SCOPLN = 2 : WSCO += 2 : Endif
+If [F:BTS]SCOLAN = 2 : WSCO += 4 : Endif
+
+# réajustement suivant habilitation achat + interX
+If GBUYFLT = 2 & [M:MGB]PLANNER <> [M:MGB]BUY(L) & [M:MGB]BUY(L) <> ""
+    If find(WAPP,4,5,6,7) : WAPP -= 4 : Endif
+    If find(WINT,4,5,6,7) : WINT -= 4 : Endif
+Endif
+
+# GH 24/08/11 bug 75840
+# réajustement suivant habilitation fabrication + sous-traitance
+If (GPLNFLT = 2 & !find([M:MGB]PLANNER2(L),[M:MGB]PLANNER,"")) |
+&  (GPLNFLT = 3 & [M:MGB]PLANNER2(L)<>[M:MGB]PLANNER)
+    If find(WPRO,4,5,6,7) : WPRO -= 4 : Endif
+    If find(WSCO,4,5,6,7) : WSCO -= 4 : Endif
+Endif
+
+# réajustement si module absent
+If GMODU(6) < 2 : WAPP = 0 : WINT = 0 : WSCO = 0 : Endif
+If GMODU(8) < 2 : WPRO = 0 : Endif
+
+# si DA obligatoire, l'action commander n'est dispo que sur les DA
+If [F:ITM]ITMREF <> [M:MGB]ITMREF(L)
+    Read [ITM]ITM0=[M:MGB]ITMREF(L)
+    If fstat : Raz [F:ITM] : Endif
+Endif
+If [F:ITM]PRQFLG = 2 & WAPP>=4 & ([M:MGB]WIPTYP(L) <> 2 |  [M:MGB]WIPSTA(L) = 3)
+    WAPP -= 4
+Endif
+
+If [M:MGB]WIPTYPSTA(L) <> "" # Issue 107498/101 - 2016-04-26 by ALSHE : add Project demand
+    Case [M:MGB]WIPTYP(L)
+      When 1,3,6,8,14 : # Customer order + Subcontracted material + Material requirements + Transfer request + Project demand
+              If [M:MGB]WIPSTA(L) = 1 & ([M:MGB]RMNEXTQTY(L) > ([M:MGB]ALLQTY(L) + [M:MGB]MTOQTY(L)))
+                  If [M:MGB]PURFLG(L) = 2
+                      Case WAPP
+                          When 2,3: GBOUT1 = mess(337,198,1)  # demander
+                          When 4,5: GBOUT1 = mess(363,198,1)  # commander
+                          When 6,7: GBOUT1 = mess(364,198,1)  # demander/commander
+                      Endcase
+                      If GBOUT1 = ""
+                          Case WINT
+                              When 2,3: GBOUT1 = mess(337,198,1)  # demander
+                              When 4,5: GBOUT1 = mess(363,198,1)  # commander
+                              When 6,7: GBOUT1 = mess(364,198,1)  # demander/commander
+                          Endcase
+                      Endif
+                  Endif
+                  If [M:MGB]MFGFLG(L) = 2
+                      Case WPRO
+                          When 2,3:   GBOUT2 = mess(495,198,1)  # planifier (fabrication)
+                      #   When 2,3:   GBOUT2 = mess(279,198,1)  # planifier                 ## GH 07/09/11 bug 76098
+                          When 4,5:   GBOUT2 = mess(280,198,1)  # lancer
+                          When 6,7:   GBOUT2 = mess(333,198,1)  # planifier/lancer
+                      Endcase
+                      #If GBOUT2 = ""
+                      #    Case WINT
+                      #        When 2,3: GBOUT1 = mess(337,198,1)  # demander
+                      #        When 4,5: GBOUT1 = mess(363,198,1)  # commander
+                      #        When 6,7: GBOUT1 = mess(364,198,1)  # demander/commander
+                      #    Endcase
+                      #Endif
+                  Endif
+                  If [M:MGB]SCPFLG(L) = 2
+                      Case WSCO
+                          When 2,3: GBOUT3 = mess(496,198,1)    # planifier (sous-traitance)
+                      #   When 2,3: GBOUT3 = mess(279,198,1)    # planifier                ## GH 07/09/11 bug 76098
+                          When 4,5: GBOUT3 = mess(239,198,1)    # sous-traiter
+                          When 6,7: GBOUT3 = mess(474,198,1)    # planifier/sous-traiter
+                          # Issue 86810 - 2018-06-12 by GH : Action "Plan/Subcontract" whatether is the management type for the product
+                          # Issue 111896 - 2016-02-01 by BEEBE : Action "Plan/Subcontract" only when management type "by order"
+                          #                                      Only in this case a EOS could be unique assigned
+                          #If [F:ITM]STDFLG=4 : GBOUT3 = mess(474,198,1) : Endif  # planifier/sous-traiter
+                      Endcase
+                  Endif
+## GH 25/04/2014 bug 84573
+#                  If [M:MGB]WIPTYP(L) = 1 & [M:MGB]FMI(L) = 5
+#                      Read [SOQ]SOQ0=[M:MGB]VCRNUM(L);[M:MGB]VCRLIN(L);[M:MGB]VCRSEQ(L)
+#                      If !fstat & [F:SOQ]FMINUM <> ""
+#                         GBOUT2  = ""
+#                      Endif
+#                  Endif
+                  If find([M:MGB]WIPTYP(L),1,8)
+                      Read [SOQ]SOQ0=[M:MGB]VCRNUM(L);[M:MGB]VCRLIN(L);[M:MGB]VCRSEQ(L)
+                      If fstat | [F:SOQ]FMINUM <> ""
+                         # ctm déjà effectuée
+                         Raz GBOUT1, GBOUT2, GBOUT3
+                      Else
+                         If !find([F:SOQ]FMI,3,5,6)
+                            Local Char    WPTOCOD(GLONPTO)
+                            WPTOCOD = func ITMLIB.GET_PTOCOD([M:MGB]ITMREF(L),[M:MGB]FCY)
+                            If [F:PTO]PTOCOD <> WPTOCOD
+                                Read [PTO]PTO0=WPTOCOD
+                                If fstat : Raz [F:PTO] : Endif
+                            Endif
+                         Endif
+                         If (find([F:SOQ]FMI,3,5,6) | [F:PTO]PTODIR=2)
+&                           & func MTOLINKLIB.LINK_EXISTS([M:MGB]FCY,[M:MGB]VCRTYP(L),[M:MGB]VCRNUM(L)
+&                                                                   ,[M:MGB]VCRLIN(L),[M:MGB]VCRSEQ(L),[M:MGB]WIPTYP(L))
+                            # ctm à effectuer ou affectation 1<=>1 & demande déjà affectée
+                            Raz GBOUT1, GBOUT2, GBOUT3
+                         Else
+                             Case [F:SOQ]FMI
+                               When 3               # ctm = achat
+                                 Raz GBOUT2, GBOUT3
+                               When 5               # ctm = production
+                                 Raz GBOUT1, GBOUT3
+                               When 6               # ctm = SST
+                                 Raz GBOUT1, GBOUT2
+                             Endcase
+                         Endif
+                      Endif
+                  Endif
+##
+              Endif
+              Case [M:MGB]WIPTYP(L)
+                When 3, 6, 14 # Issue 107498/101 - 2016-04-26 by ALSHE : add Project demand
+                  GBOUT9 = mess(384,198,1)                                               # zoom encours associés
+                  If [M:MGB]WIPSTA(L) = 1
+                      Call HAB_ACT([M:MGB]FCY, "M", WRET) From BENCHLIB
+                      If WRET : GBOUT14 = mess(33,191,1) : Endif                         # allocation manuelle
+                  Endif
+                When 8 :  # 11295 MM 03.06
+                  GBOUT17 = mess(384,198,1)                                              # zoom encours associés
+              Endcase
+      When 2: # commande achat
+              Case [M:MGB]WIPSTA(L)
+                  When 1:    Case WAPP
+                                    When 4,5,6,7: GBOUT1 = mess(335,198,1)  # modifier
+                             Endcase
+                             If GBOUT1 = ""
+                                 If WINT >= 4 : GBOUT1 = mess(335,198,1) : Endif
+                             Endif
+                             If ([M:MGB]SCPFLG(L)=2 | [M:MGB]SCSFLG(L)=2) & WSCO >= 2 : # GA Mai 2006 POF sous-traitance
+                                GBOUT9 = mess(384,198,1)  # zoom encours associés
+                             Endif
+                             GBOUT19 = mess(3,2088,1) : # Issue 108577 by GA 07/2015
+                  When 2:    Case WAPP
+                                    When 2,3 :    GBOUT1 = mess(335,198,1)  # modifier
+                                    When 4,5 :    GBOUT1 = mess(363,198,1)  # commander
+                                    When 6,7 :    GBOUT1 = mess(362,198,1)  # modifier/commander
+                             Endcase
+                             If GBOUT1 = ""
+                                 If WINT >= 2 : GBOUT1 = mess(362,198,1) : Endif
+                             Endif
+                  When 3:    Case WAPP
+                                    When 1:   GBOUT1 = mess(335,198,1)  # modifier
+                                    When 2:   GBOUT1 = mess(337,198,1)  # demander
+                                    When 3:   GBOUT1 = mess(346,198,1)  # modifier/demander
+                                    When 4:   GBOUT1 = mess(363,198,1)  # commander
+                                    When 5:   GBOUT1 = mess(362,198,1)  # modifier/commander
+                                    When 6,7: GBOUT1 = mess(364,198,1)  # demander/commander
+                              Endcase
+                              If GBOUT1 = ""
+                                  If WINT >= 1 : GBOUT1 = mess(364,198,1) : Endif
+                              Endif
+                              If [M:MGB]MFGFLG(L) = 2
+                                 Case WPRO
+                                       When 2,3:   GBOUT2 = mess(495,198,1)  # planifier (fabrication)
+                                 #     When 2,3:   GBOUT2 = mess(279,198,1)  # planifier             ## GH 07/09/11 bug 76098
+                                       When 4,5:   GBOUT2 = mess(280,198,1)  # lancer
+                                       When 6,7:   GBOUT2 = mess(333,198,1)  # planifier/lancer
+                                 Endcase
+                              Endif
+                              If [M:MGB]SCPFLG(L) = 2
+                                  Case WSCO
+                                        When 2,3:   GBOUT3 = mess(496,198,1)  # planifier (sous-traitance)
+                                  #     When 2,3:   GBOUT3 = mess(279,198,1)  # planifier            ## GH 07/09/11 bug 76098
+                                        When 4,5:   GBOUT3 = mess(239,198,1)  # sous-traiter
+                                        When 6,7:   GBOUT3 = mess(474,198,1)  # planifier/sous-traiter
+                                  Endcase
+                              Endif
+                              GBOUT10 = mess(501,198,1)    # 106430 - Products by supplier
+                              GBOUT11 = mess(499,198,1)    # 106430 - Product usage
+              Endcase
+      When 4: # sous-traitance
+              # si SCF et commande autorisée
+              If [M:MGB]WIPSTA(L) = 1
+                  If find(WAPP,4,5,6,7)
+                      GBOUT1  = mess(363,198,1)                        # commander
+                  Endif
+                  If GBOUT1 = ""
+                      If WINT >= 4 : GBOUT1 = mess(362,198,1) : Endif  # modifier / commander
+                  Endif
+              Endif
+              GBOUT9 = mess(384,198,1)  # zoom encours associés
+      When 5: # ordre de fabrication
+              Case [M:MGB]WIPSTA(L)
+                  When 1: If WPRO >= 4
+                              GBOUT2 = mess(335,198,1)    # modifier
+                          Endif
+                  When 2: Case WPRO
+                              When 2,3: GBOUT2 = mess(335,198,1)  # modifier
+                              When 4,5: GBOUT2 = mess(280,198,1)  # lancer
+                              When 6,7: GBOUT2 = mess(334,198,1)  # modifier/lancer
+                          Endcase
+                  When 3: If !find([M:MGB]ORI(L),5,6) # FQ 61344
+                            # Encours WOS hors CBN/PDP
+                            Case WPRO
+                              When 1:   GBOUT2 = mess(335,198,1)  # modifier
+                              When 2:   GBOUT2 = mess(279,198,1)  # planifier
+                              When 3:   GBOUT2 = mess(345,198,1)  # modifier/planifier
+                              When 4:   GBOUT2 = mess(280,198,1)  # lancer
+                              When 5:   GBOUT2 = mess(334,198,1)  # modifier/lancer
+                              When 6,7: GBOUT2 = mess(333,198,1)  # planifier/lancer
+                            Endcase
+                          Else
+                            # Encours WOS provenant du CBN/PDP: pas de maj autorisée
+                            Case WPRO
+                              When 2,3: GBOUT2 = mess(279,198,1)  # planifier
+                              When 4,5: GBOUT2 = mess(280,198,1)  # lancer
+                              When 6,7: GBOUT2 = mess(333,198,1)  # planifier/lancer
+                            Endcase
+                          Endif
+                          If [M:MGB]PURFLG(L) = 2
+                              Case WAPP
+                                    When 2,3: GBOUT1 = mess(337,198,1)  # demander
+                                    When 4,5: GBOUT1 = mess(363,198,1)  # commander
+                                    When 6,7: GBOUT1 = mess(364,198,1)  # demander/commander
+                              Endcase
+                              If GBOUT1 = ""
+                                    Case WINT
+                                        When 2,3,4,5,6,7: GBOUT1 = mess(362,198,1)  # demander/commander
+                                    Endcase
+                              Endif
+                          Endif
+                          If [M:MGB]SCPFLG(L) = 2
+                              Case WSCO
+                                    When 2,3:   GBOUT3 = mess(496,198,1)  # planifier (sous-traitance)
+                              #     When 2,3:   GBOUT3 = mess(279,198,1)  # planifier                ## GH 07/09/11 bug 76098
+                                    When 4,5:   GBOUT3 = mess(239,198,1)  # sous-traiter
+                                    When 6,7:   GBOUT3 = mess(474,198,1)  # planifier/sous-traiter
+                              Endcase
+                          Endif
+              Endcase
+              GBOUT9 = mess(384,198,1)
+              GBOUT10 = mess(282,198,1)
+              GBOUT11 = mess(423,198,1)
+              If [M:MGB]WIPSTA(L) = 1
+                  Call HAB_ACT([M:MGB]FCY, "A", WRET) From BENCHLIB
+                  If WRET : GBOUT12 = mess(56,198,1) : Endif                         # allocation OF
+              Endif
+              If find([M:MGB]WIPSTA(L),1,2)
+                  Call HAB_ACT([M:MGB]FCY, "J", WRET) From BENCHLIB
+                  If WRET  : GBOUT15 = mess(158,198,1): Endif                        # jalonnement
+              Endif
+      When 7: # ordre inter-site
+              Case [M:MGB]WIPSTA(L)
+                  When 1:  If WINT >= 4
+                               GBOUT1 = mess(335,198,1)  # modifier
+                           Endif
+                           If GBOUT1 = ""
+                               If WAPP >= 4 : GBOUT1 = mess(335,198,1) : Endif
+                           Endif
+                  When 2:  Case WINT
+                              When 2,3: GBOUT1 = mess(335,198,1)  # modifier
+                              When 4,5: GBOUT1 = mess(363,198,1)  # commander
+                              When 6,7: GBOUT1 = mess(362,198,1)  # modifier/commander
+                           Endcase
+                           If GBOUT1 = ""
+                               If WAPP >= 2 : GBOUT1 = mess(362,198,1) : Endif
+                           Endif
+                  When 3:  Case WINT
+                              When 1:   GBOUT1 = mess(335,198,1)  # modifier
+                              When 2:   GBOUT1 = mess(279,198,1)  # demander
+                              When 3:   GBOUT1 = mess(345,198,1)  # modifier/demander
+                              When 4:   GBOUT1 = mess(363,198,1)  # commander
+                              When 5:   GBOUT1 = mess(362,198,1)  # modifier/commander
+                              When 6,7: GBOUT1 = mess(364,198,1)  # demander/commander
+                           Endcase
+                           If GBOUT1 = ""
+                               If WAPP >= 1 : GBOUT1 = mess(364,198,1) : Endif
+                           Endif
+              Endcase
+              GBOUT17 = mess(384,198,1)               # 11295 MM 03.06
+      When 9: # sous-produits
+              GBOUT9 = mess(384,198,1)
+      When 13: # ordre de sous-traitance
+              Case [M:MGB]WIPSTA(L)
+                  When 1: If WSCO >= 4
+                              GBOUT3 = mess(335,198,1)    # modifier
+                          Endif
+                  When 2: Case WSCO
+                              When 2,3: GBOUT3 = mess(335,198,1)  # modifier
+                              When 4,5: GBOUT3 = mess(239,198,1)  # sous-traiter
+                              When 6,7: GBOUT3 = mess(475,198,1)  # modifier/sous-traiter
+                          Endcase
+                  When 3: Case WSCO
+                              When 1:   GBOUT3 = mess(335,198,1)  # modifier
+                              When 2:   GBOUT3 = mess(279,198,1)  # planifier
+                              When 3:   GBOUT3 = mess(345,198,1)  # modifier/planifier
+                              When 4:   GBOUT3 = mess(239,198,1)  # sous-traiter
+                              When 5:   GBOUT3 = mess(475,198,1)  # modifier/sous-traiter
+                              When 6,7: GBOUT3 = mess(474,198,1)  # planifier/sous-traiter
+                          Endcase
+                          If [M:MGB]MFGFLG(L) = 2
+                              Case WPRO
+                                    When 2,3:   GBOUT2 = mess(495,198,1)  # planifier (fabrication)
+                              #     When 2,3:   GBOUT2 = mess(279,198,1)  # planifier                ## GH 07/09/11 bug 76098
+                                    When 4,5:   GBOUT2 = mess(280,198,1)  # lancer
+                                    When 6,7:   GBOUT2 = mess(333,198,1)  # planifier/lancer
+                              Endcase
+                          Endif
+                          If [M:MGB]PURFLG(L) = 2
+                              Case WAPP
+                                    When 2,3: GBOUT1 = mess(337,198,1)  # demander
+                                    When 4,5: GBOUT1 = mess(363,198,1)  # commander
+                                    When 6,7: GBOUT1 = mess(364,198,1)  # demander/commander
+                              Endcase
+                              If GBOUT1 = ""
+                                    Case WINT
+                                        When 2,3,4,5,6,7: GBOUT1 = mess(362,198,1)  # demander/commander
+                                    Endcase
+                              Endif
+                          Endif
+              Endcase
+              GBOUT9 = mess(384,198,1)  # zoom encours associés
+              GBOUT10 = mess(282,198,1)
+              GBOUT11 = mess(423,198,1)
+              If [M:MGB]WIPSTA(L) = 1
+                  Call HAB_ACT([M:MGB]FCY, "A", WRET) From BENCHLIB
+                  If WRET : GBOUT13 = mess(56,198,1) : Endif       # allocation sous-traitance
+              Endif
+    Endcase
+    If [M:MGB]FUNORI <> "D" : GBOUT4 = mess(261,198,1) : Endif   # plan de travail
+    If [M:MGB]FUNORI <> "P" : GBOUT5 = mess(301,198,1) : Endif   # regroupement
+
+    If find([M:MGB]WIPSTA(L),1,2)
+        Case [M:MGB]WIPTYP(L)
+            When 1:       Case [M:MGB]CODOBJ(L)
+                            When "SOH"   : GBOUT6 = mess(191,198,1)-[M:MGB]CODCLE(L)  # commande
+                            When Default : GBOUT6 = mess(191,198,1)-[M:MGB]CODCLE2(L) # commande
+                          Endcase
+            When 2,7:     Case [M:MGB]CODOBJ(L)
+                            When "PSH" : GBOUT6 = mess(332,198,1)-[M:MGB]CODCLE(L)    # Demande/commande
+                            When "POH" : GBOUT6 = mess(332,198,1)-[M:MGB]CODCLE(L)    # Demande/commande
+                            When "POD" : GBOUT6 = mess(332,198,1)-[M:MGB]CODCLE2(L)   # Demande/commande
+                          Endcase
+            When 5,6,9:   GBOUT6 = mess(336,198,1)-[M:MGB]CODCLE(L)                   # ordre de fabrication
+            When 4:       Case [M:MGB]ABBFIL(L)
+                            When "MFO" : GBOUT6 = mess(336,198,1)-[M:MGB]CODCLE(L)    # ordre de fabrication
+                            When "SCS" : GBOUT6 = mess(473,198,1)-[M:MGB]CODCLE(L)    # ordre de sous-traitance
+                          Endcase
+            When 3,13:    GBOUT6 = mess(473,198,1)-[M:MGB]CODCLE(L)                   # ordre de sous-traitance
+            # Issue 107498/101 - 2016-04-26 by ALSHE : add Project demand
+            When 14:      GBOUT6 = mess(274,197,1)-[M:MGB]CODCLE(L)                   # Project demand
+                          If [M:MGB]WIPSTA(L) = 2
+                            GBOUT4 = ""
+                            GBOUT5 = ""
+                          Endif
+            When 8:       # Issue X3-226738 - 2023-08-22 by JUSYN : Tunnel to sales order from TPF
+                          If [M:MGB]ABBFIL(L) = "SOQ"
+                            GBOUT6 = mess(191,198,1)-[M:MGB]CODCLE(L)
+                          Endif
+        Endcase
+    Endif
+
+    If [M:MGB]SCSFLG(L) <> 2 : GBOUT7 = mess(102,198,1) : Endif        # interro stock
+    GBOUT8 = mess(456,198,1)                                           # données de gestion
+    If [M:MGB]FUNORI = "D" : GBOUT9 = "" : Endif                       # si plan de travail déjà ouvert pas de zoom
+    If [M:MGB]WIPSTA(L) = 1 : GBOUT18 = mess(467,198,1) : Endif        # affectations
+Endif
+
+# Issue 107498/108 - 2016-05-19 by BEEBE : load actual PJT in PARPJT for further usage
+[M:MGB]PARPJT=[M:MGB]PJT(L)
+
+End
+
+########################################
+Subprog AP_NBLIG
+Gosub RECHARG_PARAM
+End
+
+########################################
+Subprog C_ENDDATEND(VALEUR)
+Variable Date    VALEUR
+If VALEUR < [M]ENDDATSTR : GMESSAGE= mess(44,199,1) : mkstat=2 : Endif
+End
+
+########################################
+Subprog AM_ITMREFSTR(VALEUR)
+Variable Char    VALEUR()
+If [M]ITMREFEND = ""     : [M]ITMREFEND = VALEUR : Affzo [M]ITMREFEND : Endif
+If [M]ITMREFEND < VALEUR : [M]ITMREFEND = VALEUR : Affzo [M]ITMREFEND : Endif
+End
+
+########################################
+Subprog AM_PJTSTR(VALEUR)
+Variable Char    VALEUR()
+If [M]PJTEND = ""     : [M]PJTEND = VALEUR : Affzo [M]PJTEND : Endif
+If [M]PJTEND < VALEUR : [M]PJTEND = VALEUR : Affzo [M]PJTEND : Endif
+End
+
+########################################
+Subprog AM_BPRNUMSTR(VALEUR)
+Variable Char    VALEUR()
+If [M]BPRNUMEND = ""     : [M]BPRNUMEND = VALEUR : Affzo [M]BPRNUMEND  : Endif
+If [M]BPRNUMEND < VALEUR : [M]BPRNUMEND = VALEUR : Affzo [M]BPRNUMEND  : Endif
+End
+
+########################################
+Subprog AM_ENDDATSTR(VALEUR)
+Variable Date    VALEUR
+If VALEUR <> [0/0/0] : [M]ENDDATEND = eomonth(VALEUR) : Affzo [M]ENDDATEND : Endif
+End
+
+########################################
+Subprog B1_ITMREFSTR(VALEUR)
+Variable Char    VALEUR()
+Local    Char    WFILA(255)
+Local    Char    WFILB(255)
+Local    Char    WFCY
+GFLTITM=VALEUR
+WFCY = [M]FCY
+
+If [M]FCY <> "" : WFILA = '(STOFCY=[M]FCY)' : Else : WFILA = '1=1' : Endif
+#   filtre sur planificateur
+If [F:BTS]APPLAN = 1 | GBUYFLT = 1
+    Case GPLNFLT
+        When 1: Local File ITMFACILIT [ITF] Where evalue(WFILA)
+        When 2: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | PLANNER="") & evalue(WFILA)
+        When 3: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER) & evalue(WFILA)
+    Endcase
+Else
+    # GH 24/08/11 bug 75840
+    # Case GPLNFLT
+    #    When 1: Local File ITMFACILIT [ITF] Where evalue(WFILA) & BUY=[M]PLANNER
+    #    When 2: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | PLANNER="" | BUY=[M]PLANNER) & evalue(WFILA)
+    #    When 3: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | BUY=[M]PLANNER) & evalue(WFILA)
+    # Endcase
+    Case GPLNFLT
+        When 1: Local File ITMFACILIT [ITF] Where evalue(WFILA) & BUY=[M]PLANNER | BUY=""
+        When 2: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | PLANNER="" | BUY=[M]PLANNER | BUY="") & evalue(WFILA)
+        When 3: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | BUY=[M]PLANNER | BUY="") & evalue(WFILA)
+    Endcase
+Endif
+Call OBJET("ITF",WFCY,VALEUR) From GOBJET
+GFLTITM=""
+Close Local File [ITF]
+
+End
+
+########################################
+Subprog C_ITMREFSTR(VALEUR)
+Variable Char    VALEUR()
+Local    Char    WFCY : WFCY = [M]FCY
+Local    Char    WART(GLONITM) : WART = VALEUR : # ISSUE X3-276695 By OGHM
+Local    Char    WUSR : WUSR = [M]PLANNER
+Local    Integer WFLG : WFLG = 0
+
+If VALEUR = "" : End : Endif
+
+If [F:ITM]ITMREF <> VALEUR
+    Read [ITM]ITM0=VALEUR
+Endif
+
+If WFCY <> ""
+    If [F:BTS]APPLAN = 1
+        Call CTLPLNFLT(WFCY, WART, WUSR) From MFGLIB
+    Else
+        Call CTLPLNACH(WFCY, WART, WUSR) From MFGLIB
+    Endif
+    If GMESSAGE <> ""
+       mkstat = 2
+    Endif
+Endif
+
+End
+
+########################################
+Subprog B1_ITMREFEND(VALEUR)
+Variable Char    VALEUR()
+Local    Char    WFILA(255)
+Local    Char    WFILB(255)
+GFLTITM=VALEUR
+
+If [M]FCY <> "" : WFILA = '(STOFCY=[M]FCY)' : Else : WFILA = '1=1' : Endif
+#   filtre sur planificateur
+If [F:BTS]APPLAN = 1 | GBUYFLT = 1
+    Case GPLNFLT
+        When 1: Local File ITMFACILIT [ITF] Where evalue(WFILA)
+        When 2: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | PLANNER="") & evalue(WFILA)
+        When 3: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER) & evalue(WFILA)
+    Endcase
+Else
+    # GH 24/08/11 bug 75840
+    # Case GPLNFLT
+    #    When 1: Local File ITMFACILIT [ITF] Where evalue(WFILA) & BUY=[M]PLANNER
+    #    When 2: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | PLANNER="" | BUY=[M]PLANNER) & evalue(WFILA)
+    #    When 3: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | BUY=[M]PLANNER) & evalue(WFILA)
+    # Endcase
+    Case GPLNFLT
+        When 1: Local File ITMFACILIT [ITF] Where evalue(WFILA) & BUY=[M]PLANNER | BUY=""
+        When 2: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | PLANNER="" | BUY=[M]PLANNER | BUY="") & evalue(WFILA)
+        When 3: Local File ITMFACILIT [ITF] Where (PLANNER=[M]PLANNER | BUY=[M]PLANNER | BUY="") & evalue(WFILA)
+    Endcase
+Endif
+
+Call OBJET("ITF",[M]FCY,VALEUR) From GOBJET
+GFLTITM=""
+Close Local File [ITF]
+
+End
+
+########################################
+Subprog C_ITMREFEND(VALEUR)
+Variable Char    VALEUR()
+Local    Char    WFCY : WFCY = [M]FCY
+Local    Char    WART(GLONITM) : WART = VALEUR : # ISSUE X3-276695 By OGHM
+Local    Char    WUSR : WUSR = [M]PLANNER
+
+If VALEUR = "" : End : Endif
+
+If [F:ITM]ITMREF <> VALEUR
+    Read [ITM]ITM0=VALEUR
+Endif
+
+If WFCY <> ""
+    If [F:BTS]APPLAN = 1
+        Call CTLPLNFLT(WFCY, WART, WUSR) From MFGLIB
+    Else
+        Call CTLPLNACH(WFCY, WART, WUSR) From MFGLIB
+    Endif
+    If GMESSAGE <> ""
+        mkstat = 2
+    Endif
+Endif
+
+End
+
+########################################
+Subprog AM_FCY(VALEUR)
+Variable Char    VALEUR()
+GFCY = VALEUR
+Gosub CHARG_PARAM
+
+## GH 19/05/2014 bug 100108
+If GMODU(8)=2 & GOPS="" : # compteur suggestion opérations
+   GMESSAGE = mess(58,105,1)-mess(8,14,1)-":"-mess(250,199,1) : mkstat=2 : End
+Endif
+End
+
+########################################
+Subprog AM_VCRNUMSTR(VALEUR)
+Variable Char    VALEUR()
+If [M]VCRNUMEND = ""     : [M]VCRNUMEND = VALEUR : Affzo [M]VCRNUMEND : Endif
+If [M]VCRNUMEND < VALEUR : [M]VCRNUMEND = VALEUR : Affzo [M]VCRNUMEND : Endif
+End
+
+########################################
+Subprog AM_STRDATSTR(VALEUR)
+Variable Date    VALEUR
+If VALEUR <> [0/0/0] : [M]STRDATEND = eomonth(VALEUR) : Affzo [M]STRDATEND : Endif
+End
+
+########################################
+Subprog AM_VCRORISTR(VALEUR)
+Variable Char     VALEUR
+If [M]VCRORIEND ="" : [M]VCRORIEND= VALEUR : Affzo [M]VCRORIEND : Endif
+If [M]VCRORIEND< VALEUR : [M]VCRORIEND = VALEUR : Affzo [M]VCRORIEND : Endif
+End
+
+########################################
+Subprog C_STRDATEND(VALEUR)
+Variable Date    VALEUR
+If VALEUR < [M]STRDATSTR : GMESSAGE= mess(44,199,1) : mkstat=2 : Endif
+End
+
+########################################
+Subprog AM_TCLCODSTR(VALEUR)
+Variable Char    VALEUR()
+If [M]TCLCODEND = ""     : [M]TCLCODEND = VALEUR : Affzo [M]TCLCODEND : Endif
+If [M]TCLCODEND < VALEUR : [M]TCLCODEND = VALEUR : Affzo [M]TCLCODEND : Endif
+End
+
+########################################
+Subprog AM_TSICODSTR(VALEUR)
+Variable Char    VALEUR()
+If [M]TSICODEND(indice) = ""     : [M]TSICODEND(indice) = VALEUR : Affzo [M]TSICODEND(indice) : Endif
+If [M]TSICODEND(indice) < VALEUR : [M]TSICODEND(indice) = VALEUR : Affzo [M]TSICODEND(indice) : Endif
+End
+
+##########################################################################
+## Etiquette ajoutée par le superviseur 13-09-2003 10:21:46 (MB)
+##########################################################################
+Subprog AS_ITMREFSTR(VALEUR)
+Variable Char    VALEUR()
+End
+
+Subprog AS_ITMREFEND(VALEUR)
+Variable Char    VALEUR()
+End
+
+
+##########################################################################
+# --------------------------------------------------------------------- #
+#     ETIQUETTES UTILISEES PAR ACTION SAISTOALL (ALLOCATIONS MANUELLES) #
+#                                                                       #
+#                Appelées depuis TRTSTOALLA                             #
+# --------------------------------------------------------------------- #
+
+#---------------------------------------------------------------------- #
+# Action avant bouton  : Vérifications au préalable                     #
+# Si GNOTALL=1 Pas d'ouverture de la fenêtre allocations manuelles      #
+#---------------------------------------------------------------------- #
+$AB14_NBLIG
+Local Integer WOK, NOL : NOL=nolign-1
+
+If [M:MGB]VCRTYP(NOL) = 36
+  Gosub VERIF_EO
+Else # If [M:MGB]VCRTYP(NOL) = 10
+  Gosub VERIF_OF
+Endif
+Return
+
+#--------------------------------------------------#
+# Contrôle de l'OF                                 #
+#--------------------------------------------------#
+$VERIF_OF
+Local Char    SYMBOLE(50)
+
+If clalev([F:MFG])=0 : Local File MFGHEAD    [MFG] : Endif
+If clalev([F:MFM])=0 : Local File MFGMAT     [MFM] : Endif
+
+# -- Verrouillage de l'OF
+SYMBOLE = "MFG"+[M:MGB]VCRNUM(NOL)
+Lock = SYMBOLE
+If fstat
+   # modification en cours sur un autre poste
+   GERR=1 : GMESSAGE=[M:MGB]VCRNUM(NOL)-":"-mess(10,100,1) : GNOTALL=1 : Return
+Endif
+Return
+
+#--------------------------------------------------#
+# Contrôle de l'EO                                 #
+#--------------------------------------------------#
+$VERIF_EO
+Local Char    SYMBOLE(50)
+
+If clalev([F:SCO])=0 : Local File SCOHEAD    [SCO] : Endif
+If clalev([F:SCM])=0 : Local File SCOMAT     [SCM] : Endif
+
+# -- Verrouillage de l'EO
+SYMBOLE = "SCO"+[M:MGB]VCRNUM(NOL)
+Lock = SYMBOLE
+If fstat
+   # modification en cours sur un autre poste
+   GERR=1 : GMESSAGE=[M:MGB]VCRNUM(NOL)-":"-mess(10,100,1) : GNOTALL=1 : Return
+Endif
+Return
+
+#---------------------------------------------------------------------- #
+# Chargement des paramètres dans masque STOALL                          #
+# Cette étiquette est appelée depuis CHARGE_PARAM From TRTSTOALLA       #
+#---------------------------------------------------------------------- #
+$CHARGE_STOALL
+#Local Char    LWRH(GLONWRH)
+#Local Integer LEXC
+
+If clalev([M:ORDK])=0 : Local Mask ORDK      [ORDK] : Endif
+Default Mask [ALL]
+If [M:MGB]VCRTYP(LNOL) = 36
+  Gosub CHARGE_EO
+Elsif [M:MGB]VCRTYP(LNOL) = 40         # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+  Gosub CHARGE_PJM                     # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+Else # If [M:MGB]VCRTYP(LNOL) = 36
+  Gosub CHARGE_OF
+Endif
+Return
+
+#--------------------------------------------------#
+# Chargement de l'OF                               #
+#--------------------------------------------------#
+$CHARGE_OF
+# lecture de l'OF
+If [F:MFG]MFGNUM<>[M:MGB]VCRNUM(LNOL)
+    Read [MFG]MFG0=[M:MGB]VCRNUM(LNOL)
+    If fstat : Return : Endif
+Endif
+# lecture matière
+If [F:MFM]MFGNUM <> [M:MGB]VCRNUM(LNOL) |
+&  [F:MFM]MFGLIN <> [M:MGB]VCRLIN(LNOL) |
+&  [F:MFM]BOMSEQ <> [M:MGB]VCRSEQ(LNOL) |
+&  [F:MFM]ITMREF <> [M:MGB]ITMREF(LNOL)
+    Read [MFM]MFM0=[M:MGB]VCRNUM(LNOL);[M:MGB]VCRLIN(LNOL);[M:MGB]VCRSEQ(LNOL);[M:MGB]ITMREF(LNOL)
+    If fstat  : Return : Endif
+Endif
+# Chargement du masque [M:ALL]
+Raz [M:ALL]
+[M:ALL]VCRTYP    = 10
+[M:ALL]VCRNUM    = [F:MFM]MFGNUM
+[M:ALL]VCRLIN    = [F:MFM]MFGLIN
+[M:ALL]VCRSEQ    = [F:MFM]BOMSEQ
+[M:ALL]PCU       = [F:MFM]STU
+[M:ALL]STU       = [F:MFM]STU
+# 11.05 demande 33011
+[M:ALL]STOLOC    = [F:MFM]LOC
+[M:ALL]PCUSTUCOE = 1
+[M:ALL]RETQTY    = [F:MFM]RETQTY - [F:MFM]USEQTY
+If [M:ALL]RETQTY < 0 : [M:ALL]RETQTY = 0 : Endif
+[M:ALL]OLDALLQTY = [F:MFM]ALLQTY
+[M:ALL]SHTQTY    = [F:MFM]SHTQTY
+[M:ALL]QTYTOALL  = [M:ALL]RETQTY
+[M:ALL]ALLTYP    = 2
+[M:ALL]RETDAT    = [F:MFM]RETDAT
+[M:ALL]DLVDAT    = [F:MFM]RETDAT
+[M:ALL]PECINTLOC = 2
+[M:ALL]PECPLFLOC = 2    : # Prise en cpte empl quai : Oui
+[M:ALL]XLOT      = [F:MFM]LOT
+[M:ALL]XLOC      = [F:MFM]LOC
+[M:ALL]XSTA      = [F:MFM]STA
+If [F:MFM]SCOFLG = 2    : # Prise en compte emplacements sous-traitants
+    [M:ALL]PECSCOLOC = 2
+    # on renseigne le tiers et l'adresse, on prend le premier tiers trouvé (approximation en cas de splittage)
+    If [F:MFM]BOMOPE <> 0
+        If clalev([F:MFO])  = 0 : Local File MFGOPE [MFO] : Endif
+        Filter [MFO] Where MFGNUM=[F:MFM]MFGNUM & OPENUM=[F:MFM]BOMOPE
+&                    Order By Key MFO0
+        For [MFO]
+            [M:ALL]BPCORD = [F:MFO]BPRNUM
+            [M:ALL]BPAADD = [F:MFO]BPAADD
+            If [M:ALL]BPCORD <> "" : Break : Endif
+        Next
+        Filter [MFO]
+    Endif
+Else
+    [M:ALL]PECSCOLOC = 1
+Endif
+#Call WRHAUTO([F:MFM]MFGFCY,[F:MFM]ITMREF,10,0,[M:ALL]PECSCOLOC-1,LWRH,LEXC) From STKWRH
+#If LEXC=1 [M:ALL]XWRH=LWRH Endif
+
+# sr 05.05
+If find([F:MFM]ALLSTA,2,3)
+     [M:ALL]GLOALLQTY = [F:MFM]ALLQTY
+Else
+     Raz [M:ALL]GLOALLQTY
+Endif
+
+Diszo [M:ALL]QTYTOALL
+Return
+
+#--------------------------------------------------#
+# Chargement de l'PJM                              #
+#--------------------------------------------------#
+$CHARGE_PJM
+  # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+  Gosub CHARGE_STOALL_FUNGBENCH From SUBPJTA
+Return
+
+#--------------------------------------------------#
+# Chargement de l'EO                               #
+#--------------------------------------------------#
+$CHARGE_EO
+# lecture de l'EO
+If [F:SCO]SCONUM<>[M:MGB]VCRNUM(LNOL)
+    Read [SCO]SCO0=[M:MGB]VCRNUM(LNOL)
+    If fstat : Return : Endif
+Endif
+# lecture matière
+If [F:SCM]SCONUM <> [M:MGB]VCRNUM(LNOL) |
+&  [F:SCM]SCILIN <> [M:MGB]VCRLIN(LNOL) |
+&  [F:SCM]SCMLIN <> [M:MGB]VCRSEQ(LNOL) |
+&  [F:SCM]CPNITMREF <> [M:MGB]ITMREF(LNOL)
+    Read [SCM]SCM0=[M:MGB]VCRNUM(LNOL);[M:MGB]VCRLIN(LNOL);[M:MGB]VCRSEQ(LNOL)
+    If fstat  : Return : Endif
+Endif
+# Chargement du masque [M:ALL]
+Raz [M:ALL]
+[M:ALL]VCRTYP    = 36
+[M:ALL]VCRNUM    = [F:SCM]SCONUM
+[M:ALL]VCRLIN    = [F:SCM]SCILIN
+[M:ALL]VCRSEQ    = [F:SCM]SCMLIN
+[M:ALL]PCU       = [F:SCM]STU
+[M:ALL]STU       = [F:SCM]STU
+# 11.05 demande 33011
+[M:ALL]STOLOC    = [F:SCM]LOC
+[M:ALL]PCUSTUCOE = 1
+[M:ALL]RETQTY    = [F:SCM]RETQTY - [F:SCM]USEQTY
+If [M:ALL]RETQTY < 0 : [M:ALL]RETQTY = 0 : Endif
+[M:ALL]OLDALLQTY = [F:SCM]ALLQTY
+[M:ALL]SHTQTY    = [F:SCM]SHTQTY
+[M:ALL]QTYTOALL  = [M:ALL]RETQTY
+[M:ALL]ALLTYP    = 2
+[M:ALL]RETDAT    = [F:SCM]DLVDAT
+[M:ALL]DLVDAT    = [F:SCM]DLVDAT
+[M:ALL]PECINTLOC = 2
+[M:ALL]PECPLFLOC = 2    : # Prise en cpte empl quai : Oui
+[M:ALL]XLOT      = [F:SCM]LOT
+[M:ALL]XLOC      = [F:SCM]LOC
+[M:ALL]XSTA      = [F:SCM]STA
+[M:ALL]PECSCOLOC = 2
+#Call WRHAUTO([F:SCM]STOFCY,[F:SCM]CPNITMREF,36,0,1,LWRH,LEXC) From STKWRH
+#If LEXC=1 [M:ALL]XWRH=LWRH Endif
+# sr 05.05
+If find([F:SCM]ALLSTA,2,3)
+     [M:ALL]GLOALLQTY = [F:SCM]ALLQTY
+Else
+     Raz [M:ALL]GLOALLQTY
+Endif
+
+Diszo [M:ALL]QTYTOALL
+Return
+
+
+#---------------------------------------------------------------------- #
+# Contrôle avant enregistrement                                         #
+# Si contrôle non OK, mettre OK=0 pour ne pas enregister                #
+# Cette étiquette est appelée depuis AVANT_ENR From TRTSTOALLA          #
+#---------------------------------------------------------------------- #
+$AVANT_STOALL
+If [M:MGB]VCRTYP(LNOL) = 36            # Issue X3-31898/X3-59500 - 2018-02-08 by FGR : LNOL not, NOL !
+  Gosub AVANT_EO
+Elsif [M:MGB]VCRTYP(LNOL) = 40         # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+  Gosub AVANT_PJM                      # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+Else
+  Gosub AVANT_OF
+Endif
+Return
+
+#--------------------------------------------------#
+# Contrôle avant enregistrement                    #
+#--------------------------------------------------#
+$AVANT_OF
+Return
+
+#--------------------------------------------------#
+# Chargement de l'PJM                              #
+#--------------------------------------------------#
+$AVANT_PJM
+  # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+  Gosub AVANT_STOALL_FUNGBENCH From SUBPJTA
+Return
+
+$AVANT_EO
+Return
+
+#---------------------------------------------------------------------- #
+# Mise à jour complémentaires après enregistrement                      #
+# Si problème mettre GOK=0 pour annuler l'enregistrement                #
+#---------------------------------------------------------------------- #
+# WALLQTY contient la quantité allouée                                  #
+# WSHTQTY contient la quantité en rupture                               #
+#---------------------------------------------------------------------- #
+$APRES_STOALL
+If [M:MGB]VCRTYP(LNOL) = 36            # Issue X3-31898/X3-59500 - 2018-02-08 by FGR : LNOL not, NOL !
+  Gosub APRES_EO
+Elsif [M:MGB]VCRTYP(LNOL) = 40         # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+  Gosub APRES_PJM                      # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+Else
+  Gosub APRES_OF
+Endif
+Return
+
+#--------------------------------------------------#
+# Mise à jour de l'OF                              #
+#--------------------------------------------------#
+$APRES_OF
+Local Integer WRET
+Local Decimal WDIS
+
+Call MAJALLMAT([M:ALL]VCRNUM, [M:ALL]VCRLIN, [M:ALL]VCRSEQ, [M:ALL]ITMREF, WALLQTY, WSHTQTY, [M:ALL]ALLTYP, WRET) From MFGALL
+If WRET <> 0 : GOK = 0 : Return : Endif
+
+# réactualisation
+[M:MGB]REACT = 2
+GLRET = 2
+Gosub FABRICATION From FUNGBENCH
+Return
+
+#--------------------------------------------------#
+# Chargement de l'PJM                              #
+#--------------------------------------------------#
+$APRES_PJM
+  # Issue X3-31898/X3-59500 - 2018-02-08 by FGR
+  Gosub APRES_STOALL_FUNGBENCH From SUBPJTA
+Return
+
+#--------------------------------------------------#
+# Mise à jour de l'EO                              #
+#--------------------------------------------------#
+$APRES_EO
+Local Integer WRET
+Local Decimal WDIS
+
+Call MAJALLMAT([M:ALL]VCRNUM, [M:ALL]VCRLIN, [M:ALL]VCRSEQ, [M:ALL]ITMREF, WALLQTY, WSHTQTY, [M:ALL]ALLTYP, WRET) From SCOALL
+If WRET <> 0 : GOK = 0 : Return : Endif
+
+# réactualisation
+[M:MGB]REACT = 2
+GLRET = 2
+Gosub SOUSTRAIT From FUNGBENCH
+Return
+
+
+#---------------------------------------------------------------------- #
+# Action apres bouton                                                   #
+#---------------------------------------------------------------------- #
+$BB14_NBLIG
+# Suppression du verrou sur la commande
+Unlock=SYMBOLE
+Return
+
+#---------------------------------------------------------------------- #
+$AB4_NBLIG
+GSTATUT = 0
+Return
+
+##########################################################################
+## Etiquette ajoutée par le superviseur 06-03-2004 10:17:47 (MB)
+##########################################################################
+Subprog S_ITMREFSTR(VALEUR)
+Variable Char    VALEUR()
+End
+
+Subprog S_ITMREFEND(VALEUR)
+Variable Char    VALEUR()
+End
+
+Subprog S_VCRNUMSTR(VALEUR)
+Variable Char    VALEUR()
+End
+
+Subprog S_VCRNUMEND(VALEUR)
+Variable Char    VALEUR()
+End
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran MFGBCRIT1) 01/02/2006 10:26:52 (LLCX)
+######################################################################################
+Subprog AS_VCRNUMSTR(VALEUR)
+Variable Char    VALEUR()
+[M]ORDFILTER = "1=1"
+If [M]ITMREFSTR <> "" : [M]ORDFILTER += "&ITMREF>=[M]ITMREFSTR" : Endif
+If [M]ITMREFEND <> "" : [M]ORDFILTER += "&ITMREF<=[M]ITMREFEND" : Endif
+If [M]BPRNUMSTR <> "" : [M]ORDFILTER += "&BPRNUM>=[M]BPRNUMSTR" : Endif
+If [M]BPRNUMEND <> "" : [M]ORDFILTER += "&BPRNUM<=[M]BPRNUMEND" : Endif
+If [M]PJTSTR    <> "" : [M]ORDFILTER += "&PJT>=[M]PJTSTR"       : Endif
+If [M]PJTEND    <> "" : [M]ORDFILTER += "&PJT<=[M]PJTEND"       : Endif
+End
+
+Subprog AS_VCRNUMEND(VALEUR)
+Variable Char    VALEUR()
+[M]ORDFILTER = "1=1"
+If [M]ITMREFSTR <> "" : [M]ORDFILTER += "&ITMREF>=[M]ITMREFSTR" : Endif
+If [M]ITMREFEND <> "" : [M]ORDFILTER += "&ITMREF<=[M]ITMREFEND" : Endif
+If [M]BPRNUMSTR <> "" : [M]ORDFILTER += "&BPRNUM>=[M]BPRNUMSTR" : Endif
+If [M]BPRNUMEND <> "" : [M]ORDFILTER += "&BPRNUM<=[M]BPRNUMEND" : Endif
+If [M]PJTSTR    <> "" : [M]ORDFILTER += "&PJT>=[M]PJTSTR"       : Endif
+If [M]PJTEND    <> "" : [M]ORDFILTER += "&PJT<=[M]PJTEND"       : Endif
+End
+
+Subprog AS_VCRORISTR(VALEUR)
+Variable Char    VALEUR()
+[M]ORDFILTER = "1=1"
+If [M]ITMREFSTR <> "" : [M]ORDFILTER += "&ITMREF>=[M]ITMREFSTR" : Endif
+If [M]ITMREFEND <> "" : [M]ORDFILTER += "&ITMREF<=[M]ITMREFEND" : Endif
+If [M]PJTSTR    <> "" : [M]ORDFILTER += "&PJT>=[M]PJTSTR"       : Endif
+If [M]PJTEND    <> "" : [M]ORDFILTER += "&PJT<=[M]PJTEND"       : Endif
+End
+
+Subprog AS_VCRORIEND(VALEUR)
+Variable Char    VALEUR()
+[M]ORDFILTER = "1=1"
+If [M]ITMREFSTR <> "" : [M]ORDFILTER += "&ITMREF>=[M]ITMREFSTR" : Endif
+If [M]ITMREFEND <> "" : [M]ORDFILTER += "&ITMREF<=[M]ITMREFEND" : Endif
+If [M]PJTSTR    <> "" : [M]ORDFILTER += "&PJT>=[M]PJTSTR"       : Endif
+If [M]PJTEND    <> "" : [M]ORDFILTER += "&PJT<=[M]PJTEND"       : Endif
+End
+
+######################################################################################
+Subprog C_ALGS(VALEUR)
+Variable Char    VALEUR()
+
+# 98144 - food allergens.sn
+Local    Integer I_COUNT,I_TIMES,I
+Local    Char    A_ALG(1)(1..50)  # Declare array of 50 one char values
+Local    Char    C_VALEUR(20) : C_VALEUR = vireblc(VALEUR,4)
+Local    Char    C_ONE(1)
+
+If C_VALEUR="" : End : Endif
+
+If !clalev([F:ADI]) : Local File ATABDIV    [ADI] : Endif  # Miscellaneous Tables
+
+# Load all valid constraint codes
+For [ADI] Where NUMTAB=404
+  I_COUNT += 1
+  A_ALG(I_COUNT) = [F:ADI]CODE
+Next
+
+# Check for any non-valid codes
+For I_COUNT=1 To len(C_VALEUR)
+  C_ONE = mid$(C_VALEUR,I_COUNT,1)
+
+  #Check for valid entries
+  If !(find(C_ONE,A_ALG(1..50)))
+    GMESSAGE=mess(3,3501,1)
+    mkstat=2 : Break
+  Endif
+
+  #Check for dupes
+  Raz I,I_TIMES
+  Repeat I=instr(I+1,C_VALEUR,C_ONE) : If I<>0 : I_TIMES+=1 : Endif : Until I=0
+  If I_TIMES>1
+    GMESSAGE=mess(4,3501,1)
+    mkstat=2 : Break
+  Endif
+
+Next
+# 98144 - food allergens.en
+
+End
+
+######################################################################################
+## Buttons 10 and 11 need to have dual purpose due to too many buttons on line.
+## Call correct action depending on context of button at time (based on caption)
+######################################################################################
+Subprog B10_NBLIG
+Local Decimal BASPAG
+Case GBOUT10
+  When mess(282,198,1)
+    ## Action FDISPNOW
+    Local Char    PARMSK(250)(1..20) , SAVACT(20)
+    SAVACT = GACTION : GACTION = "FDISPNOW"
+    PARMSK(1) = [M:MGB]STOFCY(nolign-1)
+    PARMSK(2) = num$([M:MGB]WIPTYP(nolign-1))
+    PARMSK(3) = num$([M:MGB]WIPSTA(nolign-1))
+    PARMSK(4) = [M:MGB]VCRNUM(nolign-1)
+    PARMSK(5) = [M:MGB]STU(nolign-1)
+    PARMSK(6) = num$([M:MGB]RMNEXTQTY(nolign-1))
+    PARMSK(7) = num$([M:MGB]RMNEXTQTY(nolign-1))
+    Call SAISIE_NUM(BASPAG,PARMSK,"IDISPNOW","BENCHLIB","XYZBENCHLIB") From GSAISIE
+    GACTION = SAVACT
+  When mess(501,198,1)  # 106430 - Purchase planning
+    ## Action BPSITM
+    Local Char    PARMSK(250)(1..20) , SAVACT(20)
+    SAVACT = GACTION : GACTION = "BPSITM"
+    PARMSK(1) = num$(nolign-1)
+    PARMSK(2) = "MGB"
+    Call TRAITE_NUM(BASPAG,PARMSK,"BPSITM","TRTBPSI","",1,"SPEBPSI") From GTRAITE
+    GACTION = SAVACT
+Endcase
+End
+
+Subprog B11_NBLIG
+Local Decimal BASPAG
+Case GBOUT11
+  When mess(423,198,1)
+    ## Action FDISPPLN
+    Local Char    PARMSK(250)(1..20) , SAVACT(20)
+    SAVACT = GACTION : GACTION = "FDISPPLN"
+    PARMSK(1) = [M:MGB]STOFCY(nolign-1)
+    PARMSK(2) = num$([M:MGB]WIPTYP(nolign-1))
+    PARMSK(3) = num$([M:MGB]WIPSTA(nolign-1))
+    PARMSK(4) = [M:MGB]VCRNUM(nolign-1)
+    PARMSK(5) = [M:MGB]STU(nolign-1)
+    PARMSK(6) = num$([M:MGB]RMNEXTQTY(nolign-1))
+    PARMSK(7) = num$([M:MGB]RMNEXTQTY(nolign-1))
+    Call SAISIE_NUM(BASPAG,PARMSK,"IDISPPLN","BENCHLIB","XYZBENCHLIB") From GSAISIE
+    GACTION = SAVACT
+  When mess(499,198,1)  # 106430 - Purchase planning
+    ## Action ITMHIS
+    Local Char    PARMSK(250)(1..20) , SAVACT(20)
+    SAVACT = GACTION : GACTION = "ITMHIS"
+    PARMSK(1) = [M]ITMREF(nolign-1)
+    PARMSK(2) = [M]STOFCY(nolign-1)
+    Call TRAITE_NUM(BASPAG,PARMSK,"ITMHIS","TRTITH","",1,"SPEITH") From GTRAITE
+    GACTION = SAVACT
+Endcase
+End
+
+# Issue X3-306176
+# Blocking message when GBOUT2 = Plan/Initiate & back-to-back WO already exists
+# used when a first Plan/Initiate done and staying on the same line, Plan/Initiate still in the actions list
+$AB2_NBLIG
+Local Integer L
+L = nolign-1
+If find([M:MGB]WIPTYP(L),1,8)
+  Read [SOQ]SOQ0=[M:MGB]VCRNUM(L);[M:MGB]VCRLIN(L);[M:MGB]VCRSEQ(L)
+  If !fstat & [F:SOQ]FMINUM <> ""
+    # Back-back WO XXXXXXX already exists for [entry type] YYYYYY.'
+    GMESSAGE= func AFNC.MES4(mess(747,199,1),mess(299,193,1), [F:SOQ]FMINUM, mess([M:MGB]VCRTYP(L),701,1),[M:MGB]VCRNUM(L))+chr$(10)
+    GMESSAGE+= func AFNC.MES1(mess(748,199,1),mess(333,198,1))
+    Call ERREUR(GMESSAGE) From GESECRAN
+    GMESSAGE=""
+    End
+  Endif
+Endif
+Return
+# Issue X3-306176 end
+######################################################################################
