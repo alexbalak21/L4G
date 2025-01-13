@@ -1,0 +1,4710 @@
+﻿#<AdxTL>@(#)11.0.0.0 $Revision$  #!!!!DISCLAIMER V12P21 P Base DO NOT COPY OR USE THIS FILE IN ANY X3 FOLDER OR SUB FOLDER!!!!
+# Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+# Issue 111960 - 2019-03-22 by BAKHA : Function name GESPJM changed to PJMACTTAS
+# Issue X3-164548 - 2019-12-09 by BAKHA : Requirement qty incorrect
+
+#---------------------------------------------------------------------------#
+# Actions Fabrication pour les outils d'approvisionnement/planification:    #
+# - SAICREWOX    Création nouvel ordre WOP/WOF                              #
+# - SAIMODWOX    Modification ordre WOP/WOF et création par PEC             #
+# - SAIBENCHD1   Action fenêtre message de replanification                  #
+# - FDISPNOW     Dispo composants                                           #
+# - FDISPNOWN    Dispo composants sur nomenclature                          #
+# - FDISPLN      Dispo à date                                               #
+# - FGRAPHD      Graphique stock projeté depuis le plan de travail          #
+# - FWIPZOOM     Zoom encours associés                                      #
+# - FWIPZOOM2 et3 Zoom encours associés inter-site                          #
+#---------------------------------------------------------------------------#
+$ACTION
+Case ACTION
+    When "SEL_TABLE":     Case GACTION
+                              When "FWIPZOOM"  : Gosub SEL_FWIPZOOM
+                              When "FWIPZOOM1" : Gosub SEL_FWIPZOOM
+                              When "FWIPZOOM2" : Gosub SEL_FWIPZOOM2
+                              When "FWIPZOOM3" : Gosub SEL_FWIPZOOM2
+                              When "FWIPZOOM4" : Gosub SEL_FWIPZOOM4
+                          Endcase
+    When "VERF_TABLE":    Gosub VERF_TABLE
+    When "OUVRE":         Gosub INIT : # Issue X3-4769 - 2017-06-14 by ALSHE : check reply from WIP exists message, close if NO
+                          Case GACTION
+                              When "SAICREWOX" : Gosub OUVRE_CREWOX
+                              When "SAIMODWOX" : Gosub OUVRE_MODWOX
+                              When "FDISPNOW"  : Gosub OUVRE_FDISPNOW
+                              When "FDISPNOWN" : Gosub OUVRE_FDISPNOWN
+                              When "FDISPPLN"  : Gosub OUVRE_FDISPPLN
+                              When "FGRAPHD"   : Gosub OUVRE_FGRAPHD
+                          Endcase
+    When "TITRE":         Gosub TIT
+    When "DEBUT":         Case GACTION
+                              When "SAICREWOX" : Gosub DEBUT_CREWOX
+                              When "SAIMODWOX" : Gosub DEBUT_MODWOX
+                              When "SAIBENCHD1": Gosub DEBUT_BENCHD1
+                              When "FDISPNOW"  : Gosub DEBUT_FDISPNOW
+                              When "FDISPNOWN" : Gosub DEBUT_FDISPNOWN
+                              When "FDISPPLN"  : Gosub DEBUT_FDISPPLN
+                              When "FGRAPHD"   : Gosub DEBUT_FGRAPHD
+                          Endcase
+    When "SETBOUT":       Case GACTION
+                              When "SAICREWOX" : Gosub SETBOUT_CREWOX
+                              When "SAIMODWOX" : Gosub SETBOUT_MODWOX
+                          Endcase
+    When "AVANT_BOUTON":  Case GACTION
+                              When "SAICREWOX" : Gosub AVANT_BOUTON_CREWOX
+                          Endcase
+    When "BOUTON":        Case GACTION
+                              When "SAICREWOX" : Gosub BOUTON_CREWOX
+                              When "SAIMODWOX" : Gosub BOUTON_MODWOX
+                          Endcase
+    When "OK":            Case GACTION
+                              When "SAIBENCHD1": Gosub OK_BENCHD1
+                          Endcase
+    When "AVANT_ENR":     Case GACTION
+                              When "SAIMODWOX" : Gosub AVENR_MODWOX    # 14102 mm 06.06
+                          Endcase
+    When "ENR":           Case GACTION
+                              When "SAIMODWOX":  Gosub ENR_MODWOX
+                          Endcase
+    When "SUP":           Case GACTION
+                              When "SAIMODWOX":  Gosub SUP_MODWOX :
+                          Endcase
+    When "FIN":           Case GACTION
+                              When "SAIMODWOX":    If val(PARAM(7)) = 2
+                                                       Case GFONCTION
+                                                           When "FUNGBENCH","FUNGBENCHA" :
+                                                                              If clalev ([M:MGD])=0
+                                                                                 [M:MGB]REACT = 2
+                                                                                 GLRET = 2
+                                                                                 Gosub FABRICATION From FUNGBENCH
+                                                                              Else
+                                                                                 [M:MGD]REACT = 2
+                                                                                 GDLRET = 2
+                                                                                 Gosub FABRICATION From FUNDBENCH
+                                                                              Endif
+                                                           When "FUNDBENCH","FUNDBENCHA" :
+                                                                              If clalev ([M:MGB])=0
+                                                                                 [M:MGD]REACT = 2
+                                                                                 GDLRET = 2
+                                                                                 Gosub FABRICATION From FUNDBENCH
+                                                                              Else
+                                                                                 [M:MGB]REACT = 2
+                                                                                 GLRET = 2
+                                                                                 Gosub FABRICATION From FUNGBENCH
+                                                                              Endif
+                                                           When "FUNMLINK","FUNMLINKA" :
+                                                                              [M:MLB]REACT = 2
+                                                                              Gosub FABRICATION From FUNMLINK
+                                                       Endcase
+                                                   Endif
+                          Endcase
+    When Default
+Endcase
+Return
+
+#---------------------------------------------------------------------------#
+# Action INIT                                                               #
+# Issue X3-4769 - 2017-06-14 by ALSHE : display message if WIP exists       #
+#---------------------------------------------------------------------------#
+$INIT
+    Call SET_SCHEDULER_STATUS(0, 1) From MFGLIB
+    If dim(GVALIDWIP) >= 0 and GVALIDWIP = [V]CST_ANO Then
+        FIN = 1
+        Return
+    Endif
+Return
+
+#---------------------------------------------------------------------------#
+# Action FWIPZOOM/FWIPZOOM1                                                 #
+#---------------------------------------------------------------------------#
+$SEL_FWIPZOOM
+Local     Char    WVCR(GLONVCR)
+Local     Char    WWIP(GLONVCR), WFCY(GLONFCY)
+Local     Date    WSTRDAT
+
+GZOOM = 0
+If clalev ([F:ATZ])=0  : Local File ATABZON   [ATZ]  : Endif
+If clalev ([F:ORD1])=0 : Local File ORDERS    [ORD1] : Endif
+If clalev ([F:ITM])=0  : Local File ITMMASTER [ITM]  : Endif
+If clalev ([F:AXX])=0  : Local File ATEXTRA   [AXX]  : Endif  # FGR 30/06/2009 : X3SUIVI56189
+
+WVCR = PARAM(1)
+WWIP = PARAM(2)
+WFCY = PARAM(3)
+
+#Link  [ORD1] With [ITM]ITM0=ITMREF As [NEW]
+Link  [ORD1] With [ITM]ITM0=ITMREF,
+&                 [AXX]AXX0="ITMMASTER";"DES1AXX";GLANGUE;ITMREF;""
+&            As [NEW]                                         # FGR 30/06/2009 : X3SUIVI56189
+
+
+Local Char CODFIC(GLONATB)
+
+
+CRITERE = 'VCRNUM = WVCR & WIPNUM <> WWIP & STOFCY = WFCY'
+START='ITMREF'
+ORDRE='STRDAT;ITMREF;WIPNUM'
+
+TIT(0)= mess(384,198,1)
+NBCOL = 0
+CODFIC = "ORDERS"
+NBCOL +=1 : COL(NBCOL)="mess([F:ORD1]WIPTYP,341,1) + mess([F:ORD1]WIPSTA,342,1)"
+            Call TEXTFIC(CODFIC ,"WIPTYP", 1,TIT(NBCOL) ) From OBJDIV
+NBCOL +=1 : COL(NBCOL)="STOFCY"      : Gosub TEXTE From MFGSELLIB
+NBCOL +=1 : COL(NBCOL)="VCRNUM"      : Gosub TEXTE From MFGSELLIB
+NBCOL +=1 : COL(NBCOL)="ITMREF"      : Gosub TEXTE From MFGSELLIB
+NBCOL +=1 : COL(NBCOL)="STRDAT"      : Gosub TEXTE From MFGSELLIB
+NBCOL +=1 : COL(NBCOL)="ENDDAT"      : Gosub TEXTE From MFGSELLIB
+
+# Issue 104943 - 2015-07-15 by BEEBE : implementing versioning
+If func AFNC.ACTIV("ECC")
+    NBCOL +=1 : COL(NBCOL)="ECCVALMAJ" : Gosub TEXTE From MFGSELLIB
+    NBCOL +=1 : COL(NBCOL)="ECCVALMIN" : Gosub TEXTE From MFGSELLIB
+Endif
+
+CODFIC = "ITMMASTER"
+NBCOL +=1 : COL(NBCOL)="STU"         : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="[F:ITM]STU"
+CODFIC = "ORDERS"
+NBCOL +=1 : COL(NBCOL)="RMNEXTQTY"   : Gosub TEXTE From MFGSELLIB
+CODFIC = "ITMMASTER"
+#NBCOL +=1 : COL(NBCOL)="ITMDES1"     : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="[F:ITM]ITMDES1"
+#NBCOL +=1 : COL(NBCOL)="DES1AXX"     : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="[F:AXX]TEXTE"    # FGR 30/06/2009 : X3SUIVI56189
+NBCOL +=1 : COL(NBCOL)="DES1AXX"     : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="string$(1,[F:AXX]TEXTE)+string$(len([F:AXX]TEXTE)=0,[F:ITM]ITMDES1)"  # FGR 29/09/2009 : X3SUIVI57887
+COLTYP(NBCOL) = 30  # FGR 01/02/2010  X3SUIVI62036
+
+Default File [NEW]
+SIZLIG = 75
+SIZCOL = 300
+
+Return
+
+#---------------------------------------------------------------------------#
+$VERF_TABLE
+Case GACTION
+    When "FWIPZOOM" :    If [F:ITM]ITMREF <> [F:ORD1]ITMREF
+                             Read [ITM]ITM0=[F:ORD1]ITMREF
+                             If fstat : Raz [F:ITM]: Endif
+                         Endif
+                         If [F:ITF]ITMREF <> [F:ORD1]ITMREF | [F:ITF]STOFCY <> [F:ORD1]STOFCY
+                         # If [F:ITF]ITMREF <> [F:ORD1]ITMREF : # GH 10/04/2015 bug 104152
+                             Read [ITF]ITF0=[F:ORD1]ITMREF;[F:ORD1]STOFCY
+                             If fstat : Raz [F:ITF] : Endif
+                         Endif
+                         If clalev ([M:MLB]) = 0
+                             [M:MGD]FCY    = [F:ORD1]STOFCY
+                             [M:MGD]ITMREF = [F:ORD1]ITMREF
+                             [M:MGD]REACT  = 2
+                             Gosub AFF_DES From FUNDBENCH
+                             Gosub REACTUALISATION From FUNDBENCH
+                             [M:MGD]REACT  = 1
+                         Else
+                             # Issue 85224 GH 30/08/2018 - Variables WVCR... declared and set
+                             Local Integer WVCRLIN, WVCRSEQ
+                             Local Char    WVCRNUM(GLONVCR)
+                             WVCRNUM = [F:ORD1]VCRNUM
+                             WVCRLIN = [F:ORD1]VCRLIN
+                             WVCRSEQ = [F:ORD1]VCRSEQ
+                             [M:MLB]FCY    = [F:ORD1]STOFCY
+                             [M:MLB]ITMREF = [F:ORD1]ITMREF
+                             [M:MLB]REACT  = 2
+                             Gosub AFF_DES From FUNMLINK
+                             Gosub REACTUALISATION From FUNMLINK
+                             [M:MLB]REACT  = 1
+                         Endif
+
+    When "FWIPZOOM1":    GZOOM = 1
+                         GZOOMFCY = [F:ORD1]STOFCY
+                         GZOOMITM = [F:ORD1]ITMREF
+    When "FWIPZOOM2":    GZOOM = 1
+                         GZOOMFCY = [F:ORD2]STOFCY
+                         GZOOMITM = [F:ORD2]ITMREF
+    When "FWIPZOOM3":    If [F:ITM]ITMREF <> [F:ORD2]ITMREF
+                             Read [ITM]ITM0=[F:ORD2]ITMREF
+                             If fstat : Raz [F:ITM]: Endif
+                         Endif
+                         If [F:ITF]ITMREF <> [F:ORD2]ITMREF | [F:ITF]STOFCY <> [F:ORD2]STOFCY
+                         # If [F:ITF]ITMREF <> [F:ORD2]ITMREF : # GH 10/04/2015 bug 104152
+                             Read [ITF]ITF0=[F:ORD2]ITMREF;[F:ORD2]STOFCY
+                             If fstat : Raz [F:ITF] : Endif
+                         Endif
+                         If clalev ([M:MLB]) = 0
+                             [M:MGD]FCY    = [F:ORD2]STOFCY
+                             [M:MGD]ITMREF = [F:ORD2]ITMREF
+                             [M:MGD]REACT  = 2
+                             Gosub AFF_DES From FUNDBENCH
+                             Gosub REACTUALISATION From FUNDBENCH
+                             [M:MGD]REACT  = 1
+                         Else
+                             # Issue 85224 GH 30/08/2018 - Variables WVCR... declared and set
+                             Local Integer WVCRLIN, WVCRSEQ
+                             Local Char    WVCRNUM(GLONVCR)
+                             WVCRNUM = [F:ORD2]VCRNUM
+                             WVCRLIN = [F:ORD2]VCRLIN
+                             WVCRSEQ = [F:ORD2]VCRSEQ
+                             [M:MLB]FCY    = [F:ORD2]STOFCY
+                             [M:MLB]ITMREF = [F:ORD2]ITMREF
+                             [M:MLB]REACT  = 2
+                             Gosub AFF_DES From FUNMLINK
+                             Gosub REACTUALISATION From FUNMLINK
+                             [M:MLB]REACT  = 1
+                         Endif
+Endcase
+Return
+
+#---------------------------------------------------------------------------#
+# Action FWIPZOOM2 - 11295 MM 03.06                                         #
+#---------------------------------------------------------------------------#
+$SEL_FWIPZOOM2
+Local     Char     WWIPNUM(GLONVCR), WITM(GLONITM)
+Local     Integer  WWIPTYP , WWIPSTA
+Local     Char     WVCRNUMORI(GLONVCR)
+Local     Char     WVCRNUM(GLONVCR)
+Local     Integer  WQTY
+Local     Char     CODFIC(GLONATB)
+Local     Date     WDAT
+Local     Integer  WVCRSEQ
+
+GZOOM = 0
+If clalev ([F:ATZ])=0  : Local File ATABZON   [ATZ]  : Endif
+If clalev ([F:ORD1])=0 : Local File ORDERS    [ORD1] : Endif
+If clalev ([F:ORD2])=0 : Local File ORDERS    [ORD2] : Endif
+If clalev ([F:ITM])=0  : Local File ITMMASTER [ITM]  : Endif
+If clalev ([F:AXX])=0  : Local File ATEXTRA   [AXX]  : Endif  # FGR 30/06/2009 : X3SUIVI56189
+
+WWIPNUM = PARAM(1)
+WWIPTYP = val(PARAM(2))
+WITM = PARAM(3)
+
+Read [ORD1]ORD0 = WWIPTYP;WWIPNUM;WITM
+If !fstat
+    #Link  [ORD2] With [ITM]ITM0=ITMREF As [NEW]
+    Link  [ORD2] With [ITM]ITM0=ITMREF,
+&                     [AXX]AXX0="ITMMASTER";"DES1AXX";GLANGUE;ITMREF;""
+&                As [NEW]                                               # FGR 30/06/2009 : X3SUIVI56189
+
+    If WWIPTYP = 8 : WWIPTYP = 7
+    Elsif WWIPTYP= 7 : WWIPTYP = 8 : Endif
+    WWIPSTA    = [F:ORD1]WIPSTA
+    WVCRNUMORI = [F:ORD1]VCRNUMORI
+    WVCRNUM    = [F:ORD1]VCRNUM
+    WQTY       = [F:ORD1]RMNEXTQTY
+    WDAT       = [F:ORD1]ENDDAT
+    If [F:ORD1]VCRSEQ = [F:ORD1]VCRSEQORI
+        WVCRSEQ = [F:ORD1]VCRSEQ
+    Else
+        WVCRSEQ =0
+    Endif
+    If WWIPSTA<>3
+        If  !WVCRSEQ
+            CRITERE ='VCRNUM = WVCRNUMORI & WIPTYP = WWIPTYP & WIPSTA =WWIPSTA & ITMREF= WITM & RMNEXTQTY = WQTY'
+        Else
+            CRITERE ='VCRNUM = WVCRNUMORI & WIPTYP = WWIPTYP & WIPSTA =WWIPSTA & ITMREF= WITM & RMNEXTQTY = WQTY & VCRSEQ = WVCRSEQ'
+        Endif
+    Else
+        If  !WVCRSEQ
+            CRITERE ='VCRNUM = WVCRNUM & WIPTYP = WWIPTYP & WIPSTA =WWIPSTA & ITMREF= WITM & RMNEXTQTY = WQTY'
+        Else
+            CRITERE ='VCRNUM = WVCRNUM & WIPTYP = WWIPTYP & WIPSTA =WWIPSTA & ITMREF= WITM & RMNEXTQTY = WQTY & VCRSEQ = WVCRSEQ'
+        Endif
+    Endif
+    START='ITMREF'
+    ORDRE='STRDAT;ITMREF;WIPNUM'
+
+    TIT(0)= mess(384,198,1)
+    NBCOL = 0
+    CODFIC = "ORDERS"
+    NBCOL +=1 : COL(NBCOL)="mess([F:ORD2]WIPTYP,341,1) + mess([F:ORD2]WIPSTA,342,1)"
+            Call TEXTFIC(CODFIC ,"WIPTYP", 1,TIT(NBCOL) ) From OBJDIV
+    NBCOL +=1 : COL(NBCOL)="STOFCY"      : Gosub TEXTE From MFGSELLIB
+    NBCOL +=1 : COL(NBCOL)="VCRNUM"      : Gosub TEXTE From MFGSELLIB
+    NBCOL +=1 : COL(NBCOL)="ITMREF"      : Gosub TEXTE From MFGSELLIB
+    NBCOL +=1 : COL(NBCOL)="STRDAT"      : Gosub TEXTE From MFGSELLIB
+    NBCOL +=1 : COL(NBCOL)="ENDDAT"      : Gosub TEXTE From MFGSELLIB
+    CODFIC = "ITMMASTER"
+    NBCOL +=1 : COL(NBCOL)="STU"         : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="[F:ITM]STU"
+    CODFIC = "ORDERS"
+    NBCOL +=1 : COL(NBCOL)="RMNEXTQTY"   : Gosub TEXTE From MFGSELLIB
+    CODFIC = "ITMMASTER"
+    #NBCOL +=1 : COL(NBCOL)="ITMDES1"     : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="[F:ITM]ITMDES1"
+    #NBCOL +=1 : COL(NBCOL)="DES1AXX"     : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="[F:AXX]TEXTE"    # FGR 30/06/2009 : X3SUIVI56189
+    NBCOL +=1 : COL(NBCOL)="DES1AXX"     : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="string$(1,[F:AXX]TEXTE)+string$(len([F:AXX]TEXTE)=0,[F:ITM]ITMDES1)"  # FGR 29/09/2009 : X3SUIVI57887
+    COLTYP(NBCOL) = 30  # FGR 01/02/2010  X3SUIVI62036
+
+    Default File [NEW]
+    SIZLIG = 75
+    SIZCOL = 300
+
+Endif
+
+Return
+###################################################################
+# Issue 108577 - by GA 07/2015
+#  Display Shipments for current POF                              #
+###################################################################
+$SEL_FWIPZOOM4
+Local     Char     WWIPNUM(GLONVCR), WITMREF(GLONITM)
+Local     Integer  WWIPTYP , WWIPSTA
+Local     Char     WVCRNUMORI(GLONVCR)
+Local     Char     WVCRNUM(GLONVCR)
+Local     Integer  WQTY
+Local     Char     CODFIC(GLONATB)
+Local     Date     WDAT
+Local     Integer  WVCRSEQ
+Local     Integer  ICRITERE        :ICRITERE = 0
+
+GZOOM = 0
+If clalev ([F:ATZ])=0  : Local File ATABZON   [ATZ]  : Endif
+If clalev ([F:SHD])=0  : Local File SHIPMENTD [SHD]  : Endif
+If clalev ([F:ITM])=0  : Local File ITMMASTER [ITM]  : Endif
+If clalev ([F:AXX])=0  : Local File ATEXTRA   [AXX]  : Endif  # FGR 30/06/2009 : X3SUIVI56189
+
+WWIPNUM = PARAM(1)
+WWIPTYP = val(PARAM(2))
+WITMREF = PARAM(3)
+If dim([M:ORDK]NBLIG)<= 0 Return Endif
+
+# Read POF with associated Shipments
+Read [ORD]ORD0=WWIPTYP;WWIPNUM;WITMREF
+If fstat Return Endif
+
+If !fstat & WWIPTYP=2
+    #  Shipments - Purchase order no.:
+    #TIT = mess(3,2088,1) -"-"- mess(121,154,1) - [F:ORD]VCRNUM - num$([F:ORD]VCRLIN)
+    # Shipments - Product
+    TIT = mess(3,2088,1) -"-"-mess(260,133,1)- WITMREF
+
+    Link  [SHD] With [ITM]ITM0=ITMREF,
+&                 [AXX]AXX0="ITMMASTER";"DES1AXX";GLANGUE;ITMREF;""
+&            As [NEW]
+    Call ADDCRIT(CRITERE,ICRITERE,"CRITERE","POHNUM = '"+[F:ORD]VCRNUM+"'","&") From GOBJSUB
+    Call ADDCRIT(CRITERE,ICRITERE,"CRITERE","POPLIN = "+num$([F:ORD]VCRLIN),"&") From GOBJSUB
+    Call ADDCRIT(CRITERE,ICRITERE,"CRITERE","POQSEQ = "+num$([F:ORD]VCRSEQ),"&") From GOBJSUB
+    If CRITERE="" CRITERE = "1=1" Endif
+
+    START='SHIPNUM'
+    ORDRE='EXTRCPDAT;ITMREF'
+
+    NBCOL = 0
+    CODFIC = "SHIPMENTD"
+    NBCOL +=1 : COL(NBCOL)="SHIPNUM"     : Gosub TEXTE From MFGSELLIB
+    #CODFIC = "ITMMASTER"
+    #NBCOL +=1 : COL(NBCOL)="ITMREF"      : Gosub TEXTE From MFGSELLIB
+    #NBCOL +=1 : COL(NBCOL)="DES1AXX"     : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="string$(1,[F:AXX]TEXTE)+string$(len([F:AXX]TEXTE)=0,[F:ITM]ITMDES1)"
+    #COLTYP(NBCOL) = 30
+    CODFIC = "SHIPMENTD"
+    NBCOL +=1 : COL(NBCOL)="EXTRCPDAT"   : Gosub TEXTE From MFGSELLIB
+    NBCOL +=1 : COL(NBCOL)="SHIQTYSTU"   : Gosub TEXTE From MFGSELLIB
+    CODFIC = "ITMMASTER"
+    NBCOL +=1 : COL(NBCOL)="STU"         : Gosub TEXTE From MFGSELLIB : COL(NBCOL)="[F:ITM]STU"
+    CODFIC = "SHIPMENTD"
+    NBCOL +=1 : COL(NBCOL)="PRCPQTYSTU"  : Gosub TEXTE From MFGSELLIB
+    NBCOL +=1 : COL(NBCOL)="RCPQTYSTU"   : Gosub TEXTE From MFGSELLIB
+
+    Default File [NEW]
+    SIZLIG = 75
+    SIZCOL = 300
+
+Endif
+Return
+
+#---------------------------------------------------------------------------#
+# Action SAICREWOX                                                          #
+#---------------------------------------------------------------------------#
+###########################################################################
+# ouverture
+$OUVRE_CREWOX
+Local    Char       WFCY(GLONFCY)
+Local    Char       WITM(GLONITM)
+Local    Char       WPLANNER(GLONAUS)
+Local    Char       WPJT(GLONPJT)
+Local    Char       WMTOREF(GLONVCR)  : # V6 Réseau MTO FQ 46650
+Local    Decimal    WQTYBES
+Local    Char       WDATC(20)
+Local    Date       WDATBES
+Local    Integer    WFLGPEC
+Local    Integer    WPLNHAB
+
+Local    Char       XTITLE(250)
+Local    Date       WORIDAT
+Local    Char       WORIFCY(GLONFCY)
+Local    Integer    WLTI, WQUALTI, WMFGLTI
+Local    Char       WART(GLONITM)
+Local    Date       WMEMDAT
+Local    Integer    WMAX
+Local    Decimal    XLTI
+Local    Integer    ILTI
+Local    Decimal    WRMD
+Local    Decimal    WQTY
+Local    Char       MESS1(250)
+Local    Date       TODAY : TODAY = date$
+Local    Integer    WSTA
+Local    Integer    STAT    # 14102 mm 04.06
+Local    Integer    WPJTLAUNCH : WPJTLAUNCH=0 # Issue 107498/108 - 2016-05-19 by BEEBE/ALSHE : flag for control possibility of launching PJT products/WOx
+Local    Integer    WWIPTYP # Issue 107498/108 - 2016-06-07 by BEEBE/ALSHE : ordertyp to check if demand comes from MTx
+Local    Char       WBTSNUM(5) # Issue X3-4772 - 2016-11-07 by ALSHE : Entry transaction for enterpirse planning
+Local    Char       WORDCRE(4)
+
+If clalev ([F:ORD1])<= 0 : Local File ORDERS     [ORD1]: Endif
+If clalev ([F:ITM]) <= 0 : Local File ITMMASTER  [ITM] : Endif
+If clalev ([F:ITF]) <= 0 : Local File ITMFACILIT [ITF] : Endif
+If clalev ([F:MFG]) <= 0 : Local File MFGHEAD    [MFG] : Endif
+If clalev ([F:MFI]) <= 0 : Local File MFGITM     [MFI] : Endif
+If clalev ([F:SCH]) <= 0 : Local File SCHEDULING [SCH] : Endif
+If clalev ([F:FCY]) <= 0 : Local File FACILITY   [FCY] : Endif
+If clalev ([F:TUV]) <= 0 : Local File TABUNAVAIL [TUV] : Endif
+If clalev ([F:TBO]) <= 0 : Local File TABBOMALT  [TBO] : Endif
+If clalev ([F:TRO]) <= 0 : Local File TABROUALT  [TRO] : Endif
+If clalev ([F:BOH]) <= 0 : Local File BOM        [BOH] : Endif
+If clalev ([F:ROH]) <= 0 : Local File ROUTING    [ROH] : Endif
+If clalev ([F:MTS]) <= 0 : Local File MFGTRS     [MTS] : Endif
+If clalev ([M:ORDK]) <= 0 : Local Mask ORDK      [ORDK] : Endif    # 14102 mm 04.06
+
+# sr 150 tests
+Raz [F:MFG]
+# chargement paramètres
+WFCY     = PARAM(1)
+WITM     = PARAM(2)
+If PARAM(3) <> "" : WQTYBES = val(PARAM(3)) : Else : WQTYBES = 0 : Endif
+WDATC    = PARAM(4)
+If WDATC <> ""
+    If instr(1,WDATC,"/")
+        WDATBES = "["+WDATC+"]"
+    Else
+        WDATBES = WDATC
+    Endif
+Endif
+If PARAM(8) <> "" : WPEC    = val(PARAM(8)) : Else : WPEC    = 0 : Endif
+If PARAM(9) <> "" : WPLNHAB = val(PARAM(9)) : Else : WPLNHAB = 0 : Endif
+
+# Issue X3-51935 - 2017-09-20 by ALSHE : allow to create WOF in material task line depending on user parameter PJMORDCRE
+If func AFNC.ACTIV("PJM") & find(GFONCTION,"PJMACTTAS")
+    Call PARAMUTIL("PJMORDCRE",WORDCRE,GUSER,WFCY) From SUBAUS
+    If WORDCRE = "2"
+        WPLNHAB = 6
+    Endif
+Endif
+# End issue X3-51935
+
+WPLANNER  = PARAM(10)
+WPJT      = PARAM(11)
+WWIPTYP   = val(PARAM(7)) # Issue 107498/108 - 2016-06-07 by BEEBE/ALSHE : ordertyp to check if demand comes from MTx
+If dim(PARAM(13))>0 & PARAM(13)<>""
+   WMTOREF   = PARAM(13)   : # V6 Réseau MTO FQ 46650 ajout paramètre 13 action SAICREWOX
+Endif
+
+# X3-110480 - extended find function to include PJMACTTAS
+If find(GFONCTION,"PJMACTTAS") # Issue X3-4772 - 2016-11-07 by ALSHE : Read entry transaction from Parameter PJMPLNTRA
+    If clalev ([F:BTS])=0  : Local File BENCHTRS [BTS] : Endif
+    Call PARAMUTIL("PJMPLNTRA",WBTSNUM,GUSER,WFCY) From SUBAUS
+    Read [BTS]BTS0=51;WBTSNUM
+    If fstat
+        Raz [F:BTS]
+    Else
+        If [F:BTS]MFGTRS <> ""
+            Read  [MTS]MTS0=1;[F:BTS]MFGTRS
+        Else
+            Read  [MTS]MTS0=1;GMFGMTSNUM
+        Endif
+    Endif
+    If fstat : Raz [F:MTS] : Endif
+
+Endif
+
+XTITLE = mess(342,198,1)
+
+Return
+
+###########################################################################
+# Initialise le titre de la fenêtre
+$TIT
+If find(GACTION,"SAICREWOX","SAIMODWOX")
+    TIT = XTITLE
+Endif
+Return
+
+###########################################################################
+# chargement
+$DEBUT_CREWOX
+Gosub CHARGE_MBW3
+Affzo [M:MBW3]01-99
+# Issue 104943 - 2015-06-30 by BEEBE : implementing versioning
+If dim([M:MBW3]ECCVALMAJ)>0
+    Call ECCAFF([M:MBW3]ITMREF,"MBW3")  From MFGECCLIB
+Endif
+Return
+
+###########################################################################
+# état boutons
+$SETBOUT_CREWOX
+ETABOU(GSPE1)=1    # 14102 mm 04.06
+If WFLGPEC = 0 : ETABOU(GSPE2)= 1 : Else : ETABOU(GSPE2) = 0 : Endif
+ETABOU(GSPE3)=1
+
+# contrôle accès bouton suivant paramètre transaction
+If !find(WPLNHAB,1,3,5,7) : ETABOU(GSPE1) = 0 : Endif     # 14102 mm 04.06
+If !find(WPLNHAB,2,3,6,7) : ETABOU(GSPE2) = 0 : Endif
+If !find(WPLNHAB,4,5,6,7) : ETABOU(GSPE3) = 0 : Endif
+
+ETABOU(GPREM)=0
+ETABOU(GDERN)=0
+ETABOU(GSUIV)=0
+ETABOU(GPREC)=0
+Return
+
+########################################################################
+## GH 15/05/2014 bug 99197
+$AVANT_BOUTON_CREWOX
+If find(GFONCTION,"FUNMPICK","FUNMPICKA") & find(BOUT,"2","3") & ([M:MBW3]STOFCY<>WFCY | [M:MBW3]ITMREF<>WITM)
+   GMESSAGE = mess(298,193,1) # L'article-site ne correspond plus aux critères saisis
+   FOK=0 : GERR=1
+Endif
+Return
+
+########################################################################
+$BOUTON_CREWOX
+
+
+Case BOUT
+    When "1"       :     # suggérer
+                         WSTA = 3
+                         Gosub MAJ_CREWOS    # 14102  mm 04.06
+                         Return
+    When "2"       :     # planifier
+                         WSTA = 2
+                         Gosub MAJ_CREWOX
+                         Return
+    When "3"       :     # lancer
+                         WSTA = 1
+                         Gosub MAJ_CREWOX
+                         Return
+Endcase
+FIN=0
+Return
+
+########################################################################
+$MAJ_CREWOS
+GOK = 1
+Raz  [M:ORDK]
+
+Trbegin ADOVAL
+[M:ORDK]MAJCOD     = "C"
+[M:ORDK]WIPTYP     = 5
+[M:ORDK]WIPSTA     = 3
+[M:ORDK]STOFCY     = [M:MBW3]STOFCY
+[M:ORDK]ORIFCY     = [M:MBW3]STOFCY
+[M:ORDK]ITMREF     = [M:MBW3]ITMREF
+[M:ORDK]PJT        = [M:MBW3]PJT
+If dim([M:ORDK]MTOREF)>0 & dim([M:MBW3]MTOREF)>0
+   [M:ORDK]MTOREF     = [M:MBW3]MTOREF   : # V6 Réseau MTO FQ 46650
+Endif
+[M:ORDK]EXTQTY     = [M:MBW3]EXTQTY2
+[M:ORDK]STRDAT     = [M:MBW3]STRDAT2
+[M:ORDK]ENDDAT     = [M:MBW3]ENDDAT2
+[M:ORDK]BOMALT     = [M:MBW3]BOMALT2
+[M:ORDK]BOMALTTYP  = 2                     # V6 Nomenclature de Production
+Call NUMERO(GSUG,[M:MBW3]STOFCY,[M:MBW3]STRDAT2,"", [M:ORDK]WIPNUM,STAT) From SUBANM
+If STAT <> 0
+    Call ERREUR("WIP"-mess(60,199,1)) From GESECRAN
+    GOK = 0 : Goto VAL_CRE
+Endif
+
+[M:ORDK]VCRNUM     = [M:ORDK]WIPNUM
+[M:ORDK]VCRTYP     = 11
+[M:ORDK]PIO        = 1
+[M:ORDK]FMI        = 1
+[M:ORDK]MRPMES     = 1
+
+[M:ORDK]ORI = 3    # Stock (idem réappro hors CBN)
+
+# Issue 104943 - 2015-06-24 by BEEBE : implementing versioning
+If dim([M:MBW3]ECCVALMAJ)>0
+    [M:ORDK]ECCVALMAJ = [M:MBW3]ECCVALMAJ
+    [M:ORDK]ECCVALMIN = [M:MBW3]ECCVALMIN
+Endif
+
+Call WIP From TRTWIP
+If GOK<>1 : Goto VAL_CRE : Endif
+
+$VAL_CRE
+If GOK = 1 : Commit
+Else  : Goto AB_TRS : Endif
+
+# trace
+If [F:BTS]TRACE=2
+    Call OUVRE_TRACE(mess(59,123,1)-mess(156,197,1)) From LECFIC
+    MESS1 = mess(156,197,1)-mess(3,317,1)-[M:ORDK]WIPNUM-mess(233,197,1)
+    Call ECR_TRACE(MESS1,0) From GESECRAN
+    Call FERME_TRACE From LECFIC
+    Call LEC_TRACE From LECFIC
+Endif
+Raz [M:MBW3]
+PARAM(12) = num$(2)
+PARAM(5)  = [M:ORDK]WIPNUM
+PARAM(6)  = num$(WSTA)
+PARAM(7)  = num$(5)
+If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMPICK","FUNMPICKA","FUNMLINK")
+    GVCR   = [M:ORDK]WIPNUM
+    GLIN   = 0
+    GSEQ   = 0
+Endif
+
+FIN =1
+
+Return
+
+########################################################################
+$MAJ_CREWOX
+If clalev ([M:MFGK]) <=0 : Local Mask MFGK [MFGK] : Endif # Issue X3-4772 - 2016-10-04 by ALSHE : Mask not open when comming from PJM
+Raz [M:MFGK]
+If [M:MBW3]ROUNUM = ""
+    If [F:MTS]MFGMODM = 2 & [M:MBW3]BOMALT2 <> 0
+        Call OUINON(mess(136,190,1),OK) From GESECRAN
+        If OK <> 2 : Return : Endif
+    Endif
+Elsif [F:MTS]MFGMODC = 1 & [F:MTS]MFGMODM = 1
+    Call OUINON(mess(137,190,1),OK) From GESECRAN
+    If OK <> 2 : Return : Endif
+Endif
+# sr 10.04 demande 25525
+GPE = 0
+GPOINT="CUSCTL" : Gosub ENTREE From EXEFNC
+If GPE : Return : Endif
+
+[M:MFGK]CODMAJ = "C"
+[M:MFGK]CODTRS = 2
+[M:MFGK]MFGNUM = ""
+[M:MFGK]MFGLIN = 0
+[M:MFGK]MFGFCY = [M:MBW3]STOFCY
+[M:MFGK]MFGSTA = WSTA
+[M:MFGK]ITMREF = [M:MBW3]ITMREF
+[M:MFGK]PRVQTY = 0
+[M:MFGK]EXTQTY = [M:MBW3]EXTQTY2
+[M:MFGK]STRDAT = [M:MBW3]STRDAT2
+[M:MFGK]ENDDAT = [M:MBW3]ENDDAT2
+[M:MFGK]BOMALT = [M:MBW3]BOMALT2
+[M:MFGK]ROUNUM = [M:MBW3]ROUNUM
+[M:MFGK]ROUALT = [M:MBW3]ROUALT
+[M:MFGK]FMI    = 1
+[M:MFGK]BPRNUM = ""
+[M:MFGK]PJT    = [M:MBW3]PJT
+If dim([M:MFGK]MTOREF)>0 & dim([M:MBW3]MTOREF)>0
+   [M:MFGK]MTOREF     = [M:MBW3]MTOREF   : # V6 Réseau MTO FQ 46650
+Endif
+[M:MFGK]PIO    = 1
+[M:MFGK]VCRTYPORI = 0
+[M:MFGK]VCRNUMORI = ""
+[M:MFGK]VCRLINORI = 0
+[M:MFGK]VCRSEQORI = 0
+[M:MFGK]WIPTYP = 0
+[M:MFGK]WIPNUM = ""
+Case [F:MTS]SCDMODSAI
+    When 1:    [M:MFGK]SCDMOD = 1
+    When 2:    [M:MFGK]SCDMOD = 2
+    When Default: [M:MFGK]SCDMOD = 1
+Endcase
+# Issue 104943 - 2015-06-24 by BEEBE : implementing versioning
+If dim([M:MBW3]ECCVALMAJ)>0
+    [M:MFGK]ECCVALMAJ = [M:MBW3]ECCVALMAJ
+    [M:MFGK]ECCVALMIN = [M:MBW3]ECCVALMIN
+Endif
+# 18138 MM 01.05  - 39230 mm 02.07
+If [F:BTS]TRACE=2  Call OUVRE_TRACE(mess(229,197,1)) From LECFIC Endif
+
+Call MAJ_OF From MFGAUTLIB
+If [M:MFGK]CODRET = 0
+    If [F:BTS]TRACE=2   # 18138 MM 01.05
+        Case WSTA
+            When 1: MESS1 = mess(231,197,1)
+            When 2: MESS1 = mess(230,197,1)
+        Endcase
+        MESS1 -= [M:MFGK]MFGNUM-mess(233,197,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+    PARAM(12) = num$(2)
+    Raz [M:MBW3]
+    PARAM(5) = [M:MFGK]MFGNUM
+    PARAM(6) = num$(WSTA)
+    PARAM(7) = num$(5)
+    # 01.06 34228
+    If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMPICK","FUNMPICKA","FUNMLINK")
+        GVCR   = [M:MFGK]MFGNUM
+        GLIN   = 1000
+        GSEQ   = 0
+    Endif
+Else
+    If [F:BTS]TRACE=2
+        # La création de l'ordre de fabrication a échoué
+        MESS1 =  mess(693,197,1)-mess(290,196,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+Endif
+FIN = 1
+
+Return
+
+#---------------------------------------------------------------------------#
+# Action SAIMODWOX                                                          #
+#---------------------------------------------------------------------------#
+###########################################################################
+# ouverture
+$OUVRE_MODWOX
+Local    Char      WFCY(GLONFCY)
+Local    Char      WITM(GLONITM)
+Local    Integer   WTYP, WSTA
+Local    Char      WWIP(GLONVCR)
+Local    Integer   WPLNHAB
+
+Local    Integer    WMFGTRKFLG, WWIPSTA
+Local    Integer    WALLSTA
+Local    Integer    WSCDFLG
+Local    Integer    WRET
+Local    Integer    OK
+Local    Integer    WMULTI
+Local    Char       XTITLE(250)
+Local    Integer    WMODCRE
+Local    Date       WORIDAT
+Local    Char       WORIFCY(GLONFCY)
+Local    Integer    WLTI , WALT, WMFGLTI, WQUALTI
+Local    Char       WART(GLONITM)
+Local    Date       WMEMDAT
+Local    Integer    WMAX
+Local    Decimal    XLTI
+Local    Integer    ILTI
+Local    Decimal    WRMD
+Local    Decimal    WQTY
+Local    Char       MESS1(250)
+Local    Decimal    WTOTPEC, WECART, WECART2, WTOTCOV, WTOTWOP, WTOTWOPC
+Local    Date       WOBJ
+Local    Date       WOBJDAT
+Local    Date       TODAY          : TODAY = date$
+Local    Integer    WMODE            # (1 = Modification WOx, 2 = PEC)
+Local    Integer    WSTA
+Local    Decimal    C_QTY
+Local    Integer    WNBITM           # 10.04 25477
+Local    Char       WCLE(200)        # 14102 mm 04.06
+Local    Integer    WPJTLAUNCH : WPJTLAUNCH=0 # Issue 107498/108 - 2016-05-19 by BEEBE/ALSHE : flag for control possibility of launching PJT products/WOx
+
+If clalev ([F:ORD1])<= 0 : Local File ORDERS     [ORD1]: Endif
+If clalev ([F:ITM]) <= 0 : Local File ITMMASTER  [ITM] : Endif
+If clalev ([F:ITF]) <= 0 : Local File ITMFACILIT [ITF] : Endif
+If clalev ([F:MFG]) <= 0 : Local File MFGHEAD    [MFG] : Endif
+If clalev ([F:MFI]) <= 0 : Local File MFGITM     [MFI] : Endif
+If clalev ([F:SCH]) <= 0 : Local File SCHEDULING [SCH] : Endif
+If clalev ([F:FCY]) <= 0 : Local File FACILITY   [FCY] : Endif
+If clalev ([F:TUV]) <= 0 : Local File TABUNAVAIL [TUV] : Endif
+If clalev ([F:TBO]) <= 0 : Local File TABBOMALT  [TBO] : Endif
+If clalev ([F:TRO]) <= 0 : Local File TABROUALT  [TRO] : Endif
+If clalev ([F:BOH]) <= 0 : Local File BOM        [BOH] : Endif
+If clalev ([F:ROH]) <= 0 : Local File ROUTING    [ROH] : Endif
+If clalev ([F:MTS]) <= 0 : Local File MFGTRS     [MTS] : Endif
+If clalev ([F:PTO]) <= 0 : Local File PARMTO     [PTO] : Endif
+# Issue 111414 - 2015-12-30 by GH : implementing route versioning
+If WMODE<>2 & clalev ([F:RVV]) <= 0 : Local File RVMVAL     [RVV] : Endif
+
+If clalev ([M:ORDK]) <= 0 : Local Mask ORDK      [ORDK] : Endif    # 14102 mm 04.06
+
+# chargement des paramètres
+WFCY     = PARAM(1)
+WTYP     = val(PARAM(2))
+WSTA     = val(PARAM(3))
+WWIP     = PARAM(4)
+WITM     = PARAM(5)
+WPLNHAB  = val(PARAM(6))
+Raz PARAM(7)
+
+Case WTYP
+    When 5:        WMODE = 1
+                   Case WSTA
+                       When 1: XTITLE = mess(335,198,1)    # modifier
+                       When 2: XTITLE = mess(334,198,1)    # modifier/lancer
+                       When 3: XTITLE = mess(333,198,1)    # planifier/lancer
+                   Endcase
+    # Issue 85905 GA 12/2012 pec d'une EOS pour générer une WOF
+    #When 1,2,3,6,8:  WMODE = 2
+    When 1,2,3,6,8,13,14:  WMODE = 2
+                   # substitution fenêtre
+                   BOITE     = "DPECWOX"
+                   WMASQUE   = "MBENCHW4"
+                   Gosub CHANGE_AWI
+                   XTITLE = mess(333,198,1)  # planifier/lancer
+Endcase
+
+Return
+
+#-------------------------------------------------------------------------#
+# >>>>> Fenêtre DMODWOX
+#-------------------------------------------------------------------------#
+###########################################################################
+# chargement
+$DEBUT_MODWOX
+If WMODE = 2 : Gosub DEBUT_PECWOX : Return : Endif
+Gosub CHARGE_MBW1
+Diszo [M:MBW1]5
+Diszo [M:MBW1]10
+Diszo [M:MBW1]15
+Actzo [M:MBW1]OBJDAT
+
+Affzo [M:MBW1]1-99
+
+# Issue 104943 - 2015-07-27 by BEEBE : implementing versioning
+If dim([M:MBW1]ECCVALMAJ)>0
+    # No initializing of version fields when ECCVALMAJ not empty or when WOS
+    Call ECCAFF([M:MBW1]ITMREF,"MBW1") From MFGECCLIB
+Endif
+
+# Issue 111414 - 2015-12-30 by GH : implementing route versioning
+If dim([M:MBW1]ROUECCMAJ)>0
+    Call RVMAFF([M:MBW1]ROUNUM,[M:MBW1]STOFCY,[M:MBW1]ROUALT,"MBW1") From RVMLIB
+Endif
+
+If WALLSTA > 1 & [M:MBW1]BOMALT2<>0 : Diszo [M:MBW1]BOMALT2 : Endif
+
+# Issue X3-26577 - 2017-03-16 by ALSHE : prevent scheduling if WO is optimized
+# If WMFGTRKFLG > 3 | WMFGTRKFLG = 2
+# Issue 138106 GH 03/06/19 - more fields may be modified for a WO in progress
+#If WMFGTRKFLG > 3 | WMFGTRKFLG = 2 | (func AFNC.ACTIV("POPS") & WSCDFLG=4)
+If WMFGTRKFLG > 4 | WMFGTRKFLG = 2 | (G_SCHEDULER_STATUS(0) & WSCDFLG=4)
+    Diszo [M:MBW1]20
+    Diszo [M:MBW1]25
+    Diszo [M:MBW1]28 : # GH 09/01/2012 bug 78926
+    Diszo [M:MBW1]OBJDAT
+Endif
+Return
+
+###########################################################################
+# état boutons
+$SETBOUT_MODWOX
+If WMODE = 2 : Gosub SETBOUT_PECWOX : Return : Endif
+
+# Issue X3-26577 - 2017-03-16 by ALSHE : prevent scheduling if WO is optimized
+# If WMFGTRKFLG > 3 | WMFGTRKFLG = 2
+# Issue 138106 GH 03/06/2019 - button Save is activated for  WO in progress
+#If WMFGTRKFLG > 3 | WMFGTRKFLG = 2 | (func AFNC.ACTIV("POPS") & WSCDFLG=4)
+If WMFGTRKFLG > 4 | WMFGTRKFLG = 2 | (G_SCHEDULER_STATUS(0) & WSCDFLG=4)
+    ETABOU(GENRE) = 0
+    ETABOU(GSUPP) = 0
+Elsif WMFGTRKFLG = 4
+    ETABOU(GENRE) = 1
+    ETABOU(GSUPP) = 0
+Else
+    ETABOU(GSUPP) = 1
+    ETABOU(GENRE) = 1        # 14102 MM 04.06
+Endif
+
+# Issue X3-26577 - 2017-03-27 by ALSHE : Transfer WO from Firm to Plan although it is optimized by PS
+#    When 1: If WALLSTA > 1 | WMFGTRKFLG > 3 | WMFGTRKFLG = 2 | WMODCRE <> 0
+Case [M:MBW1]WIPSTA
+    When 1: If ((WALLSTA > 1 | WMFGTRKFLG > 3 | WMFGTRKFLG = 2 | WMODCRE <> 0) & !G_SCHEDULER_STATUS(0)) |
+&               (WALLSTA > 1 | WMFGTRKFLG > 3 | WMODCRE <> 0)
+                ETABOU(GSPE1)=0
+            Else
+                WTOTPEC  = 0
+                WTOTWOP  = 0
+                WTOTWOPC = 0
+                Call CUM_PEC(10, [M:MBW1]VCRNUM, [M:MBW1]VCRLIN, 0, 1, WTOTPEC, WTOTWOP,
+&                            WTOTWOPC) From TRTWIP
+                If WTOTWOPC = 0
+                    ETABOU(GSPE1) = 1
+                Else
+                    ETABOU(GSPE1) = 0
+                Endif
+            Endif
+            ETABOU(GSPE2)=0
+            If [M:MBW1]MRPMES > 1 : ETABOU(GSPE3) = 1 : Else : ETABOU(GSPE3) = 0 : Endif
+    When 2: ETABOU(GSPE1)=0
+            ETABOU(GSPE2)=1
+            If [M:MBW1]MRPMES > 1 : ETABOU(GSPE3) = 1 : Else : ETABOU(GSPE3) = 0 : Endif
+    When 3: ETABOU(GSPE1)=1
+            ETABOU(GSPE2)=1
+Endcase
+# 10.04 25477 si multi-article pas de modification
+# 10.05 32621 finalement si
+#If WNBITM > 1 : ETABOU(GSPE1) = 0 : ETABOU(GSPE2) = 0 : Endif
+
+# Issue 107498/108 - 2016-05-19 by BEEBE/ALSHE : button only active when launching possible
+# Call VALIDPJT([M:MBW1]ITMREF,[M:MBW1]STOFCY,[F:ITM]STDFLG,[M:MBW1]PJT,WPJTLAUNCH) From MFGLIB
+# Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+If WPJTLAUNCH = 1 & func AFNC.ACTIV("PJM")
+    GERR = 1
+    GMESSAGE = [M:MBW1]PJT + " : " + mess(228,2260,1)
+    ETABOU(GSPE1) = 0
+    ETABOU(GSPE2) = 0
+Endif
+
+ETABOU(GPREM)=0
+ETABOU(GDERN)=0
+ETABOU(GSUIV)=0
+ETABOU(GPREC)=0
+
+# contrôle accès bouton suivant paramètre transaction
+Case [M:MBW1]WIPSTA
+    When 1:    If !find(WPLNHAB,4,5,6,7)
+                   ETABOU(GENRE) =  0
+                   ETABOU(GSUPP) =  0
+               Endif
+               If !find(WPLNHAB,2,3,6,7) : ETABOU(GSPE1) = 0 : Endif
+    When 2:    If !find(WPLNHAB,2,3,6,7)
+                   ETABOU(GENRE) =  0
+                   ETABOU(GSUPP) =  0
+               Endif
+               If !find(WPLNHAB,4,5,6,7) : ETABOU(GSPE2) = 0 : Endif
+    When 3:    If !find(WPLNHAB,1,3,5,7)
+                   ETABOU(GENRE) =  0
+                   ETABOU(GSUPP) =  0
+               Endif
+               If !find(WPLNHAB,2,3,6,7) : ETABOU(GSPE1) = 0 : Endif
+               If !find(WPLNHAB,4,5,6,7) : ETABOU(GSPE2) = 0 : Endif
+Endcase
+
+Return
+
+########################################################################
+$AVENR_MODWOX
+# modification des WOS - 14102 MM 06.06
+
+If [M:MBW1]WIPSTA = 3
+   # FQ 61344 GA 01/2010 sauf WOS provenant du CBN/PDP
+   Read [ORD]ORD0 = WTYP;WWIP;WITM
+   If fstat | find([F:ORD]ORI,5,6)
+       OK = 1 : FOK = 0
+       # Modification de l'encours Suggéré XXXX Action interdite
+       MESS1 = mess(169,190,1)-mess([M:MBW1]WIPSTA,317,1)-[M:MBW1]VCRNUM-mess(654,7773,1)-"("-mess([F:ORD]ORI,298,1)-")"
+       Call ECR_TRACE(MESS1,1) From GESECRAN
+       Return
+   Endif
+
+   If [M:MBW1]FLGPRO = 2 |[M:MBW1]OBJDAT<>[M:MBW1]OBJDAT2 | [M:MBW1]EXTQTY1<>[M:MBW1]EXTQTY2
+       MESS1=mess(266,193,1)-mess(264,193,1)-mess(265,193,1)
+       OK = 1
+       Call OUINON(MESS1, OK) From GESECRAN
+       If OK = 1  : FOK = 0 : Endif
+       Raz MESS1
+   Endif
+Endif
+
+Return
+########################################################################
+$ENR_MODWOX
+
+# modification des WOS - 14102 MM 03.06
+If [M:MBW1]WIPSTA = 3 : Goto ENR_MODWOS : Endif
+
+# contrôle nomenclature
+If find([M:MBW1]WIPSTA,1,2) & (find([F:MFG]MFGMOD,1,2) | [F:MTS]MFGMODO = 1)           # 01.05 27812
+    WALT = [M:MBW1]BOMALT2
+    Call CONT_BOMALT([M:MBW1]STOFCY, WALT,2,
+&                    [M:MBW1]ITMREF, [M:MBW1]STRDAT2)
+    If GMESSAGE <> "" : GERR = 1 : Return : Endif
+Endif
+
+# contrôle gamme
+If find([M:MBW1]WIPSTA,1,2) & (find([F:MFG]MFGMOD,1,3) | [F:MTS]MFGMODM = 1)            # 01.05 27812
+    WALT = [M:MBW1]ROUALT
+    Call CONT_ROUALT([M:MBW1]STOFCY, WALT,
+&                    [M:MBW1]ROUNUM, [M:MBW1]STRDAT2,
+&                    [M:MBW1]EXTQTY2,[M:MBW1]STU2,
+&                    [M:MBW1]BOMALT2)
+    If GMESSAGE <> "" : GERR = 1 : Return : Endif
+Endif
+
+Raz [M:MFGK]
+[M:MFGK]CODMAJ = "M"
+[M:MFGK]CODTRS = 2
+[M:MFGK]MFGNUM = [M:MBW1]VCRNUM
+[M:MFGK]MFGLIN = [M:MBW1]VCRLIN
+[M:MFGK]MFGFCY = [M:MBW1]STOFCY
+[M:MFGK]MFGSTA = [M:MBW1]WIPSTA
+[M:MFGK]ITMREF = [M:MBW1]ITMREF
+[M:MFGK]PRVQTY = [M:MBW1]EXTQTY1
+[M:MFGK]EXTQTY = [M:MBW1]EXTQTY2
+[M:MFGK]STRDAT = [M:MBW1]STRDAT2
+[M:MFGK]ENDDAT = [M:MBW1]ENDDAT2
+[M:MFGK]BOMALT = [M:MBW1]BOMALT2
+[M:MFGK]ROUNUM = [M:MBW1]ROUNUM
+[M:MFGK]ROUALT = [M:MBW1]ROUALT
+[M:MFGK]MFGDES = [M:MBW1]MFGDES : # GH 09/01/2012 bug 78926
+[M:MFGK]PJT    = [M:MBW1]PJT
+[M:MFGK]RPLMAT = 1              : # Issue 99116 GH 26/07/2018 - WO materials updating may not be executed
+If dim([M:MFGK]MTOREF)>0 & dim([M:MBW1]MTOREF)>0
+   [M:MFGK]MTOREF     = [M:MBW1]MTOREF   : # V6 Réseau MTO FQ 46650
+Endif
+[M:MFGK]LOT    = [M:MBW1]LOT
+[M:MFGK]OBJDAT = [M:MBW1]OBJDAT
+# Issue 104943 - 2015-06-24 by BEEBE : implementing versioning
+If dim([M:MBW1]ECCVALMAJ)>0
+    [M:MFGK]ECCVALMAJ = [M:MBW1]ECCVALMAJ
+    [M:MFGK]ECCVALMIN = [M:MBW1]ECCVALMIN
+Endif
+# Issue 111414 - 2015-12-30 by GH : implementing route versioning
+If dim([M:MBW1]ROUECCMAJ)>0
+   [M:MFGK]ROUECCMAJ = [M:MBW1]ROUECCMAJ
+   [M:MFGK]ROUECCMIN = [M:MBW1]ROUECCMIN
+Endif
+# Issue 111112 - 2018-11-20 by GH : while WO updating, by-products were regenerated without origin doc references of the linked product
+[M:MFGK]VCRTYPORI = [M:MBW1]VCRTYPORI
+[M:MFGK]VCRNUMORI = [M:MBW1]VCRNUMORI
+[M:MFGK]VCRLINORI = [M:MBW1]VCRLINORI
+[M:MFGK]VCRSEQORI = [M:MBW1]VCRSEQORI
+
+# 18138 MM 01.05 - 39230 mm 02.07
+If [F:BTS]TRACE=2 Call OUVRE_TRACE(mess(229,197,1)) From LECFIC Endif
+
+Call MAJ_OF From MFGAUTLIB
+If [M:MFGK]CODRET = 0
+    If [F:BTS]TRACE=2      # 18138 MM 01.05
+        Case [M:MFGK]MFGSTA
+            When 1:        MESS1 = mess(231,197,1)-[M:MFGK]MFGNUM-mess(232,197,1)
+            When 2:        MESS1 = mess(230,197,1)-[M:MFGK]MFGNUM-mess(232,197,1)
+        Endcase
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+    PARAM(7) = num$(2)
+    Raz [M:MBW1]
+    # 01.06 34228
+    If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMLINK")
+        GVCR   = [M:MFGK]MFGNUM
+        GLIN   = 1000
+        GSEQ   = 0
+    Endif
+Else
+    If [F:BTS]TRACE=2
+        # La modification de l'ordre de fabrication a échoué
+        MESS1 = mess(694,197,1)-[M:MFGK]MFGNUM-mess(290,196,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+Endif
+FIN = 1
+
+Return
+
+########################################################################
+# 14102 MM 03.06
+$ENR_MODWOS
+GOK = 1
+Raz [M:ORDK]
+
+Trbegin [ORD]
+Read [ORD]ORD0 = WTYP;WWIP;WITM
+If fstat
+    GOK = 0
+    WCLE = num$(WTYP)-WWIP-WITM
+    Call RSTA ("ORD", WCLE)From GLOCK
+    Goto AB_TRS
+Endif
+
+[M:ORDK]MAJCOD     = "M"
+[M:ORDK]           = [F:ORD]
+
+[M:ORDK]EXTQTY     = [M:MBW1]EXTQTY2
+[M:ORDK]STRDAT     = [M:MBW1]STRDAT2
+[M:ORDK]ENDDAT     = [M:MBW1]ENDDAT2
+# Issue 104943 - 2015-06-24 by BEEBE : implementing versioning
+If dim([M:MBW1]ECCVALMAJ)>0
+    [M:ORDK]ECCVALMAJ = [M:MBW1]ECCVALMAJ
+    [M:ORDK]ECCVALMIN = [M:MBW1]ECCVALMIN
+Endif
+Call WIP From TRTWIP
+If GOK<>1 : Goto VAL_TRS : Endif
+
+$VAL_TRS
+If GOK = 1 : Commit
+Else  : Goto AB_TRS : Endif
+
+If [F:BTS]TRACE=2
+    Call OUVRE_TRACE(mess(229,197,1)) From LECFIC
+    MESS1 = mess(166,198,1)- mess([M:MBW1]WIPSTA,317,1)-[M:MBW1]VCRNUM-mess(232,197,1)
+    Call ECR_TRACE(MESS1,0) From GESECRAN
+    Call FERME_TRACE From LECFIC
+    Call LEC_TRACE From LECFIC
+Endif
+Raz [M:MBW1]
+PARAM(7) = num$(2)
+If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMLINK")
+    GVCR   = [M:ORDK]WIPNUM
+    GLIN   = 0
+    GSEQ   = 0
+Endif
+FIN = 1
+
+
+Return
+
+########################################################################
+$AB_TRS
+Rollback
+If [F:BTS]TRACE=2
+    Call OUVRE_TRACE(mess(229,197,1)) From LECFIC
+    # La modification de l'ordre de fabrication a échoué
+    MESS1 = mess(694,197,1)-mess([M:MBW1]WIPSTA,317,1)-[M:MBW1]VCRNUM-mess(290,196,1)
+    Call ECR_TRACE(MESS1,1) From GESECRAN
+    Call FERME_TRACE From LECFIC
+    Call LEC_TRACE From LECFIC
+Else
+    Call ECR_TRACE(mess(17,107,1), 1)From GESECRAN
+Endif
+Return
+
+########################################################################
+$SUP_MODWOX
+Local Integer WRET
+
+If [M:MBW1]WIPSTA <> 3
+    Call CHECK_FRCQTY([M:MBW1]STOFCY, [M:MBW1]ITMREF, 10, [M:MBW1]VCRNUM, [M:MBW1]VCRLIN, 0, 5, WRET) From MTOLINKLIB
+    If WRET
+        If [F:PTO]FRCPRO = 2          # Warning si A/R forcé
+            OK = 1
+            Call OUINON(mess(227,190,1),OK) From GESECRAN
+            If OK = 1 : OK = 0 : Return : Endif
+        Endif
+    Endif
+
+    # 47981 mm 07.08 -  si OF déjà pris en compte dans le plan de pesée + 49287 + 05.11
+    # lecture entête OF
+    Readlock [MFG]MFG0=[M:MBW1]VCRNUM
+    If !fstat
+        If dim([F:MFG]WGGFLG) > 0 & find([F:MFG]WGGFLG,3,4,8)
+            Call MESSAGE(mess(235,190,1)) From GESECRAN
+            Return
+        Endif
+    Endif
+    Unlock [MFG]
+Endif
+
+OK = 1
+Case [M:MBW1]WIPSTA
+    When 1,2: Call OUINON(mess(61,190,1),OK) From GESECRAN
+    When 3:   Call OUINON(mess(62,190,1),OK) From GESECRAN
+Endcase
+If OK = 2
+    Raz [M:MFGK]
+    [M:MFGK]CODMAJ = "A"
+    [M:MFGK]CODTRS = 2
+    [M:MFGK]MFGNUM = [M:MBW1]VCRNUM
+    [M:MFGK]MFGFCY = [M:MBW1]STOFCY
+    [M:MFGK]MFGSTA = [M:MBW1]WIPSTA
+    [M:MFGK]MFGLIN = [M:MBW1]VCRLIN
+    [M:MFGK]ITMREF = [M:MBW1]ITMREF
+
+    # 18138 MM 01.05  - 39230 mm 02.07
+    If [F:BTS]TRACE=2 Call OUVRE_TRACE(mess(229,197,1)) From LECFIC Endif
+    Call MAJ_OF From MFGAUTLIB
+    If [M:MFGK]CODRET = 0
+        If [F:BTS]TRACE=2      # 18138 MM 01.05
+            Case [M:MFGK]MFGSTA
+                When 1:              MESS1 = mess(231,197,1)-[M:MFGK]MFGNUM-mess(234,197,1)
+                When 2:              MESS1 = mess(230,197,1)-[M:MFGK]MFGNUM-mess(234,197,1)
+                When 3:              MESS1 = mess(235,197,1)-[M:MFGK]MFGNUM-mess(234,197,1)
+            Endcase
+            Call ECR_TRACE(MESS1,0) From GESECRAN
+            Call FERME_TRACE From LECFIC
+            Call LEC_TRACE From LECFIC
+        Endif
+        PARAM(7) = num$(2)
+        Raz [M:MBW1]
+       # 01.06 34228
+       If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMLINK")
+           GVCR   = ""
+           GLIN   = 0
+           GSEQ   = 0
+        Endif
+    Else
+        If [F:BTS]TRACE=2
+            # La suppression de l'ordre de fabrication a échoué
+            MESS1 = mess(695,197,1)-[M:MFGK]MFGNUM-mess(290,196,1)
+            Call ECR_TRACE(MESS1,0) From GESECRAN
+            Call FERME_TRACE From LECFIC
+            Call LEC_TRACE From LECFIC
+        Endif
+    Endif
+    FIN = 1
+Endif
+Return
+
+########################################################################
+$BOUTON_MODWOX
+If WMODE = 2 : Gosub BOUTON_PECWOX : Return : Endif
+
+Case BOUT
+    When "1"       :     # planifier
+                         Gosub MAJ_MODPLN
+                         Return
+    When "2"       :     # lancer
+                         Gosub MAJ_MODLAN
+                         Return
+    When "3"       :     # message
+                         Gosub MAJ_MODMES    # 20846 mm 11.05
+                         Return
+Endcase
+FIN=0
+Return
+
+########################################################################
+$MAJ_MODPLN
+Local Integer WRET
+
+# si passage de ferme à planifier, vérification affectations forcées
+If [M:MBW1]WIPSTA = 1
+    Call CHECK_FRCQTY([M:MBW1]STOFCY, [M:MBW1]ITMREF, 10, [M:MBW1]VCRNUM, [M:MBW1]VCRLIN, 0, 5, WRET) From MTOLINKLIB
+    If WRET
+        If [F:PTO]FRCPRO = 2
+            OK = 1
+            Call OUINON(mess(227,190,1),OK) From GESECRAN
+            If OK = 1 : OK = 0 : Return : Endif
+        Endif
+    Endif
+Endif
+
+# 01.05 28080
+# lecture article
+If [F:ITM]ITMREF <> [M:MBW1]ITMREF
+   Read [ITM]ITM0=[M:MBW1]ITMREF
+   If fstat : Raz [F:ITM] : Endif
+Endif
+
+# lecture article/site
+If [F:ITF]ITMREF <> [M:MBW1]ITMREF | [F:ITF]STOFCY <> [M:MBW1]STOFCY
+   Read [ITF]ITF0=[M:MBW1]ITMREF;[M:MBW1]STOFCY
+   If fstat : End : Endif
+Endif
+Call CONTMFGITM([M:MBW1]STOFCY, 1) From MFGLIB
+If mkstat = 2 : mkstat = 0 : Return : Endif
+
+# llc 06.04 22880
+If [M:MBW1]WIPSTA = 3
+    If [M:MBW1]ROUNUM = ""
+        If [F:MTS]MFGMODM = 2 & [M:MBW1]BOMALT2 <> 0
+            Call OUINON(mess(136,190,1),OK) From GESECRAN
+            If OK <> 2 : Return : Endif
+        Endif
+    Elsif [F:MTS]MFGMODC = 1 & [F:MTS]MFGMODM = 1
+        Call OUINON(mess(137,190,1),OK) From GESECRAN
+        If OK <> 2 : Return : Endif
+    Endif
+Endif
+
+# contrôle nomenclature
+If find([M:MBW1]WIPSTA,1,2) & (find([F:MFG]MFGMOD,1,2) | [F:MTS]MFGMODO = 1)            # 01.05 27812
+    WALT = [M:MBW1]BOMALT2
+    Call CONT_BOMALT([M:MBW1]STOFCY, WALT,2,
+&                    [M:MBW1]ITMREF, [M:MBW1]STRDAT2)
+    If GMESSAGE <> "" : GERR = 1 : Return : Endif
+Endif
+
+# contrôle gamme
+If find([M:MBW1]WIPSTA,1,2) & (find([F:MFG]MFGMOD,1,3) | [F:MTS]MFGMODM = 1)        # 01.05 27812
+    WALT = [M:MBW1]ROUALT
+    Call CONT_ROUALT([M:MBW1]STOFCY, WALT,
+&                    [M:MBW1]ROUNUM, [M:MBW1]STRDAT2,
+&                    [M:MBW1]EXTQTY2,[M:MBW1]STU2,
+&                    [M:MBW1]BOMALT2)
+    If GMESSAGE <> "" : GERR = 1 : Return : Endif
+Endif
+
+Raz [M:MFGK]
+Case [M:MBW1]WIPSTA
+    When 1,2:  [M:MFGK]CODMAJ = "M"
+    When 3  :  [M:MFGK]CODMAJ = "R"
+Endcase
+Case WMODCRE
+    When 1 : [M:MFGK]CODMAJ = "C"
+    When 2 : [M:MFGK]CODMAJ = "P"
+Endcase
+[M:MFGK]CODTRS = 2
+[M:MFGK]MFGNUM = [M:MBW1]VCRNUM
+[M:MFGK]MFGLIN = [M:MBW1]VCRLIN
+[M:MFGK]MFGFCY = [M:MBW1]STOFCY
+[M:MFGK]MFGSTA = 2
+[M:MFGK]ITMREF = [M:MBW1]ITMREF
+[M:MFGK]PRVQTY = [M:MBW1]EXTQTY1
+[M:MFGK]EXTQTY = [M:MBW1]EXTQTY2
+[M:MFGK]STRDAT = [M:MBW1]STRDAT2
+[M:MFGK]ENDDAT = [M:MBW1]ENDDAT2
+[M:MFGK]BOMALT = [M:MBW1]BOMALT2
+[M:MFGK]ROUNUM = [M:MBW1]ROUNUM
+[M:MFGK]ROUALT = [M:MBW1]ROUALT
+[M:MFGK]PJT    = [M:MBW1]PJT
+[M:MFGK]MFGDES = [M:MBW1]MFGDES : # GH 09/01/2012 bug 78926
+If dim([M:MFGK]MTOREF)>0 & dim([M:MBW1]MTOREF)>0
+   [M:MFGK]MTOREF     = [M:MBW1]MTOREF   : # V6 Réseau MTO FQ 46650
+Endif
+[M:MFGK]LOT    = [M:MBW1]LOT
+[M:MFGK]FMI    = [M:MBW1]FMI
+[M:MFGK]BPRNUM = [M:MBW1]BPRNUM
+[M:MFGK]PIO    = [M:MBW1]PIO
+[M:MFGK]VCRTYPORI = [M:MBW1]VCRTYPORI
+[M:MFGK]VCRNUMORI = [M:MBW1]VCRNUMORI
+[M:MFGK]VCRLINORI = [M:MBW1]VCRLINORI
+[M:MFGK]VCRSEQORI = [M:MBW1]VCRSEQORI
+[M:MFGK]WIPTYP = WTYP
+[M:MFGK]WIPNUM = WWIP
+[M:MFGK]OBJDAT = [M:MBW1]OBJDAT
+If [M:MFGK]CODMAJ = "R"
+    Case [F:MTS]SCDMODSAI
+        When 1:    [M:MFGK]SCDMOD = 1
+        When 2:    [M:MFGK]SCDMOD = 2
+        When Default: [M:MFGK]SCDMOD = 1
+    Endcase
+Endif
+If [M:MFGK]CODMAJ = "R"
+    Gosub CHECK_WIP
+    If WRET
+        GERR = 1
+        FIN = 1
+        PARAM(7) = num$(2)
+        Return
+    Endif
+Endif
+
+# Issue 104943 - 2015-08-03 by BEEBE : implementing versioning
+If dim([M:MBW1]ECCVALMAJ)>0
+    [M:MFGK]ECCVALMAJ = [M:MBW1]ECCVALMAJ
+    [M:MFGK]ECCVALMIN = [M:MBW1]ECCVALMIN
+Endif
+
+# Issue 111414 - 2015-12-30 by GH : implementing route versioning
+If dim([M:MBW1]ROUECCMAJ)>0
+   [M:MFGK]ROUECCMAJ = [M:MBW1]ROUECCMAJ
+   [M:MFGK]ROUECCMIN = [M:MBW1]ROUECCMIN
+Endif
+
+# 18138 MM 01.05 - 39230 mm 02.07
+If [F:BTS]TRACE=2  Call OUVRE_TRACE(mess(229,197,1)) From LECFIC  Endif
+
+Call MAJ_OF From MFGAUTLIB
+If [M:MFGK]CODRET = 0
+    If [F:BTS]TRACE=2     # 18138 MM 01.05
+        MESS1 = mess(230,197,1)-[M:MFGK]MFGNUM-mess(233,197,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+    PARAM(7) = num$(2)
+    Raz [M:MBW1]
+    # 01.06 34228
+    If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMLINK")
+        GVCR   = [M:MFGK]MFGNUM
+        GLIN   = 1000
+        GSEQ   = 0
+    Endif
+Else
+    If [F:BTS]TRACE=2
+        # La modification de l'ordre de fabrication a échoué
+        MESS1 = mess(694,197,1) -[M:MFGK]MFGNUM- mess(290,196,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+Endif
+FIN = 1
+WMODCRE = 0
+Return
+
+########################################################################
+$MAJ_MODLAN
+Local Integer WRET
+
+# 01.05 28080
+# lecture article
+If [F:ITM]ITMREF <> [M:MBW1]ITMREF
+   Read [ITM]ITM0=[M:MBW1]ITMREF
+   If fstat : Raz [F:ITM] : Endif
+Endif
+# lecture article/site
+If [F:ITF]ITMREF <> [M:MBW1]ITMREF | [F:ITF]STOFCY <> [M:MBW1]STOFCY
+   Read [ITF]ITF0=[M:MBW1]ITMREF;[M:MBW1]STOFCY
+   If fstat : End : Endif
+Endif
+Call CONTMFGITM([M:MBW1]STOFCY, 1) From MFGLIB
+If mkstat = 2 : mkstat = 0 : Return : Endif
+
+If [M:MBW1]WIPSTA = 3
+    If [M:MBW1]ROUNUM = ""
+        If [F:MTS]MFGMODM = 2 & [M:MBW1]BOMALT2 <> 0
+            Call OUINON(mess(136,190,1),OK) From GESECRAN
+            If OK <> 2 : Return : Endif
+        Endif
+    Elsif [F:MTS]MFGMODC = 1 & [F:MTS]MFGMODM = 1
+        Call OUINON(mess(137,190,1),OK) From GESECRAN
+        If OK <> 2 : Return : Endif
+    Endif
+Endif
+
+# contrôle nomenclature
+If find([M:MBW1]WIPSTA,1,2) & (find([F:MFG]MFGMOD,1,2) | [F:MTS]MFGMODO = 1)            # 01.05 27812
+    WALT = [M:MBW1]BOMALT2
+    Call CONT_BOMALT([M:MBW1]STOFCY, WALT,2,
+&                    [M:MBW1]ITMREF, [M:MBW1]STRDAT2)
+    If GMESSAGE <> "" : GERR = 1 : Return : Endif
+Endif
+
+# contrôle gamme
+If find([M:MBW1]WIPSTA,1,2) & (find([F:MFG]MFGMOD,1,3) | [F:MTS]MFGMODM = 1)        # 01.05 27812
+    WALT = [M:MBW1]ROUALT
+    Call CONT_ROUALT([M:MBW1]STOFCY, WALT,
+&                    [M:MBW1]ROUNUM, [M:MBW1]STRDAT2,
+&                    [M:MBW1]EXTQTY2,[M:MBW1]STU2,
+&                    [M:MBW1]BOMALT2)
+    If GMESSAGE <> "" : GERR = 1 : Return : Endif
+Endif
+
+Raz [M:MFGK]
+Case [M:MBW1]WIPSTA
+    When 1,2 : [M:MFGK]CODMAJ = "M"
+    When 3   : [M:MFGK]CODMAJ = "R"
+Endcase
+Case WMODCRE
+    When 1 : [M:MFGK]CODMAJ = "C"
+    When 2 : [M:MFGK]CODMAJ = "P"
+Endcase
+If [M:MBW1]EXTQTY1 <= [M:MBW1]EXTQTY2 | [M:MFGK]CODMAJ  <> "M"
+    Raz [M:ORCK]
+    [M:ORCK]MAJCOD = "C"
+    [M:ORCK]WIPNUM = WWIP
+    [M:ORCK]WIPTYP = WTYP
+    [M:ORCK]ITMREF = [M:MBW1]ITMREF
+    [M:ORCK]COVQTY = [M:MBW1]EXTQTY1
+    [M:ORCK]VCRTYPDST = 10
+    [M:ORCK]VCRNUMDST = [M:MBW1]VCRNUM
+    [M:ORCK]VCRLINDST = [M:MBW1]VCRLIN
+    [M:ORCK]VCRSEQDST = 0
+    [M:ORCK]WIPSTADST = 1
+    [M:ORCK]WIPTYPDST = 5
+    Read [MFG]MFG0=[M:MBW1]VCRNUM
+    If !fstat
+        [M:ORCK]ROUNUM = [F:MFG]ROUNUM
+        [M:ORCK]ROUALT = [F:MFG]ROUALT
+    Endif
+    Call COVER From TRTWIP
+
+    [M:MFGK]CODTRS = 2
+    [M:MFGK]MFGNUM = [M:MBW1]VCRNUM
+    [M:MFGK]MFGLIN = [M:MBW1]VCRLIN
+    [M:MFGK]MFGFCY = [M:MBW1]STOFCY
+    [M:MFGK]MFGSTA = 1
+    [M:MFGK]ITMREF = [M:MBW1]ITMREF
+    [M:MFGK]PRVQTY = [M:MBW1]EXTQTY1
+    [M:MFGK]EXTQTY = [M:MBW1]EXTQTY2
+    [M:MFGK]STRDAT = [M:MBW1]STRDAT2
+    [M:MFGK]ENDDAT = [M:MBW1]ENDDAT2
+    [M:MFGK]BOMALT = [M:MBW1]BOMALT2
+    [M:MFGK]ROUNUM = [M:MBW1]ROUNUM
+    [M:MFGK]ROUALT = [M:MBW1]ROUALT
+    [M:MFGK]PJT    = [M:MBW1]PJT
+    [M:MFGK]MFGDES = [M:MBW1]MFGDES : # GH 09/01/2012 bug 78926
+    If dim([M:MFGK]MTOREF)>0 & dim([M:MBW1]MTOREF)>0
+       [M:MFGK]MTOREF     = [M:MBW1]MTOREF   : # V6 Réseau MTO FQ 46650
+    Endif
+    [M:MFGK]LOT    = [M:MBW1]LOT
+    [M:MFGK]FMI    = [M:MBW1]FMI
+    [M:MFGK]BPRNUM = [M:MBW1]BPRNUM
+    [M:MFGK]PIO    = [M:MBW1]PIO
+    [M:MFGK]VCRTYPORI = [M:MBW1]VCRTYPORI
+    [M:MFGK]VCRNUMORI = [M:MBW1]VCRNUMORI
+    [M:MFGK]VCRLINORI = [M:MBW1]VCRLINORI
+    [M:MFGK]VCRSEQORI = [M:MBW1]VCRSEQORI
+    [M:MFGK]WIPTYP = WTYP
+    [M:MFGK]WIPNUM = WWIP
+    [M:MFGK]MAJPEC = 9
+    If find([M:MFGK]CODMAJ,"C","R")
+        Case [F:MTS]SCDMODSAI
+            When 1:    [M:MFGK]SCDMOD = 1
+            When 2:    [M:MFGK]SCDMOD = 2
+            When Default: [M:MFGK]SCDMOD = 1
+        Endcase
+    Endif
+    If [M:MFGK]CODMAJ = "R"
+        Gosub CHECK_WIP
+        If WRET
+            GERR = 1
+            FIN = 1
+            PARAM(7) = num$(2)
+            Return
+        Endif
+    Endif
+
+    # Issue 104943 - 2015-08-03 by BEEBE : implementing versioning
+    If dim([M:MBW1]ECCVALMAJ)>0
+        [M:MFGK]ECCVALMAJ = [M:MBW1]ECCVALMAJ
+        [M:MFGK]ECCVALMIN = [M:MBW1]ECCVALMIN
+    Endif
+
+    # Issue 111414 - 2015-12-30 by GH : implementing route versioning
+    If dim([M:MBW1]ROUECCMAJ)>0
+       [M:MFGK]ROUECCMAJ = [M:MBW1]ROUECCMAJ
+       [M:MFGK]ROUECCMIN = [M:MBW1]ROUECCMIN
+    Endif
+
+    # 18138 MM 01.05 - 39230 mm 02.07
+    If [F:BTS]TRACE=2 Call OUVRE_TRACE(mess(229,197,1)) From LECFIC Endif
+
+    Call MAJ_OF From MFGAUTLIB
+    If [M:MFGK]CODRET = 0
+        If [F:BTS]TRACE=2    # 18138 MM 01.05
+            MESS1 = mess(231,197,1)-[M:MFGK]MFGNUM-mess(233,197,1)
+            Call ECR_TRACE(MESS1,0) From GESECRAN
+            Call FERME_TRACE From LECFIC
+            Call LEC_TRACE From LECFIC
+        Endif
+        PARAM(7) = num$(2)
+        Raz [M:MBW1]
+        # 01.06 34228
+        If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMLINK")
+            GVCR   = [M:MFGK]MFGNUM
+            GLIN   = 1000
+            GSEQ   = 0
+        Endif
+    Else
+        If [F:BTS]TRACE=2
+            # La modification de l'ordre de fabrication a échoué
+            MESS1 = mess(694,197,1)-[M:MFGK]MFGNUM- mess(290,196,1)
+            Call ECR_TRACE(MESS1,0) From GESECRAN
+            Call FERME_TRACE From LECFIC
+            Call LEC_TRACE From LECFIC
+        Endif
+    Endif
+    FIN = 1
+    WMODCRE = 0
+    Return
+Endif
+
+
+# création WOF
+[M:MFGK]CODMAJ = "C"
+[M:MFGK]CODTRS = 2
+[M:MFGK]MFGNUM = [M:MBW1]VCRNUM
+[M:MFGK]MFGLIN = [M:MBW1]VCRLIN
+[M:MFGK]MFGFCY = [M:MBW1]STOFCY
+[M:MFGK]MFGSTA = 1
+[M:MFGK]ITMREF = [M:MBW1]ITMREF
+[M:MFGK]PRVQTY = [M:MBW1]EXTQTY1
+[M:MFGK]EXTQTY = [M:MBW1]EXTQTY2
+[M:MFGK]STRDAT = [M:MBW1]STRDAT2
+[M:MFGK]ENDDAT = [M:MBW1]ENDDAT2
+[M:MFGK]BOMALT = [M:MBW1]BOMALT2
+[M:MFGK]ROUNUM = [M:MBW1]ROUNUM
+[M:MFGK]ROUALT = [M:MBW1]ROUALT
+[M:MFGK]PJT    = [M:MBW1]PJT
+[M:MFGK]MFGDES = [M:MBW1]MFGDES : # GH 09/01/2012 bug 78926
+If dim([M:MFGK]MTOREF)>0 & dim([M:MBW1]MTOREF)>0
+   [M:MFGK]MTOREF     = [M:MBW1]MTOREF   : # V6 Réseau MTO FQ 46650
+Endif
+If dim([M:MBW1]ECCVALMAJ)>0  # GH 22/06/2017 Issue 39031 - BOM versions were lost from WOP to WOF
+   [M:MFGK]ECCVALMAJ = [M:MBW1]ECCVALMAJ
+   [M:MFGK]ECCVALMIN = [M:MBW1]ECCVALMIN
+Endif
+[M:MFGK]LOT    = [M:MBW1]LOT
+[M:MFGK]FMI    = [M:MBW1]FMI
+[M:MFGK]BPRNUM = [M:MBW1]BPRNUM
+[M:MFGK]PIO    = [M:MBW1]PIO
+[M:MFGK]VCRTYPORI = [M:MBW1]VCRTYPORI
+[M:MFGK]VCRNUMORI = [M:MBW1]VCRNUMORI
+[M:MFGK]VCRLINORI = [M:MBW1]VCRLINORI
+[M:MFGK]VCRSEQORI = [M:MBW1]VCRSEQORI
+[M:MFGK]WIPTYP = WTYP
+[M:MFGK]WIPNUM = WWIP
+[M:MFGK]SCDFLG = [M:MBW1]SCDFLG
+[M:MFGK]MAJPEC = 9
+If find([M:MFGK]CODMAJ,"C","R")
+    Case [F:MTS]SCDMODSAI
+        When 1:    [M:MFGK]SCDMOD = 1
+        When 2:    [M:MFGK]SCDMOD = 2
+        When Default: [M:MFGK]SCDMOD = 1
+    Endcase
+Endif
+# 42345 mm 08.07
+Readlock [MFI]MFI0 = [M:MFGK]MFGNUM;[M:MFGK]MFGLIN
+If !fstat
+    [M:MFGK]BPCTYPDEN = [F:MFI]BPCTYPDEN
+Endif
+Unlock [MFI]
+#
+
+# 18138 MM 01.05  - 39230 mm 02.07
+If [F:BTS]TRACE=2 Call OUVRE_TRACE(mess(229,197,1)) From LECFIC Endif
+
+Call MAJ_OF From MFGAUTLIB
+If [M:MFGK]CODRET <> 0
+    If [F:BTS]TRACE=2
+        # La création de l'ordre de fabrication a échoué
+        MESS1 = mess(693,197,1)- mess(290,196,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+Else
+    If [F:BTS]TRACE=2     # 18138 MM 01.05
+        MESS1 = mess(231,197,1)-[M:MFGK]MFGNUM-mess(233,197,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+    # 01.06 34228
+    If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMLINK")
+        GVCR   = [M:MFGK]MFGNUM
+        GLIN   = 1000
+        GSEQ   = 0
+    Endif
+
+    Raz [M:ORCK]
+    [M:ORCK]MAJCOD = "C"
+    [M:ORCK]WIPNUM = WWIP
+    [M:ORCK]WIPTYP = WTYP
+    [M:ORCK]ITMREF = [M:MBW1]ITMREF
+    [M:ORCK]COVQTY = [M:MBW1]EXTQTY2
+    [M:ORCK]VCRTYPDST = 10
+    [M:ORCK]VCRNUMDST = [M:MFGK]MFGNUM
+    [M:ORCK]VCRLINDST = [M:MFGK]MFGLIN
+    [M:ORCK]VCRSEQDST = 0
+    [M:ORCK]WIPSTADST = 1
+    [M:ORCK]WIPTYPDST = 5
+    Read [MFG]MFG0=[M:MFGK]MFGNUM
+    If !fstat
+        [M:ORCK]ROUNUM = [F:MFG]ROUNUM
+        [M:ORCK]ROUALT = [F:MFG]ROUALT
+    Endif
+    Call COVER From TRTWIP
+
+    # splittage  WOP / diminution
+    [M:MFGK]CODMAJ = "M"
+    [M:MFGK]CODTRS = 2
+    [M:MFGK]MFGNUM = [M:MBW1]VCRNUM
+    [M:MFGK]MFGLIN = [M:MBW1]VCRLIN
+    [M:MFGK]MFGFCY = [M:MBW1]STOFCY
+    [M:MFGK]MFGSTA = [M:MBW1]WIPSTA
+    [M:MFGK]ITMREF = [M:MBW1]ITMREF
+    [M:MFGK]PRVQTY = [M:MBW1]EXTQTY1
+    [M:MFGK]EXTQTY = [M:MBW1]EXTQTY1 - [M:MBW1]EXTQTY2
+    [M:MFGK]STRDAT = [M:MBW1]STRDAT1
+    [M:MFGK]ENDDAT = [M:MBW1]ENDDAT1
+    [M:MFGK]BOMALT = [M:MBW1]BOMALT1
+    [M:MFGK]ROUNUM = [M:MBW1]ROUNUM1
+    [M:MFGK]ROUALT = [M:MBW1]ROUALT1
+    [M:MFGK]PJT    = [M:MBW1]PJT
+    #[M:MFGK]MFGDES = [M:MBW1]MFGDES : # GH 09/01/2012 bug 78926
+    [M:MFGK]MFGDES = [M:MBW1]MFGDES1 : # GH 09/04/2013 bug 89207
+    If dim([M:MFGK]MTOREF)>0 & dim([M:MBW1]MTOREF)>0
+       [M:MFGK]MTOREF     = [M:MBW1]MTOREF   : # V6 Réseau MTO FQ 46650
+    Endif
+    [M:MFGK]LOT    = [M:MBW1]LOT
+    [M:MFGK]WIPTYP = WTYP
+    [M:MFGK]WIPNUM = WWIP
+    [M:MFGK]MAJPEC = 9
+    Call MAJ_OF From MFGAUTLIB
+    If [M:MFGK]CODRET = 0
+        PARAM(7) = num$(2)
+        Raz [M:MBW1]
+    Endif
+    WMODCRE = 0
+Endif
+
+FIN = 1
+Return
+
+###########################################################################
+$MAJ_MODMES
+Affzo [M:MBW1]1-99    # 20846 MM 11.05
+Return
+###########################################################################
+#-------------------------------------------------------------------------#
+# >>>>> Fenêtre DPECWOX
+#-------------------------------------------------------------------------#
+###########################################################################
+# chargement
+$DEBUT_PECWOX
+Gosub CHARGE_MBW4
+Diszo [M:MBW4]5
+Diszo [M:MBW4]10
+Diszo [M:MBW4]15
+Diszo [M:MBW4]20
+Affzo [M:MBW4]1-99
+
+# Issue 104943 - 2015-06-24 by BEEBE : implementing versioning
+If dim([M:MBW4]ECCVALMAJ)>0
+    Call ECCAFF([M:MBW4]ITMREF,"MBW4")  From MFGECCLIB
+Endif
+
+Return
+
+###########################################################################
+# état boutons
+$SETBOUT_PECWOX
+ETABOU(GSPE1) = 1
+ETABOU(GSPE2) = 1
+
+# contrôle accès bouton suivant paramètre transaction
+If !find(WPLNHAB,2,3,6,7) : ETABOU(GSPE1) = 0 : Endif
+If !find(WPLNHAB,4,5,6,7) : ETABOU(GSPE2) = 0 : Endif
+
+ETABOU(GPREM)=0
+ETABOU(GDERN)=0
+ETABOU(GSUIV)=0
+ETABOU(GPREC)=0
+
+# Issue 107498/108 - 2016-05-19 by BEEBE/ALSHE : button only active when launching possible
+# Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+If WPJTLAUNCH = 1 & func AFNC.ACTIV("PJM")
+    GERR = 1
+    GMESSAGE = [M:MBW4]PJT + " : " + mess(228,2260,1)
+    ETABOU(GSPE1) = 0
+    ETABOU(GSPE2) = 0
+Endif
+
+Return
+
+########################################################################
+$BOUTON_PECWOX
+Case BOUT
+    When "1"       :     # planifier
+                         WSTA = 2
+                         Gosub MAJ_PECWOX
+                         Return
+    When "2"       :     # lancer
+                         WSTA = 1
+                         Gosub MAJ_PECWOX
+                         Return
+Endcase
+FIN=0
+Return
+
+########################################################################
+$MAJ_PECWOX
+# 01.05 28080
+# lecture article
+If [F:ITM]ITMREF <> [M:MBW4]ITMREF
+   Read [ITM]ITM0=[M:MBW4]ITMREF
+   If fstat : Raz [F:ITM] : Endif
+Endif
+
+# lecture article/site
+If [F:ITF]ITMREF <> [M:MBW4]ITMREF | [F:ITF]STOFCY <> [M:MBW4]STOFCY
+   Read [ITF]ITF0=[M:MBW4]ITMREF;[M:MBW4]STOFCY
+   If fstat : End : Endif
+Endif
+Call CONTMFGITM([M:MBW4]STOFCY, 1) From MFGLIB
+If mkstat = 2 : mkstat = 0 : Return : Endif
+
+Raz [M:MFGK]
+If [M:MBW4]ROUNUM = ""
+    If [F:MTS]MFGMODM = 2 & [M:MBW4]BOMALT2 <> 0
+        Call OUINON(mess(136,190,1),OK) From GESECRAN
+        If OK <> 2 : Return : Endif
+Elsif [F:MTS]MFGMODC = 1 & [F:MTS]MFGMODM = 1
+    Call OUINON(mess(137,190,1),OK) From GESECRAN
+    If OK <> 2 : Return : Endif
+Endif
+Endif
+If WOBJ < [M:MBW4]ENDDAT2
+    OK = 1
+    Call OUINON(mess(94,190,1),OK) From GESECRAN
+    If OK <> 2 : Return : Endif
+Endif
+[M:MFGK]CODMAJ = "P"
+[M:MFGK]CODTRS = 2
+[M:MFGK]MFGNUM = [M:MBW4]VCRNUM
+[M:MFGK]MFGLIN = [M:MBW4]VCRLIN
+[M:MFGK]MFGFCY = [M:MBW4]STOFCY
+[M:MFGK]MFGSTA = WSTA
+[M:MFGK]ITMREF = [M:MBW4]ITMREF
+[M:MFGK]PRVQTY = [M:MBW4]EXTQTY1
+[M:MFGK]EXTQTY = [M:MBW4]EXTQTY2
+[M:MFGK]STRDAT = [M:MBW4]STRDAT2
+[M:MFGK]ENDDAT = [M:MBW4]ENDDAT2
+[M:MFGK]BOMALT = [M:MBW4]BOMALT2
+[M:MFGK]ROUNUM = [M:MBW4]ROUNUM
+[M:MFGK]ROUALT = [M:MBW4]ROUALT
+[M:MFGK]PJT    = [M:MBW4]PJT
+If dim([M:MFGK]MTOREF)>0 & dim([M:MBW4]MTOREF)>0
+   [M:MFGK]MTOREF     = [M:MBW4]MTOREF   : # V6 Réseau MTO FQ 46650
+Endif
+[M:MFGK]LOT    = [M:MBW4]LOT
+[M:MFGK]FMI    = [M:MBW4]FMI
+[M:MFGK]BPRNUM = [M:MBW4]BPRNUM
+[M:MFGK]PIO    = [M:MBW4]PIO
+[M:MFGK]VCRTYPORI = [M:MBW4]VCRTYPORI
+[M:MFGK]VCRNUMORI = [M:MBW4]VCRNUMORI
+[M:MFGK]VCRLINORI = [M:MBW4]VCRLINORI
+[M:MFGK]VCRSEQORI = [M:MBW4]VCRSEQORI
+[M:MFGK]WIPTYP = WTYP
+[M:MFGK]WIPNUM = WWIP
+
+# Issue 104943 - 2015-06-24 by BEEBE : implementing versioning
+If dim([M:MBW4]ECCVALMAJ)>0
+    [M:MFGK]ECCVALMAJ = [M:MBW4]ECCVALMAJ
+    [M:MFGK]ECCVALMIN = [M:MBW4]ECCVALMIN
+Endif
+
+Case [F:MTS]SCDMODSAI
+    When 1:    [M:MFGK]SCDMOD = 1
+    When 2:    [M:MFGK]SCDMOD = 2
+    When Default: [M:MFGK]SCDMOD = 1
+Endcase
+Gosub CHECK_WIP
+If WRET
+    GERR = 1
+    FIN = 1
+    PARAM(7) = num$(2)
+    Return
+Endif
+
+# 18138 MM 01.05  - 39230 mm 02.07
+If [F:BTS]TRACE=2 Call OUVRE_TRACE(mess(229,197,1)) From LECFIC Endif
+
+Call MAJ_OF From MFGAUTLIB
+If [M:MFGK]CODRET = 0
+    If [F:BTS]TRACE=2     # 18138 MM 01.05
+        Case WSTA
+            When 1: MESS1 = mess(231,197,1)
+            When 2: MESS1 = mess(230,197,1)
+        Endcase
+        MESS1 -= [M:MFGK]MFGNUM-mess(233,197,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+    If find(WTYP,2,13) & [M:MBW4]WIPSTA = 3
+        If [M:MBW4]EXTQTY2 >= [M:MBW4]EXTQTY1
+            Raz [M:MFGK]
+            [M:MFGK]CODMAJ = "A"
+            [M:MFGK]CODTRS = 2
+            [M:MFGK]MFGNUM = [M:MBW4]VCRNUMORI
+            [M:MFGK]MFGLIN = [M:MBW4]VCRLINORI
+            [M:MFGK]MFGFCY = [M:MBW4]STOFCY
+            [M:MFGK]MFGSTA = 3
+            [M:MFGK]ITMREF = [M:MBW4]ITMREF
+            [M:MFGK]WIPTYP = WTYP
+            [M:MFGK]WIPNUM = WWIP
+            Call MAJ_OF From MFGAUTLIB
+        Else
+            Raz [M:MFGK]
+            [M:MFGK]CODMAJ = "D"
+            [M:MFGK]CODTRS = 2
+            [M:MFGK]MFGNUM = [M:MBW4]VCRNUMORI
+            [M:MFGK]MFGFCY = [M:MBW4]STOFCY
+            [M:MFGK]MFGSTA = 3
+            [M:MFGK]ITMREF = [M:MBW4]ITMREF
+            [M:MFGK]PRVQTY = [M:MBW4]EXTQTY1
+            [M:MFGK]EXTQTY = [M:MBW4]EXTQTY1 - [M:MBW4]EXTQTY2
+            [M:MFGK]WIPNUM = WWIP
+            [M:MFGK]WIPTYP = WTYP
+            Call MAJ_OF From MFGAUTLIB
+        Endif
+    Endif
+    Raz [M:MBW4]
+    PARAM(7) = num$(2)
+    # 01.06 34228
+    If find(GFONCTION,"FUNGBENCH","FUNDBENCH","FUNGBENCHA","FUNDBENCHA","FUNMLINK")
+        GVCR   = [M:MFGK]MFGNUM
+        GLIN   = 1000
+        GSEQ   = 0
+    Endif
+Else
+    If [F:BTS]TRACE=2
+        # La création de l'ordre de fabrication a échoué
+        MESS1 = mess(693,197,1)- mess(290,196,1)
+        Call ECR_TRACE(MESS1,0) From GESECRAN
+        Call FERME_TRACE From LECFIC
+        Call LEC_TRACE From LECFIC
+    Endif
+Endif
+
+FIN = 1
+Return
+
+#---------------------------------------------------------------------------#
+# Action SAIDBENCH1 fenêtre message de replanification                      #
+#---------------------------------------------------------------------------#
+###########################################################################
+# chargement
+$DEBUT_BENCHD1
+# 20846 mm 11.05
+Local Integer I, WMODWOX
+WMODWOX = 0
+
+For I=0 To 20
+    If maskabr(I)="MBW1"
+        WMODWOX = 1 : Break
+    Endif
+Next I
+
+[M]MRPMES     = val(PARAM(1))
+[M]XMRPMES    = PARAM(2)
+[M]MRPDAT     = PARAM(3)
+[M]MRPQTY     = val(PARAM(4))
+[M]STU        = PARAM(5)
+[M]EXTQTY1    = val(PARAM(6))
+[M]STU1       = PARAM(7)
+[M]STRDAT1    = PARAM(8)
+[M]ENDDAT1    = PARAM(9)
+[M]STOFCY     = PARAM(10)
+[M]EXTQTY2    = val(PARAM(11))
+[M]STU2       = PARAM(12)
+[M]STRDAT2    = PARAM(13)
+[M]ENDDAT2    = PARAM(14)
+[M]ITMREF     = PARAM(15)
+
+If [M]MRPQTY <> 0 : [M]EXTQTY2 = [M]MRPQTY : Endif
+If [M]MRPDAT <> [0/0/0]
+    [M]ENDDAT2 = [M]MRPDAT
+    If WMODWOX = 1
+        Call CAL_DATDEB([M]STOFCY,[M]ENDDAT2, [M]EXTQTY2, [M]STRDAT2)
+    Else
+        [M]STRDAT2 = [M]MRPDAT
+    Endif
+Endif
+Affzo [M]
+Return
+
+###########################################################################
+# chargement
+$OK_BENCHD1
+
+# 20846 mm 11.05
+PARAM(11)        = num$([M]EXTQTY2)
+PARAM(12)        = [M]STU2
+PARAM(13)        = [M]STRDAT2
+PARAM(14)        = [M]ENDDAT2
+
+Return
+
+###########################################################################
+
+#---------------------------------------------------------------------------#
+# Action FDISPNOW affichage disponibilité instantanée de composants OF      #
+# Action FDISPNEO affichage disponibilité instantanée de composants EO      #
+#---------------------------------------------------------------------------#
+###########################################################################
+# ouverture
+$OUVRE_FDISPNOW
+Local    Char      WFCY(GLONFCY)
+Local    Integer   WTYP
+Local    Integer   WSTA
+Local    Char      WVCR(GLONVCR)
+Local    Char      WSTU(GLONUOM)
+Local    Decimal   WQTYBES
+Local    Decimal   WQTYDEM
+Local    Decimal   WDIS
+Local    Decimal   WBES, WWRK, WRATIO, WFIX, WALL
+Local    Integer   WRET
+
+# chargement paramètres
+WFCY     = PARAM(1)
+WTYP     = val(PARAM(2))   : # Ajout v150 pour sous-traitance EO
+WSTA     = val(PARAM(3))
+WVCR     = PARAM(4)
+WSTU     = PARAM(5)
+WQTYBES  = val(PARAM(6))
+WQTYDEM  = val(PARAM(7))
+
+# si sous-traitance EO, changement de fenêtre
+If WTYP = 13
+    # substitution fenêtre
+    BOITE     = "IDISPNEO"
+    WMASQUE   = "SMBENCHW2"
+    Gosub CHANGE_AWI
+    If clalev ([F:SCM]) <= 0 : Local File SCOMAT    [SCM] : Endif
+Else
+    If clalev ([F:MFM]) <= 0 : Local File MFGMAT    [MFM] : Endif
+Endif
+If clalev ([F:ORD2])<= 0 : Local File ORDERS    [ORD2]: Endif
+If clalev ([F:ITM]) <= 0 : Local File ITMMASTER [ITM] : Endif
+If clalev ([F:ITV]) <= 0 : Local File ITMMVT    [ITV] : Endif
+Return
+
+########################################################################
+$DEBUT_FDISPNOW
+If WTYP = 13  : Gosub DEBUT_FDISPNEO From BENCHLIBS : Return : Endif
+
+Gosub CHARGE_MBW2
+Diszo [M:MBW2]5
+Affzo [M:MBW2]
+Return
+
+#---------------------------------------------------------------------------#
+# Action FDISPNOWN affichage disponibilité instantanée de composants OF     #
+# Action FDISPNEON affichage disponibilité instantanée de composants EO     #
+# (sur données nomenclature)                                                #
+#---------------------------------------------------------------------------#
+###########################################################################
+# ouverture
+$OUVRE_FDISPNOWN
+Local    Char      WFCY(GLONFCY)
+Local    Char      WITM(GLONITM)
+Local    Integer   WTYP
+Local    Integer   WALT
+Local    Char      WSTU(GLONUOM)
+Local    Date      WDATBES
+Local    Char      WDATC(20)
+Local    Decimal   WQTYDEM
+
+Local    Decimal  WDIS
+Local    Decimal  WWRK
+Local    Decimal  WQTY, WDIS, WQTYN, WQTYNA, WQTYB, WQTYBA, WLIEN
+Local    Decimal  WBASQTY
+Local    Integer  WLIKQTYCOD
+Local    Decimal  WLIKQTY
+Local    Integer  WQTYRND
+Local    Decimal  WLSCA
+
+Local    Integer  WRET
+
+#GA 04/2008
+#?If clalev ([F:BOH]) <= 0 : Local File BOM    [BOM] : Endif
+#?If clalev ([F:BOM]) <= 0 : Local File BOMD   [BOD] : Endif
+If clalev ([F:BOH]) <= 0 : Local File BOM    [BOH] : Endif
+If clalev ([F:BOD]) <= 0 : Local File BOMD   [BOD] : Endif
+
+# chargement paramètres
+WFCY     = PARAM(1)
+#WTYP     = PARAM(2)    : # Ajout v150 pour sous-traitance EO
+WTYP     = val(PARAM(2)) : # GH 08/10/12 bug 85054
+WITM     = PARAM(3)
+WALT     = val(PARAM(4))
+WSTU     = PARAM(5)
+WDATC    = PARAM(6)
+If WDATC <> ""
+    If instr(1,WDATC,"/")
+        WDATBES = "["+WDATC+"]"
+    Else
+        WDATBES = WDATC
+    Endif
+Endif
+WQTYDEM  = val(PARAM(7))
+
+# si sous-traitance EO, changement de fenêtre
+If WTYP = 13
+    # substitution fenêtre
+    BOITE     = "IDISPNEON"
+    WMASQUE   = "SMBENCHW2"
+    Gosub CHANGE_AWI
+    If clalev ([F:SCM]) <= 0 : Local File SCOMAT    [SCM] : Endif
+Endif
+
+Return
+
+########################################################################
+$DEBUT_FDISPNOWN
+If WTYP = 13  : Gosub DEBUT_FDISPNEON From BENCHLIBS : Return : Endif
+
+Gosub CHARGE_MBWN2
+Diszo [M:MBW2]5
+Affzo [M:MBW2]
+Return
+
+#---------------------------------------------------------------------------#
+# Action FDISPPLN  affichage disponibilité à date des composants OF         #
+# Action FDISPPEO  affichage disponibilité à date des composants EO         #
+#---------------------------------------------------------------------------#
+###########################################################################
+# ouverture
+$OUVRE_FDISPPLN
+Local    Char      WFCY(GLONFCY)
+Local    Integer   WTYP
+Local    Integer   WSTA
+Local    Char      WVCR(GLONVCR)
+Local    Char      WSTU(GLONUOM)
+Local    Decimal   WQTYBES, WQTYDEM
+
+Local    Char      WITM(GLONITM)
+Local    Decimal   WDIS
+Local    Decimal   WBES, WWRK, WRATIO, WFIX
+Local    Decimal   WPHY
+Local    Decimal   WCTL
+Local    Decimal   WREJ
+Local    Decimal   WTRF
+Local    Decimal   WTRA
+Local    Decimal   WSTO
+Local    Decimal   WALL
+Local    Decimal   WRER
+Local    Decimal   WWAI
+Local    Decimal   WQTY
+Local    Decimal   WEXT, WEXT2
+Local    Char      WSIG(1)
+Local    Integer   STA, WRET
+Local    Date      WFIRAVADAT
+Local    Decimal   WFIRAVAQTY   # FQ 56283 GA 07/2009 qté 1ère disponibilité
+Local    Date      TODAY : TODAY = date$
+
+# chargement paramètres
+WFCY     = PARAM(1)
+WTYP     = val(PARAM(2))    : # Ajout v150 sous-traitance EO
+WSTA     = val(PARAM(3))
+WVCR     = PARAM(4)
+WSTU     = PARAM(5)
+WQTYBES  = val(PARAM(6))
+WQTYDEM  = val(PARAM(7))
+
+# si sous-traitance EO, changement de fenêtre
+If WTYP = 13
+    # substitution fenêtre
+    BOITE     = "IDISPPEO"
+    WMASQUE   = "SMBENCHW5"
+    Gosub CHANGE_AWI
+    If clalev ([F:SCM]) <= 0 : Local File SCOMAT    [SCM] : Endif
+Else
+    If clalev ([F:MFM]) <= 0 : Local File MFGMAT    [MFM] : Endif
+Endif
+If clalev ([F:ORD]) <= 0 : Local File ORDERS    [ORD] : Endif
+If clalev ([F:ORD2])<= 0 : Local File ORDERS    [ORD2]: Endif
+If clalev ([F:ITM]) <= 0 : Local File ITMMASTER [ITM] : Endif
+If clalev ([F:ITV]) <= 0 : Local File ITMMVT    [ITV] : Endif
+
+Return
+
+########################################################################
+$DEBUT_FDISPPLN
+If WTYP = 13  : Gosub DEBUT_FDISPPEO From BENCHLIBS : Return : Endif
+
+Gosub CHARGE_MBW5
+#Diszo [M:MBW5]5    # FQ 56283 GA 07/2009 autoriser la saisie de 2 indicateurs
+Affzo [M:MBW5]
+Return
+
+
+#---------------------------------------------------------------------------#
+# Action FGRAPHD  Représentation graphique du plan de travail               #
+#---------------------------------------------------------------------------#
+###########################################################################
+# ouverture
+$OUVRE_FGRAPHD
+If clalev ([F:ITM]) <= 0 : Local File ITMMASTER  [ITM] : Endif
+If clalev ([F:ITF]) <= 0 : Local File ITMFACILIT [ITF] : Endif
+Return
+
+########################################################################
+$DEBUT_FGRAPHD
+Gosub CHARGE_MBW6
+Affzo [M:MBW6]
+Return
+
+
+#---------------------------------------------------------------------------#
+# Sous-programmes                                                           #
+#---------------------------------------------------------------------------#
+
+########################################################################
+$CHANGE_AWI
+Local Integer OK
+If clalev([F:AWI])=0  : Local File AWINDOW [AWI] : Endif
+Read [AWI]AWI0=BOITE
+If fstat
+    GMESSAGE = BOITE-":"-mess(6,126,1)                 : # Fenêtre inexistante
+    GERR = 1
+    FIN = 1
+    Return
+Endif
+GBOITE     = BOITE
+Call NOMTRTWIN(GBOITE,WINPROG) From MSKDIV
+
+#If filinfo(filpath("TRT",WINPROG,"adx"),0)<0
+Call EXISTE_ADX("","",WINPROG,OK) From ORDSYS
+If OK < 1
+    GMESSAGE = BOITE-":"-mess(6,126,1)                 : # Fenêtre inexistante
+    GERR = 1
+    FIN = 1
+Endif
+Gosub DEFVAR From =WINPROG
+Return
+
+#########################################################################
+#                                                                       #
+#      Traitements divers liés aux plans de travail   GPAO              #
+#                                                                       #
+#########################################################################
+
+#########################################################################
+$CHARGE_MBW1
+# traitement ordre existant
+Read [ORD1]ORD0=WTYP;WWIP;WITM
+If fstat : Return : Endif
+
+If find([F:ORD1]WIPSTA,1,2)
+    Read [MFG]MFG0=[F:ORD1]VCRNUM
+    If fstat : Return : Endif
+    # 10.04 25477, si nb article > 1, recherche si multi-article lancé
+    If [F:MFG]ITMLINNBR > 1
+        WNBITM = 0
+        For [MFI]MFI0 Where MFGNUM = [F:ORD1]VCRNUM
+            If [F:MFI]ITMTYP = 1 : WNBITM += 1 : Endif
+        Next
+    Endif
+    If WNBITM > 1 : [M:MBW1]XMESS = mess(607,197,1) : Else : Raz [M:MBW1]XMESS : Endif
+
+    Read [MFI]MFI0=[F:ORD1]VCRNUM;[F:ORD1]VCRLIN
+    If fstat : Return : Endif
+Endif
+
+Raz [M:MBW1]
+[M:MBW1]MODFLG = 1
+[M:MBW1] = [F:ORD1]
+If find([F:ORD1]WIPSTA,1,2) : [M:MBW1]MFGDES = [F:MFI]MFGDES : Endif : # GH 09/01/2012 bug 78926
+[M:MBW1]MFGDES1 = [M:MBW1]MFGDES : # GH 09/05/2013 bug 89207
+
+# Libellé MM 02.04
+If [M:MBW1]BPRNUM<>""
+    Read [BPR]BPR0 = [M:MBW1]BPRNUM
+    If !fstat  [M:MBW1]BPRDES=[F:BPR]BPRNAM  Endif
+    If [M:MBW1]BPRDES =""
+        Read [FCY]FCY0=[M:MBW1]BPRNUM
+        If !fstat : [M:MBW1]BPRDES=[F:FCY]FCYNAM : Endif
+    Endif
+Endif
+
+[M:MBW1]XWIPTYP = mess([M:MBW1]WIPTYP,306,1)
+If [M:MBW1]VCRTYPORI <> 0
+    [M:MBW1]XVCRTYPORI = mess([M:MBW1]VCRTYPORI,701,1)
+Endif
+If [M:MBW1]WIPSTA <> 0
+    [M:MBW1]XWIPSTA = mess([M:MBW1]WIPSTA,317,1)
+Endif
+If [M:MBW1]MRPMES <> 0
+    [M:MBW1]XMRPMES = mess([M:MBW1]MRPMES,318,1)
+Endif
+If find([F:ORD1]WIPSTA,1,2) : [M:MBW1]LOT     = [F:MFI]LOT : Endif
+[M:MBW1]EXTQTY1 = [F:ORD1]EXTQTY
+[M:MBW1]STRDAT1 = [F:ORD1]STRDAT
+[M:MBW1]ENDDAT1 = [F:ORD1]ENDDAT
+[M:MBW1]BOMALT1 = [F:ORD1]BOMALT
+# Issue 104943 - 2015-06-24 by BEEBE : implementing versioning
+If dim([M:MBW1]ECCVALMAJ)>0
+    [M:MBW1]ECCVALMAJ = [F:ORD1]ECCVALMAJ
+    [M:MBW1]ECCVALMIN = [F:ORD1]ECCVALMIN
+    # Issue number - 2015-08-03 by BEEBE : implementing versioning
+    If [M:MBW1]ECCVALMAJ=""
+        If func ECCLIB.NBRCPN([M:MBW1]ITMREF)
+            Local Integer LALT
+
+            # ECC preload of major and minor version + BOM code
+            LALT = [M:MBW1]BOMALT2
+            Raz [M:MBW1]ECCVALMAJ, [M:MBW1]ECCVALMIN
+            Call INIECCBOM([M:MBW1]ITMREF, [M:MBW1]STOFCY, [M:MBW1]STRDAT2, 2, [M:MBW1]ECCVALMAJ,[M:MBW1]ECCVALMIN,LALT) From MFGECCLIB
+            [M:MBW1]BOMALT2 = LALT
+            Affzo [M:MBW1]ECCVALMAJ, ECCVALMIN, BOMALT2
+        Else
+            Effzo [M:MBW1]ECCVALMAJ, ECCVALMIN
+        Endif
+    Endif
+Endif
+
+# lecture article
+If [F:ITM]ITMREF <> [M:MBW1]ITMREF
+    Read [ITM]ITM0=[M:MBW1]ITMREF
+    If fstat : Return : Endif
+Endif
+
+# lecture article/site
+If [F:ITF]ITMREF <> [M:MBW1]ITMREF | [F:ITF]STOFCY <> [M:MBW1]STOFCY
+# If [F:ITF]ITMREF <> [M:MBW1]ITMREF : # GH 10/04/2015 bug 104152
+    Read [ITF]ITF0=[M:MBW1]ITMREF;[M:MBW1]STOFCY
+    If fstat : Return : Endif
+Endif
+
+[M:MBW1]SHR = [F:ITF]SHR
+
+# délai fabrication
+XLTI    = [F:ITF]MFGLTI
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+WMFGLTI = ILTI
+
+# délai qualité
+XLTI    = [F:ITF]QUALTI
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+WQUALTI = ILTI
+
+If WQUALTI = 0
+    [M:MBW1]AVAOFS = num$(WMFGLTI)
+Else
+    [M:MBW1]AVAOFS = num$(WMFGLTI)-"(+"+num$(WQUALTI)+")"
+Endif
+
+#[M:MBW1]ITMDES1 = [F:ITM]ITMDES1
+Call CHARGE_DEFITMDES("DES1AXX",GLANGUE,[F:ITM]ITMREF,[M:MBW1]ITMDES1, "[F:ITM]") From TRTX3 # FGR 30/06/2009 : X3SUIVI56189
+
+If [M:MBW1]MRPQTY <> 0 : [M:MBW1]STU     = [F:ITM]STU : Endif
+[M:MBW1]STU1    = [F:ITM]STU
+
+# si OF, recherche alternative de gamme utilisée
+If [M:MBW1]WIPTYP = 5
+    Gosub LEC_WOX
+    [M:MBW1]MFGTRKFLG  = WMFGTRKFLG
+    [M:MBW1]ALLSTA     = WALLSTA
+    [M:MBW1]SCDFLG     = WSCDFLG
+    [M:MBW1]XMFGTRKFLG = mess([M:MBW1]MFGTRKFLG,339,1)
+    [M:MBW1]XALLSTA    = mess([M:MBW1]ALLSTA,336,1)
+    [M:MBW1]XSCDFLG    = mess([M:MBW1]SCDFLG,335,1)
+    For [SCH]SCH0 Where MFGNUM = [M:MBW1]VCRNUM
+        [M:MBW1]ROUNUM1 = [F:SCH]ROUNUM
+        [M:MBW1]ROUALT1 = [F:SCH]ROUALT
+        If [M:MBW1]WIPSTA = 3 & [F:SCH]OPESTRDAT <> [0/0/0]
+           [M:MBW1]SCDFLG     = 2
+           [M:MBW1]XSCDFLG    = mess([M:MBW1]SCDFLG,335,1)
+        Endif
+        Break
+    Next
+
+    [M:MBW1]EXTQTY2 = [M:MBW1]EXTQTY1
+    [M:MBW1]STRDAT2 = [M:MBW1]STRDAT1
+    [M:MBW1]ENDDAT2 = [M:MBW1]ENDDAT1
+    [M:MBW1]STU2    = [F:ITM]STU
+    [M:MBW1]BOMALT2 = [M:MBW1]BOMALT1
+    Call CHECK_NOM([M:MBW1]STOFCY, [M:MBW1]STRDAT2, [M:MBW1]BOMALT2)
+    # FQ 51084 GA 12/2008 1) report correction FQ 40505 si CHECK_NOM a raz cette zone
+    #                     2) Cas des WOS générées par Réappro hors MRP
+    If [M:MBW1]BOMALT2=0  Call RECH_NOM([M:MBW1]STOFCY, [M:MBW1]STRDAT2, [M:MBW1]BOMALT2,2) Endif
+    [M:MBW1]ROUNUM  = [M:MBW1]ROUNUM1
+    [M:MBW1]ROUALT  = [M:MBW1]ROUALT1
+    [M:MBW1]OBJDAT     = WOBJDAT
+    [M:MBW1]OBJDAT2    = WOBJDAT    # 14102 mm 06.06
+    [M:MBW1]ELFLG      = WOBJDAT - [M:MBW1]ENDDAT2
+# sr 04.05 demande 10990
+    [M:MBW1]LABEL = mess([F:MTS]SCDMODSAI,334,1)
+    #---------
+    # 07.08 48315
+    If [M:MBW1]ROUNUM = "" | [M:MBW1]ROUALT = 0
+        If [F:ITF]MFGROU = ""
+            [M:MBW1]ROUNUM = [M:MBW1]ITMREF
+        Else
+            [M:MBW1]ROUNUM = [F:ITF]MFGROU
+        Endif
+
+        # Issue 111414 - 2015-12-30 by GH : implementing route versioning
+        [M:MBW1]ROUALT = func RVMLIB.GETRVMALT([M:MBW1]ROUNUM,[M:MBW1]STOFCY,[M:MBW1]STRDAT2)
+        If [M:MBW1]ROUALT<>0
+           WALT=[M:MBW1]ROUALT
+           Call CONT_ROUALT([M:MBW1]STOFCY, WALT, [M:MBW1]ROUNUM, [M:MBW1]STRDAT2, [M:MBW1]EXTQTY2,
+&                           [M:MBW1]STU2, [M:MBW1]BOMALT2)
+           If WALT=0 : [M:MBW1]ROUALT=0 : GMESSAGE="" : Endif
+        Else
+           Call RECH_GAM([M:MBW1]STOFCY, [M:MBW1]STRDAT2, [M:MBW1]ROUNUM, [M:MBW1]EXTQTY2,
+&                        [M:MBW1]STU2, [M:MBW1]BOMALT2, [M:MBW1]ROUALT)
+        Endif
+        If [M:MBW1]ROUALT = 0 & [F:MTS]MFGMODM = 2 : Raz [M:MBW1]ROUNUM : Endif
+    Endif
+
+    If dim([M:MBW1]ROUECCMAJ)=1
+       If find([M:MBW1]WIPSTA,1,2) & [M:MBW1]ROUNUM=[M:MBW1]ROUNUM1 & [M:MBW1]ROUALT=[M:MBW1]ROUALT1
+          [M:MBW1]ROUECCMAJ = [F:MFG]ROUECCMAJ
+          [M:MBW1]ROUECCMIN = [F:MFG]ROUECCMIN
+       Else
+          Call INIECCROU([M:MBW1]ROUNUM,[M:MBW1]STOFCY,[M:MBW1]STRDAT2,[M:MBW1]ROUALT,[M:MBW1]ROUECCMAJ,[M:MBW1]ROUECCMIN) From RVMLIB
+       Endif
+    Endif
+Endif
+# Issue 107498/108 - 2016-05-19 by BEEBE/ALSHE : validation product/site/PJT whether it may/can be launched
+# Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+If func AFNC.ACTIV("PJM")
+    Call VALIDPJT([M:MBW1]ITMREF,[M:MBW1]STOFCY,[F:ITM]STDFLG,[M:MBW1]PJT,WPJTLAUNCH) From MFGLIB
+Endif
+
+Return
+
+#########################################################################
+$LEC_WOX
+WTRK       = 0
+WMFGTRKFLG = 1
+WALLSTA    = 1
+WSCDFLG    = 1
+If find([M:MBW1]WIPSTA, 1, 2)
+    Read [MFG]MFG0=[M:MBW1]VCRNUM
+    If fstat : Return : Endif
+    If [F:MFG]OPTFLG <> 2
+        WMFGTRKFLG = [F:MFG]MFGTRKFLG
+    Else
+        WMFGTRKFLG = 2
+    Endif
+    WSCDFLG    = [F:MFG]SCDFLG
+    WALLSTA    = [F:MFG]ALLSTA
+    WOBJDAT    = [F:MFG]OBJDAT
+Else
+    WOBJDAT    = [F:ORD1]ENDDAT
+Endif
+Return
+
+#########################################################################
+$CHARGE_MBW3
+
+Raz [M:MBW3]
+[M:MBW3]STOFCY  = WFCY
+[M:MBW3]ITMREF  = WITM
+[M:MBW3]PLANNER = WPLANNER
+[M:MBW3]PJT     = WPJT
+# [M:MBW3]ENDDAT2 = WDATC  # Issue X3-4772 - 2016-10-04 by ALSHE : Enddate from Material task line
+# [M:MBW3]WIPTYP  = WWIPTYP # Issue 107498/108 - 2016-06-07 by ALSHE : ordertyp to determine MTx demands
+
+If dim(WMTOREF)>0 & dim([M:MBW3]MTOREF)>0
+   [M:MBW3]MTOREF = WMTOREF   : # V6 Réseau MTO FQ 46650
+Endif
+# 05.05 30143
+Case GFONCTION
+   When "FUNGBENCH","FUNGBENCHA", "PJMACTTAS" : # Issue 107498/18 - 2016-09-07 by ALSHE : load Parameter when comming from GESPJM
+         If clalev([M:MGB])        # Issue X3-4772 - 2016-10-03 by ALSHE : MGB not defined when comming from PJM material task line
+            [M:MBW3]ITMCAT = [M:MGB]ITMCAT
+            [M:MBW3]ITMFILTER = [M:MGB]ITMFILTER
+            # Issue 107498/18 - 2016-08-04 by ALSHE : load PJT Number
+            # Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+            If  func AFNC.ACTIV("PJM")
+                If [M:MBW3]PJT = "" : [M:MBW3]PJT = [M:MGB]PJTSTR :  Endif
+            Endif
+         Endif
+   When "FUNDBENCH","FUNDBENCHA" :
+            [M:MBW3]ITMCAT = [M:MGD]ITMCAT
+            [M:MBW3]ITMFILTER = [M:MGD]ITMFILTER
+   When "FUNMLINK":
+            [M:MBW3]ITMCAT = [M:MLB]ITMCAT
+            [M:MBW3]ITMFILTER = [M:MLB]ITMFILTER
+Endcase
+# lecture article
+If [F:ITM]ITMREF <> [M:MBW3]ITMREF
+    Read [ITM]ITM0=[M:MBW3]ITMREF
+    If fstat : Return : Endif
+Endif
+# lecture article/site
+If [F:ITF]ITMREF <> [M:MBW3]ITMREF | [F:ITF]STOFCY <> [M:MBW3]STOFCY
+# If [F:ITF]ITMREF <> [M:MBW3]ITMREF : # GH 10/04/2015 bug 104152
+    Read [ITF]ITF0=[M:MBW3]ITMREF;[M:MBW3]STOFCY
+    If fstat : Return : Endif
+Endif
+
+[M:MBW3]SHR = [F:ITF]SHR
+
+# délai fabrication
+XLTI    = [F:ITF]MFGLTI
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+WMFGLTI = ILTI
+
+# délai qualité
+XLTI    = [F:ITF]QUALTI
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+WQUALTI = ILTI
+
+If WQUALTI = 0
+    [M:MBW3]AVAOFS = num$(WMFGLTI)
+Else
+    [M:MBW3]AVAOFS = num$(WMFGLTI)-"(+"+num$(WQUALTI)+")"
+Endif
+
+# sr 04.05 demande 10990
+[M:MBW3]LABEL = mess([F:MTS]SCDMODSAI,334,1)
+
+If WQTYBES > 0
+    [M:MBW3]EXTQTY2 = WQTYBES
+    [M:MBW3]COVQTY  = WQTYBES
+Else
+    [M:MBW3]EXTQTY2 = [F:ITF]REOMINQTY
+    [M:MBW3]COVQTY  = 0
+Endif
+[M:MBW3]STU2    = [F:ITM]STU
+#
+
+# Issue number - 2015-08-03 by BEEBE : implementing versioning
+If dim([M:MBW3]ECCVALMAJ)>0
+    If func ECCLIB.NBRCPN([M:MBW3]ITMREF)
+        Local Integer LALT
+
+        # ECC preload of major and minor version + BOM code
+        LALT = [M:MBW3]BOMALT2
+        Raz [M:MBW3]ECCVALMAJ, [M:MBW3]ECCVALMIN
+        Call INIECCBOM([M:MBW3]ITMREF, [M:MBW3]STOFCY, WDATBES, 2, [M:MBW3]ECCVALMAJ,[M:MBW3]ECCVALMIN,LALT) From MFGECCLIB
+        [M:MBW3]BOMALT2 = LALT
+        Affzo [M:MBW3]ECCVALMAJ, ECCVALMIN, BOMALT2
+    Else
+        Effzo [M:MBW3]ECCVALMAJ, ECCVALMIN
+    Endif
+Endif
+
+If WDATBES = [0/0/0] : Return : Endif
+[M:MBW3]ENDDAT2 = WDATBES
+WORIDAT=[M:MBW3]ENDDAT2
+WORIFCY=[M:MBW3]STOFCY
+WLTI=0
+WQTY = [M:MBW3]EXTQTY2
+# calcul délai
+Call CALCUL_DELAI([F:ITF]MFGLTI, WQTY, XLTI) From MFGLIB
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+WLTI=ILTI
+
+# calcul date
+WMEMDAT = [M:MBW3]STRDAT2
+
+Call CALCUL_DATE_PLN(WORIDAT, WLTI, WORIFCY, 1, [M:MBW3]STRDAT2) From MFGLIB
+
+# si date début dans le passé, recalcul en aval à partir du jour
+If [M:MBW3]STRDAT2 < TODAY
+    [M:MBW3]STRDAT2 = TODAY
+    WORIDAT = TODAY
+    Call CALCUL_DATE_PLN(WORIDAT, WLTI, WORIFCY, 0, [M:MBW3]ENDDAT2) From MFGLIB
+Endif
+
+Call RECH_NOM([M:MBW3]STOFCY, [M:MBW3]STRDAT2, [M:MBW3]BOMALT2,2)
+If [F:MTS]MFGMODC = 1 & [F:MTS]MFGMODO = 1 : Raz [M:MBW3]ROUNUM,ROUALT
+Else
+    If [F:ITF]MFGROU = ""
+        [M:MBW3]ROUNUM = [M:MBW3]ITMREF
+    Else
+        [M:MBW3]ROUNUM = [F:ITF]MFGROU
+    Endif
+    Call RECH_GAM([M:MBW3]STOFCY, [M:MBW3]STRDAT2, [M:MBW3]ROUNUM, [M:MBW3]EXTQTY2,
+&                 [M:MBW3]STU2, [M:MBW3]BOMALT2,[M:MBW3]ROUALT)
+    If [M:MBW3]ROUALT = 0 & [F:MTS]MFGMODM = 2 : Raz [M:MBW3]ROUNUM : Endif                # llc 06.04 22880
+Endif
+
+Return
+
+#########################################################################
+$CHARGE_MBW4
+# prise en compte SOF, TWF, POS
+Read [ORD1]ORD0=WTYP;WWIP;WITM
+If fstat : Return : Endif
+
+WSTA         = [F:ORD1]WIPSTA
+
+Raz [M:MBW4]
+[M:MBW4]MODFLG  = 1
+[M:MBW4]ORIFCY  = WFCY
+[M:MBW4]WIPTYP  = 5
+[M:MBW4]WIPSTA  = [F:ORD1]WIPSTA                            # 03.06 35440
+[M:MBW4]XWIPTYP = mess([M:MBW4]WIPTYP,306,1)
+[M:MBW4]STOFCY  = WFCY
+[M:MBW4]ITMREF  = WITM
+
+# Libellé MM 02.04
+If [F:FCY]FCY<>[M:MBW4]STOFCY
+    Read [FCY]FCY0=[M:MBW4]STOFCY
+    If fstat : Raz [F:FCY] : Endif
+Endif
+If dim([M:MBW4]ZSTOFCY)>0 [M:MBW4]ZSTOFCY=[F:FCY]FCYNAM  Endif
+#
+
+# lecture article
+If [F:ITM]ITMREF <> [M:MBW4]ITMREF
+    Read [ITM]ITM0=[M:MBW4]ITMREF
+    If fstat : Return : Endif
+Endif
+# lecture article/site
+If [F:ITF]ITMREF <> [M:MBW4]ITMREF | [F:ITF]STOFCY <> [M:MBW4]STOFCY
+#If [F:ITF]ITMREF <> [M:MBW4]ITMREF : # GH 10/04/2015 bug 104152
+    Read [ITF]ITF0=[M:MBW4]ITMREF;[M:MBW4]STOFCY
+    If fstat : Return : Endif
+Endif
+
+[M:MBW4]SHR = [F:ITF]SHR
+
+# délai fabrication
+XLTI    = [F:ITF]MFGLTI
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+WMFGLTI = ILTI
+
+# délai qualité
+XLTI    = [F:ITF]QUALTI
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+WQUALTI = ILTI
+
+If WQUALTI = 0
+    [M:MBW4]AVAOFS = num$(WMFGLTI)
+Else
+    [M:MBW4]AVAOFS = num$(WMFGLTI)-"(+"+num$(WQUALTI)+")"
+Endif
+
+#[M:MBW4]ITMDES1 = [F:ITM]ITMDES1
+Call CHARGE_DEFITMDES("DES1AXX",GLANGUE,[F:ITM]ITMREF,[M:MBW4]ITMDES1, "[F:ITM]") From TRTX3 # FGR 30/06/2009 : X3SUIVI56189
+[M:MBW4]VCRTYPORI = [F:ORD1]VCRTYP
+[M:MBW4]VCRNUMORI = [F:ORD1]VCRNUM
+[M:MBW4]VCRLINORI = [F:ORD1]VCRLIN
+[M:MBW4]VCRSEQORI = [F:ORD1]VCRSEQ
+[M:MBW4]XVCRTYPORI = mess([M:MBW4]VCRTYPORI,701,1)
+
+# GH 01/10/12 bug 84869
+#Case [F:ORD1]WIPTYP
+#    When 1:   [M:MBW4]BPRNUM = [F:ORD1]BPRNUM
+#    When 8:   [M:MBW4]BPRNUM = [F:ORD1]ORIFCY
+#Endcase
+Case [F:ORD1]VCRTYP
+    When 2,7    :  [M:MBW4]BPRNUM = [F:ORD1]BPRNUM
+    When Default:  [M:MBW4]BPRNUM = [F:ORD1]ORIFCY
+Endcase
+
+[M:MBW4]FMI  = [F:ORD1]FMI
+[M:MBW4]PJT  = [F:ORD1]PJT
+If dim([M:MBW4]MTOREF)>0 & dim([F:ORD1]MTOREF)>0
+   [M:MBW4]MTOREF     = [F:ORD1]MTOREF   : # V6 Réseau MTO FQ 46650
+Endif
+[M:MBW4]EXTQTY1 = [F:ORD1]RMNEXTQTY
+[M:MBW4]STU1    = [F:ITM]STU
+[M:MBW4]ENDDAT1 = [F:ORD1]ENDDAT
+WOBJ            = [F:ORD1]ENDDAT
+[M:MBW4]STRDAT1 = [F:ORD1]STRDAT
+[M:MBW4]EXTQTY2 = [F:ORD1]RMNEXTQTY - [F:ORD1]MTOQTY - [F:ORD1]ALLQTY
+# sr 04.05 demande 29846
+If [M:MBW4]EXTQTY2 < 0 : [M:MBW4]EXTQTY2 = 0 : Endif
+
+# Libellé MM 02.04
+If [M:MBW4]BPRNUM<>""
+    Read [BPR]BPR0 = [M:MBW4]BPRNUM
+    If !fstat  [M:MBW4]BPRDES=[F:BPR]BPRNAM  Endif
+    If [M:MBW4]BPRDES =""
+        Read [FCY]FCY0=[M:MBW4]BPRNUM
+        If !fstat : [M:MBW4]BPRDES=[F:FCY]FCYNAM : Endif
+    Endif
+Endif
+#
+
+If [F:ITF]SHR <> 0 & WTYP = 1
+   [M:MBW4]EXTQTY2 = [M:MBW4]EXTQTY2 + ([M:MBW4]EXTQTY2 * ([F:ITF]SHR / 100))
+   Call QTEARR([M:MBW4]EXTQTY2,[F:ITM]STU) From TRTDIV
+Endif
+
+[M:MBW4]MTOQTY = [F:ORD1]MTOQTY
+[M:MBW4]STU2    = [F:ITM]STU
+
+# prise en compte délai CQ dans le positionnement de la couverture
+If [F:ITF]QUALTI = 0
+    [M:MBW4]ENDDAT2 = [F:ORD1]ENDDAT
+Else
+    WORIDAT = [F:ORD1]ENDDAT
+    Call CALCUL_DATE_PLN(WORIDAT, [F:ITF]QUALTI, [M:MBW4]STOFCY, 1, [M:MBW4]ENDDAT2) From MFGLIB
+Endif
+
+WORIDAT=[M:MBW4]ENDDAT2
+WORIFCY=[M:MBW4]STOFCY
+WLTI = 0
+WQTY = [M:MBW4]EXTQTY2
+# calcul délai
+Call CALCUL_DELAI([F:ITF]MFGLTI, WQTY, XLTI) From MFGLIB
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+WLTI=ILTI
+# calcul date
+WMEMDAT = [M:MBW4]STRDAT2
+
+Call CALCUL_DATE_PLN(WORIDAT, WLTI, WORIFCY, 1, [M:MBW4]STRDAT2) From MFGLIB
+
+# si date début dans le passé, recalcul en aval à partir du jour
+If [M:MBW4]STRDAT2 < TODAY
+    [M:MBW4]STRDAT2 = TODAY
+    WORIDAT = TODAY
+    Call CALCUL_DATE_PLN(WORIDAT, WLTI, WORIFCY, 0, [M:MBW4]ENDDAT2) From MFGLIB
+Endif
+# sr 04.05 demande 10990
+[M:MBW4]LABEL = mess([F:MTS]SCDMODSAI,334,1)
+
+Call RECH_NOM([M:MBW4]STOFCY, [M:MBW4]STRDAT2, [M:MBW4]BOMALT2,2)
+If [F:MTS]MFGMODC = 1 & [F:MTS]MFGMODO = 1 : Raz [M:MBW4]ROUNUM,ROUALT
+Else
+    If [F:ITF]MFGROU = ""
+        [M:MBW4]ROUNUM = [M:MBW4]ITMREF
+    Else
+        [M:MBW4]ROUNUM = [F:ITF]MFGROU
+    Endif
+    Call RECH_GAM([M:MBW4]STOFCY, [M:MBW4]STRDAT2, [M:MBW4]ROUNUM, [M:MBW4]EXTQTY2,
+&                     [M:MBW4]STU2, [M:MBW4]BOMALT2, [M:MBW4]ROUALT)
+    If [M:MBW4]ROUALT = 0 & [F:MTS]MFGMODM = 2 : Raz [M:MBW4]ROUNUM : Endif                # llc 06.04 22880
+Endif
+
+# Issue 104943 - 2015-06-25 by BEEBE : implementing versioning
+If dim([M:MBW4]ECCVALMAJ)>0
+    [M:MBW4]ECCVALMAJ = [F:ORD1]ECCVALMAJ
+    [M:MBW4]ECCVALMIN = [F:ORD1]ECCVALMIN
+    # Issue number - 2015-08-03 by BEEBE : implementing versioning
+    If [M:MBW4]ECCVALMAJ=""
+        If func ECCLIB.NBRCPN([M:MBW4]ITMREF)
+            Local Integer LALT
+
+            # ECC preload of major and minor version + BOM code
+            LALT = [M:MBW4]BOMALT2
+            Raz [M:MBW4]ECCVALMAJ, [M:MBW4]ECCVALMIN
+            Call INIECCBOM([M:MBW4]ITMREF, [M:MBW4]STOFCY, [M:MBW4]STRDAT2, 2, [M:MBW4]ECCVALMAJ,[M:MBW4]ECCVALMIN,LALT) From MFGECCLIB
+            [M:MBW4]BOMALT2 = LALT
+            Affzo [M:MBW4]ECCVALMAJ, ECCVALMIN, BOMALT2
+        Else
+            Effzo [M:MBW4]ECCVALMAJ, ECCVALMIN
+        Endif
+    Endif
+Endif
+
+# Issue 107498/108 - 2016-05-19 by BEEBE/ALSHE : validation product/site/PJT whether it may/can be launched
+# Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+If func AFNC.ACTIV("PJM")
+    Call VALIDPJT([M:MBW4]ITMREF,[M:MBW4]STOFCY,[F:ITM]STDFLG,[M:MBW4]PJT,WPJTLAUNCH) From MFGLIB
+Endif
+#
+Return
+
+#########################################################################
+# calcul date début ordre
+Subprog CAL_DATDEB(LFCY, LENDDAT, LQTY, LSTRDAT)
+Value    Char       LFCY
+Variable Date       LENDDAT
+Value    Decimal    LQTY
+Variable Date       LSTRDAT
+Local    Decimal    XLTI
+Local    Integer    ILTI
+Local    Decimal    WRMD
+#
+Call CALCUL_DELAI([F:ITF]MFGLTI, LQTY, XLTI) From MFGLIB
+ILTI    = int(XLTI)
+WRMD    = XLTI - ILTI
+If WRMD <> 0 : ILTI += 1 : Endif
+
+Call CALCUL_DATE_PLN(LENDDAT, ILTI, LFCY, 1, LSTRDAT) From MFGLIB
+
+
+# si date début < date du jour, recalcul à partir du jour en aval
+GMESSAGE = ""
+Call CHECK_PAST(LSTRDAT, 3) From MFGLIB
+If GMESSAGE <> ""
+    GMESSAGE = ""
+    LSTRDAT = date$
+    Call CALCUL_DATE_PLN(LSTRDAT, ILTI, LFCY, 0, LENDDAT) From MFGLIB
+Endif
+#
+End
+
+#########################################################################
+$CHARGE_MBW2
+[M:MBW2]MFGFCY = WFCY
+[M:MBW2]MFGQTY = WQTYBES
+[M:MBW2]MFGSTU = WSTU
+#
+nolign = 1
+If !find(WSTA, 1, 2) : Goto CHARGE_SUG_MBW2 : Endif
+
+#------------------------------------------------
+$CHARGE_OF_MBW2
+For [MFM]MFM0 Where MFGNUM = WVCR & MATSTA < 3
+    If [F:MFM]MATSTA =4 : Goto S1 : Endif
+    Raz WBES, WFIX, WRATIO, WDIS
+    [M:MBW2]ITMREF(nolign-1) = [F:MFM]ITMREF
+    [M:MBW2]USEQTY(nolign-1) = [F:MFM]USEQTY
+    [M:MBW2]ALLQTY(nolign-1) = [F:MFM]ALLQTY
+    [M:MBW2]SHTQTY(nolign-1) = [F:MFM]SHTQTY
+    [M:MBW2]MFMTRKFLG(nolign-1) = [F:MFM]MFMTRKFLG
+    WBES = [F:MFM]RETQTY - [F:MFM]USEQTY
+    If WBES < 0 : WBES = 0 : Endif
+    WFIX = [F:MFM]CUMFXDQTY
+    WALL = [F:MFM]ALLQTY
+    WITM = [F:MFM]ITMREF
+    WFCY = [F:MFM]MFGFCY
+    Gosub CHARGE_TAB_MBW2
+$S1
+Next
+Goto FIN_CHARGE_MBW2
+
+#------------------------------------------------
+$CHARGE_SUG_MBW2
+For [ORD2]ORD0 Where VCRNUM = WVCR & WIPTYP = 6
+    [M:MBW2]ITMREF(nolign-1) = [F:ORD2]ITMREF
+    [M:MBW2]USEQTY(nolign-1) = [F:ORD2]CPLQTY
+    [M:MBW2]ALLQTY(nolign-1) = [F:ORD2]ALLQTY
+    [M:MBW2]SHTQTY(nolign-1) = [F:ORD2]SHTQTY
+    [M:MBW2]MFMTRKFLG(nolign-1) = 1
+    WBES = [F:ORD2]EXTQTY
+    WFIX = 0
+    WALL = [F:ORD2]ALLQTY
+    WITM = [F:ORD2]ITMREF
+    WFCY = [F:ORD2]STOFCY
+    Gosub CHARGE_TAB_MBW2
+Next
+##########################
+$FIN_CHARGE_MBW2
+[M:MBW2]NBLIG = nolign-1
+Return
+
+#########################################################################
+$CHARGE_TAB_MBW2
+Gosub LEC_ART
+If WRET <> 0 : Return : Endif
+[M:MBW2]STU(nolign-1)     = [F:ITM]STU
+#[M:MBW2]ITMDES1(nolign-1) = [F:ITM]ITMDES1
+Call CHARGE_DEFITMDES("DES1AXX",GLANGUE,[F:ITM]ITMREF,[M:MBW2]ITMDES1(nolign-1), "[F:ITM]") From TRTX3 # FGR 30/06/2009 : X3SUIVI56189
+[M:MBW2]PHYSTO(nolign-1)  = [F:ITV]PHYSTO
+[M:MBW2]CTLSTO(nolign-1)  = [F:ITV]CTLSTO
+[M:MBW2]RERSTO(nolign-1)  = [F:ITV]GLOALL
+[M:MBW2]ALLSTO(nolign-1)  = [F:ITV]PHYALL    + [F:ITV]CTLALL     + [F:ITV]REJALL
+[M:MBW2]ORDSTO(nolign-1)  = [F:ITV]ORDSTO
+[M:MBW2]WAISTO(nolign-1)  = [F:ITV]WAISTO
+# recherche stock disponible
+# 22443 05.04 MM : Point d'entrée pour choisir la formule de calcul du stock dispo
+GPE = 0
+GPOINT="CAL_STODIS" : Gosub ENTREE From EXEFNC
+If !GPE
+    #--- Issue 115110 : Added LECCVAL parameter in 10th position
+    Call STODISALL(WFCY,WITM,10,1,2,1,2,"","","",WDIS,WRET) From STKALL
+Endif
+[M:MBW2]DISSTO(nolign-1)  = WDIS - [F:ITV]WAISTO
+
+# FQ 60950 GA 12/2009 éviter la division par zéro
+If WBES <> 0 & WQTYBES <> 0
+    WRATIO                    = (WBES - WFIX) / WQTYBES
+    [M:MBW2]RETQTY(nolign-1)  = (WQTYDEM * WRATIO) + WFIX
+Else
+    [M:MBW2]RETQTY(nolign-1)  = 0
+Endif
+[M:MBW2]DIFFSTO(nolign-1) = [M:MBW2]DISSTO(nolign-1) - [M:MBW2]RETQTY(nolign-1) + WALL
+nolign += 1
+
+Return
+
+#########################################################################
+$LEC_ART
+Local Integer LRET
+# lecture article
+If [F:ITM]ITMREF <> WITM
+    Read [ITM]ITM0=WITM
+    If fstat : WRET = 1 : Return : Endif
+Endif
+# lecture cumuls stocks
+Call LECITV2(WFCY, WITM, WRET) From MFGLIB
+
+Return
+
+#########################################################################
+$CHARGE_MBWN2
+Local Integer WSCATIA
+
+[M:MBW2]MFGFCY = WFCY
+[M:MBW2]MFGQTY = WQTYDEM
+[M:MBW2]MFGSTU = WSTU
+nolign = 1
+
+# lecture entete nomenclature
+Read [BOH]BOH0=WITM;WALT;2
+If fstat : Return : Endif
+
+WSCATIA = 0
+# lecture article/site composé
+If [F:ITF]ITMREF <> WITM | [F:ITF]STOFCY <> WFCY
+    Read [ITF]ITF0=WITM;WFCY
+    If fstat : WSCATIA = 1 : Endif
+Endif
+If WSCATIA = 0
+    If [F:ITF]RELSCATIA <> 1 : WSCATIA = 1 : Endif
+Endif
+
+For [BOD]BOD0 Where ITMREF = WITM & BOMALT = WALT & BOMALTTYP = 2 &
+&                   (BOMSTRDAT = [0/0/0] | (BOMSTRDAT <> [0/0/0] & BOMSTRDAT <= WDATBES)) &
+&                   (BOMENDDAT = [0/0/0] | (BOMENDDAT <> [0/0/0] & BOMENDDAT >= WDATBES)) &
+&                    !find(CPNTYP,5,6)
+    Raz WDIS
+    [M:MBW2]ITMREF(nolign-1) = [F:BOD]CPNITMREF
+    [M:MBW2]USEQTY(nolign-1) = 0
+    [M:MBW2]ALLQTY(nolign-1) = 0
+    [M:MBW2]SHTQTY(nolign-1) = 0
+    [M:MBW2]MFMTRKFLG(nolign-1) = 1
+
+    # lecture article
+    Read [ITM]ITM0=[F:BOD]CPNITMREF
+    If fstat : Goto SN : Endif
+
+    # lecture article site
+    Read [ITF]ITF0=[F:BOD]CPNITMREF;WFCY
+    If fstat : Goto SN : Endif
+
+    # lecture cumuls stocks
+    Call LECITV2(WFCY,[F:BOD]CPNITMREF,WRET) From MFGLIB
+    # Issue 72149 - 2011-03-08 by CCC : test du code retour de LECITV2
+    #If GOK <> 1 : GOK = 0 : Goto SN : Endif
+    If WRET : GOK = 0 : Goto SN : Endif
+    If [F:BOD]LIKQTY <> 0
+        # calcul quantité
+        WQTY         = WQTYDEM
+        WSTU         = [F:ITM]STU
+        WBASQTY      = [F:BOH]BASQTY
+        WLIKQTYCOD   = [F:BOD]LIKQTYCOD
+        WLIKQTY      = [F:BOD]LIKQTY
+        WQTYRND      = [F:BOD]QTYRND
+        WSCA         = [F:BOD]SCA
+
+        Call LIKQTY(WQTY,WSTU,WBASQTY,WLIKQTYCOD,WLIKQTY,WQTYRND,
+&               WSCA,WQTYN,WQTYNA,WQTYB,WQTYBA) From MFGLIB
+        If WSCATIA
+            WLIEN = WQTYBA
+        Else
+            WLIEN = WQTYNA
+        Endif
+    Else
+        WLIEN = 0
+    Endif
+    [M:MBW2]STU(nolign-1)     = [F:ITM]STU
+    #[M:MBW2]ITMDES1(nolign-1) = [F:ITM]ITMDES1
+    Call CHARGE_DEFITMDES("DES1AXX",GLANGUE,[F:ITM]ITMREF,[M:MBW2]ITMDES1(nolign-1), "[F:ITM]") From TRTX3 # FGR 30/06/2009 : X3SUIVI56189
+    [M:MBW2]PHYSTO(nolign-1)  = [F:ITV]PHYSTO
+    [M:MBW2]CTLSTO(nolign-1)  = [F:ITV]CTLSTO
+    [M:MBW2]RERSTO(nolign-1)  = [F:ITV]GLOALL
+    [M:MBW2]ALLSTO(nolign-1)  = [F:ITV]PHYALL    + [F:ITV]CTLALL     + [F:ITV]REJALL
+    [M:MBW2]WAISTO(nolign-1)  = [F:ITV]WAISTO
+    [M:MBW2]ORDSTO(nolign-1)  = [F:ITV]ORDSTO
+    # recherche stock disponible
+    #--- Issue 115110 : Added LECCVAL parameter in 10th position
+    Call STODISALL(WFCY,[F:BOD]CPNITMREF,10,1,2,1,2,"","","",WDIS,WRET) From STKALL
+    [M:MBW2]DISSTO(nolign-1)  = WDIS - [F:ITV]WAISTO
+
+    [M:MBW2]RETQTY(nolign-1)  = WLIEN
+    [M:MBW2]DIFFSTO(nolign-1) = [M:MBW2]DISSTO(nolign-1) - [M:MBW2]RETQTY(nolign-1)
+    nolign += 1
+$SN
+Next
+[M:MBW2]NBLIG = nolign-1
+Return
+
+#########################################################################
+# contrôle alternative valide   04.07 40505
+Subprog CHECK_NOM(LFCY, LDAT, LALT)
+Value    Char    LFCY
+Value    Date    LDAT
+Variable Decimal LALT
+
+Local    Char    WFCY(GLONFCY)
+Local    Integer WALT
+Local    Date    WDAT
+Local    Integer WMSG
+
+WALT = 0
+WDAT=LDAT
+WMSG=0
+WFCY=LFCY
+
+#    Lecture BOM
+For [BOH] Where [F:BOH]ITMREF=[F:ITM]ITMREF & [F:BOH]BOMALT = LALT
+    Read [TBO]TBO2=[F:BOH]BOMALT
+    If !fstat : Call CONTMFGNOM(WFCY,WALT,WDAT,WMSG) From MFGLIB  : Endif
+Next
+LALT = WALT
+
+End
+
+#########################################################################
+# Recherche alternative valide
+Subprog RECH_NOM(LFCY, LDAT, LALT,LTYP)
+Value    Char    LFCY
+Value    Date    LDAT
+Variable Decimal LALT
+Value    Integer LTYP
+Local    Char    WFCY(GLONFCY)
+Local    Integer WALT
+Local    Date    WDAT
+Local    Integer WMSG
+
+LALT=0
+WDAT=LDAT
+WMSG=0
+WFCY=LFCY
+
+#    Lecture BOM
+For [BOH] Where [F:BOH]ITMREF=[F:ITM]ITMREF & BOMALTTYP = LTYP
+    Read [TBO]TBO0=[F:BOH]BOMALTTYP;[F:BOH]BOMALT
+    If !fstat
+        If [F:BOH]BOMALTTYP <> 3
+          Call CONTMFGNOM(WFCY,WALT,WDAT,WMSG) From MFGLIB
+          If WALT <> 0 : LALT = [F:BOH]BOMALT : Break : Endif
+        Else
+        # GA 01/2006 alternative de sous-traitance
+          Call CONTSCONOM(WFCY,WALT,WDAT,WMSG) From SCOLIB
+          If WALT <> 0 : LALT = [F:BOH]BOMALT : Break : Endif
+        Endif
+    Endif
+Next
+End
+
+#########################################################################
+# Recherche alternative valide
+Subprog RECH_GAM(LFCY, LDAT, LROUNUM, LQTY, LSTU, LBOMALT,LALT)
+Value    Char    LFCY
+Value    Date    LDAT
+Value    Char    LROUNUM
+Value    Decimal LQTY
+Value    Char    LSTU
+Value    Decimal LBOMALT
+Variable Decimal LALT
+Local    Char    WFCY(GLONFCY)
+Local    Integer WALT
+Local    Date    WDAT
+Local    Integer WMSG
+Local    Integer TABTBO(3)
+
+LALT=0
+WDAT=LDAT
+WMSG=0
+WFCY=LFCY
+
+# la classe [ITF] est chargée
+If [F:ITF]MFGROUALT <> 0
+    Read [F:ROH]ROH0 = LROUNUM;[F:ITF]MFGROUALT;LFCY    : # Beryl Site en fin de clé primaire
+    If !fstat
+        Read [F:TRO]TRO0=[F:ROH]ROUALT
+        If !fstat
+            Call CONTMFGGAM(WFCY,WALT,WDAT,LQTY,LSTU,WMSG) From MFGLIB
+            If WALT <> 0
+                    Raz TABTBO
+                   # Contrôle de cohérence de l'alternative de nomenclature
+                    TABTBO(0)=[F:TRO]BOMALT1
+                    TABTBO(1)=[F:TRO]BOMALT2
+                    TABTBO(2)=[F:TRO]BOMALT3
+                    If find(LBOMALT, TABTBO)                # 02.05 28346 + 07.05 31429
+                        LALT = [F:ROH]ROUALT
+                        End
+                    Endif
+            Endif
+        Endif
+    Endif
+Endif
+#    Lecture ROUTING
+For [ROH] Where [F:ROH]FCY = LFCY & [F:ROH]ITMREF=LROUNUM
+    Read [TRO]TRO0=[F:ROH]ROUALT
+    If !fstat
+        Call CONTMFGGAM(WFCY,WALT,WDAT,LQTY,LSTU,WMSG) From MFGLIB
+        If WALT <> 0
+            Raz TABTBO
+            # Contrôle de cohérence de l'alternative de nomenclature
+            TABTBO(0)=[F:TRO]BOMALT1
+            TABTBO(1)=[F:TRO]BOMALT2
+            TABTBO(2)=[F:TRO]BOMALT3
+            If find(LBOMALT, TABTBO)                # 02.05 28346 + 07.05 31429
+                LALT = [F:ROH]ROUALT
+                Break
+            Endif
+        Endif
+    Endif
+Next
+End
+
+########################################
+Subprog CONT_BOMALT(LFCY, LALT, LTYP, LITM, LSTR)
+Value    Char    LFCY
+Variable Integer LALT
+Value    Integer LTYP
+Value    Char    LITM
+Value    Date    LSTR
+If LSTR = [0/0/0]
+    GMESSAGE = mess(170,193,1)
+    End
+Endif
+
+Raz GMESSAGE
+#    Lecture BOM
+Read [TBO]TBO0=LTYP;LALT
+If fstat : GMESSAGE = mess(95,193,1) : End : Endif
+Read [BOH]BOH0=LITM;LALT;LTYP
+If fstat
+    GMESSAGE = mess(95,193,1)
+    End
+Endif
+Case LTYP
+    When 2 : Call CONTMFGNOM(LFCY,LALT,LSTR,1) From MFGLIB
+    When 3 : Call CONTSCONOM(LFCY,LALT,LSTR,1) From SCOLIB
+Endcase
+#
+End
+
+########################################
+Subprog CONT_ROUALT(LFCY, LALT, LITM, LSTR, LQTY, LSTU, LBOMALT)
+Value    Char    LFCY
+Variable Integer LALT
+Value    Char    LITM
+Value    Date    LSTR
+Value    Decimal LQTY
+Value    Char    LSTU
+Value    Integer LBOMALT
+Local    Integer NOL
+Local    Integer TABTBO(3)
+
+If LSTR = [0/0/0]
+    GMESSAGE = mess(170,193,1)
+    End
+Endif
+
+# lecture ROUTING
+Read [TRO]TRO0=LALT
+If fstat : GMESSAGE = mess(153,196,1) : End : Endif
+Read [ROH]ROH0=LITM;LALT;LFCY         : # Beryl Site en fin de clé primaire
+If fstat : GMESSAGE = mess(153,196,1) : End : Endif
+#
+Call CONTMFGGAM(LFCY,LALT,LSTR,LQTY,LSTU,1) From MFGLIB
+If LALT=0 : End : Endif
+# Contrôle de cohérence des alternatives de nomenclature
+TABTBO(0)=[F:TRO]BOMALT1
+TABTBO(1)=[F:TRO]BOMALT2
+TABTBO(2)=[F:TRO]BOMALT3
+If !find(LBOMALT, TABTBO)
+   GMESSAGE = mess(53,193,1)
+Endif
+
+End
+
+#########################################################################
+Subprog CTL_POHFCY(LSTOFCY, LPOHFCY)
+Value    Char    LSTOFCY
+Variable Char    LPOHFCY
+
+Local Char    WLEGCPY(GLONCPY)
+
+If LSTOFCY="" End Endif
+
+If [F:FCY]FCY <> LSTOFCY
+    Read [FCY]FCY0=LSTOFCY
+    If fstat : Raz [F:FCY] : Endif
+Endif
+
+WLEGCPY = [F:FCY]LEGCPY
+If GFCYDEF(6) <> ""
+    If [F:FCY]FCY <> LPOHFCY
+        Read [FCY]FCY0=LPOHFCY
+        If fstat : Raz [F:FCY] : Endif
+    Endif
+Endif
+
+# si ORIFCY non site achat ou société différente on prend site d'achat par défaut sinon 1er site d'achat de la société
+If [F:FCY]PURFLG <> 2 | [F:FCY]LEGCPY <> WLEGCPY
+    If GFCYDEF(6) <> "" & [F:FCY]LEGCPY = WLEGCPY
+        LPOHFCY = GFCYDEF(6)
+        If [F:FCY]FCY <> LPOHFCY # Issue 99743 GA 09/2014
+            Read [FCY]FCY0=LPOHFCY
+            If fstat : Raz [F:FCY] : Endif
+        Endif
+    Else
+        WLEGCPY = [F:FCY]LEGCPY
+        #Filter [FCY] Where LEGCPY = WLEGCPY & PURFLG = 2
+        #Read [FCY] First
+        #If !fstat : LPOHFCY = [F:FCY]FCY : Else : Raz LPOHFCY : Endif
+        #Filter [FCY]
+        For [FCY] Where LEGCPY=WLEGCPY & PURFLG=2
+           # Control site authorization
+           If (GUSRFCY(1)="\" | GNBAUZ=GNBSITE | find([F:FCY]FCY,GUSRFCY(1..GNBAUZ)))
+              LPOHFCY = [F:FCY]FCY
+              Break
+           Endif
+        Next
+        If LPOHFCY <> [F:FCY]FCY Raz LPOHFCY Endif
+    Endif
+Endif
+If [F:FCY]PURFLG <> 2 : LPOHFCY = GFCYDEF(6) : Endif
+
+End
+#########################################################################
+$CHARGE_MBW5
+# FQ 56283 GA 07/2009
+If dim([M:MBW5]VCRNUM)>0 [M:MBW5]VCRNUM = WVCR Endif
+If dim([M:MBW5]CTLCOD)>0 [M:MBW5]CTLCOD = 2    Endif
+If dim([M:MBW5]SUGCOD)>0 [M:MBW5]SUGCOD = 2    Endif
+
+[M:MBW5]MFGFCY = WFCY
+[M:MBW5]MFGQTY = WQTYBES
+[M:MBW5]MFGSTU = WSTU
+
+nolign = 1
+If !find(WSTA, 1, 2) : Goto CHARGE_SUG_MBW5 : Endif
+
+##########################
+$CHARGE_OF_MBW5
+For [MFM]MFM0 Where MFGNUM = WVCR
+    If [F:MFM]MATSTA =4 : Goto S5 : Endif
+    Raz WBES, WFIX, WRATIO, WDIS
+    [M:MBW5]ITMREF(nolign-1) = [F:MFM]ITMREF
+    [M:MBW5]ALLQTY(nolign-1) = [F:MFM]ALLQTY
+    [M:MBW5]SHTQTY(nolign-1) = [F:MFM]SHTQTY
+    [M:MBW5]MFMTRKFLG(nolign-1) = [F:MFM]MFMTRKFLG
+    [M:MBW5]RETDAT(nolign-1) = [F:MFM]RETDAT
+    [M:MBW5]USEQTY(nolign-1) = [F:MFM]USEQTY
+
+    WBES = [F:MFM]RETQTY - [F:MFM]USEQTY
+    If WBES < 0 : WBES = 0 : Endif
+
+    WFIX = [F:MFM]CUMFXDQTY
+    WITM = [F:MFM]ITMREF
+
+    Gosub CHARGE_TAB_MBW5
+$S5
+Next
+Goto FIN_CHARGE_MBW5
+
+##########################
+$CHARGE_SUG_MBW5
+For [ORD]ORD3 Where VCRNUM = WVCR & WIPTYP = 6 & STOFCY = WFCY & VCRTYP = 11
+    [M:MBW5]ITMREF(nolign-1) = [F:ORD]ITMREF
+    [M:MBW5]RETDAT(nolign-1) = [F:ORD]ENDDAT
+    [M:MBW5]ALLQTY(nolign-1) = [F:ORD]ALLQTY
+    [M:MBW5]SHTQTY(nolign-1) = [F:ORD]SHTQTY
+    [M:MBW5]MFMTRKFLG(nolign-1) = 1
+    WBES = [F:ORD]EXTQTY
+    WFIX = 0
+    WITM = [F:ORD]ITMREF
+    Gosub CHARGE_TAB_MBW5
+Next
+
+##########################
+$FIN_CHARGE_MBW5
+[M:MBW5]NBLIG = nolign-1
+Return
+
+#########################################################################
+$CHARGE_TAB_MBW5
+Gosub LEC_ART
+If WRET <> 0 : Return : Endif
+[M:MBW5]STU(nolign-1)     = [F:ITM]STU
+#[M:MBW5]ITMDES1(nolign-1) = [F:ITM]ITMDES1
+Call CHARGE_DEFITMDES("DES1AXX",GLANGUE,[F:ITM]ITMREF,[M:MBW5]ITMDES1(nolign-1), "[F:ITM]") From TRTX3 # FGR 30/06/2009 : X3SUIVI56189
+
+# FQ 60950 GA 12/2009 éviter la division par zéro
+If WBES <> 0 & WQTYBES <> 0
+    WRATIO                    = (WBES - WFIX) / WQTYBES
+    [M:MBW5]RETQTY(nolign-1) = (WQTYDEM * WRATIO) + WFIX
+    # 164548 - Round qty
+    Call QTEARR2([M:MBW5]RETQTY(nolign-1),[F:ITM]STU,2) From TRTDIV
+Else
+    [M:MBW5]RETQTY(nolign-1)  = 0
+Endif
+Gosub CHARGE_PREV5
+
+[M:MBW5]DISSTO(nolign-1)  = WEXT
+[M:MBW5]DIFFSTO(nolign-1) = [M:MBW5]DISSTO(nolign-1) - [M:MBW5]RETQTY(nolign-1) + [M:MBW5]ALLQTY(nolign-1)
+[M:MBW5]FIRAVADAT(nolign-1) = WFIRAVADAT
+If dim([M:MBW5]FIRAVAQTY)>0        # FQ 56283 GA 07/2009 qté 1ère disponibilité
+       [M:MBW5]FIRAVAQTY(nolign-1) = WFIRAVAQTY
+Endif
+nolign += 1
+#
+Return
+
+#########################################################################
+$RECHARGE_TAB_MBW5  # FQ 56283 GA 07/2009 recharger si param changé
+Local    Decimal   WPHY, WCTL, WREJ, WTRF, WTRA, WSTO, WALL, WRER, WWAI, WQTY
+Local    Decimal   WEXT, WEXT2
+Local    Char      WSIG(1),WFCY(GLONFCY) : WFCY=[M:MBW5]MFGFCY
+Local    Integer   WRET,NOL
+Local    Date      WFIRAVADAT
+Local    Decimal   WFIRAVAQTY   # FQ 56283 GA 07/2009 qté 1ère disponibilité
+Local    Date      TODAY : TODAY = date$
+
+nolign = 1
+For NOL=0 To [M:MBW5]NBLIG-1
+    Gosub CHARGE_PREV5
+    # Issue 72149 - 2011-03-08 by CCC : test du code retour de LECITV2
+    If !WRET : # If WRET : # GH 12/08/13 bug 91454
+        [M:MBW5]DISSTO(nolign-1)  = WEXT
+
+        [M:MBW5]DIFFSTO(nolign-1) = [M:MBW5]DISSTO(nolign-1) - [M:MBW5]RETQTY(nolign-1) + [M:MBW5]ALLQTY(nolign-1)
+        [M:MBW5]FIRAVADAT(nolign-1) = WFIRAVADAT
+        If dim([M:MBW5]FIRAVAQTY)>0        # FQ 56283 GA 07/2009 qté 1ère disponibilité
+               [M:MBW5]FIRAVAQTY(nolign-1) = WFIRAVAQTY
+        Endif
+        nolign+=1
+    Endif
+Next
+Affzo [M:MBW5]
+Return
+##########################
+$CHARGE_PREV5
+Local    Char      WITMREF(GLONITM) : WITMREF=[M:MBW5]ITMREF(nolign-1)
+Local    Date      WRETDAT          : WRETDAT=[M:MBW5]RETDAT(nolign-1)
+Local    Char      WSTU(GLONUOM)    : WSTU   =[M:MBW5]STU(nolign-1)
+Local    Decimal   WRETQTY          : WRETQTY=[M:MBW5]RETQTY(nolign-1) # FQ 60649 GA 12/2009
+Local    Decimal   WALLQTY          : WALLQTY=[M:MBW5]ALLQTY(nolign-1) # FQ 60649 GA 12/2009
+Local    Decimal   WSHTQTY          : WSHTQTY=[M:MBW5]SHTQTY(nolign-1) # FQ 60649 GA 12/2009
+
+Raz WPHY, WCTL,WREJ,WTRF,WTRA,WALL,WRER,WWAI
+Raz WEXT, WEXT2
+Call LECITV2(WFCY, WITMREF, WRET) From MFGLIB
+If WRET <> 0 : Return : Endif
+
+WPHY += [F:ITV]PHYSTO
+WCTL += [F:ITV]CTLSTO    # FQ 56283 GA 07/2009 manquant dans les versions précédentes
+WREJ += [F:ITV]REJSTO
+WTRF += [F:ITV]TRFSTO
+WTRA += [F:ITV]TRASTO
+WALL += [F:ITV]PHYALL    + [F:ITV]CTLALL     + [F:ITV]REJALL
+WRER += [F:ITV]GLOALL
+WWAI += [F:ITV]WAISTO
+
+If WPHY <> 0
+  WSTO = WPHY
+  WSIG = "+"
+  Gosub LOA_INI
+Endif
+
+# FQ 56283 GA 07/2009 inclure stock sous ctrl
+If WCTL <> 0 & [M:MBW5]CTLCOD=2
+  WSTO = WCTL
+  WSIG = "+"
+  Gosub LOA_INI
+Endif
+
+If WTRF <> 0
+  WSTO = WTRF
+  WSIG = "+"
+  Gosub LOA_INI
+Endif
+
+If WALL <> 0
+  WSTO = WALL
+  WSIG = "-"
+  Gosub LOA_INI
+Endif
+
+If WRER <> 0
+  WSTO = WRER
+  WSIG = "-"
+  Gosub LOA_INI
+Endif
+
+If WWAI <> 0
+  WSTO = WWAI
+  WSIG = "-"
+  Gosub LOA_INI
+Endif
+
+# mm 04.07 demande 41102 Critere zone de filtres supplémentaires demande 41102
+# Point d'entrée pour permettre à l'utilisateur de rajouter des sélections
+Local    Char      CUSFLT(255) : Raz CUSFLT
+GPOINT = "CUSSELFLT" : Gosub ENTREE From EXEFNC
+If CUSFLT = "" : CUSFLT = "1=1" : Endif    # mm 04.07 demande 41102
+
+Filter [ORD2] Where STOFCY = WFCY     &
+&                   ITMREF = WITMREF  &
+&                   evalue(CUSFLT)
+&                   Order By Key ORD1
+
+WFIRAVADAT = [0/0/0]
+Raz WFIRAVAQTY        # FQ 56283 GA 07/2009
+
+# Issue 133705 - 2019-04-08 by STLIG : first availability date = today
+# (available stock >= requirement quantity)..
+If (WEXT2 >= WRETQTY)
+  WFIRAVADAT = date$
+Endif
+
+For [ORD2]
+    If [F:ORD2]WIPTYP = 1 & [F:ORD2]WIPSTA = 3 : Goto SPREV : Endif
+    # FQ 56283 GA 07/2009 ignorer les suggestions
+    If [M:MBW5]SUGCOD <>2 & [F:ORD2]WIPSTA = 3 : Goto SPREV : Endif
+
+    # Issue 133705 - 2019-04-02 by STLIG : ignore this work order's material requirement..
+    If ([F:ORD2]WIPTYP = 6 & [F:ORD2]ITMREF = WITMREF & [F:ORD2]VCRNUM = [M:MBW5]VCRNUM) : Goto SPREV : Endif
+
+# Issue 107498/9 - 2016-05-02 by ALSHE : add WIPTYP 14
+    If find ([F:ORD2]WIPTYP,1,3,4,6,8,14)
+        WSIG = "-"
+    Else
+        WSIG = "+"
+    Endif
+    # V6 qté affectée
+    WQTY = ([F:ORD2]RMNEXTQTY - [F:ORD2]ALLQTY - [F:ORD2]MTOQTY)
+
+    # Issue 133705 - 2019-04-08 by STLIG : accumulate stock + demand/supply
+    # first availability date = transaction end date
+    # (stock accumulation >= requirement quantity)..
+    Case WSIG
+      When "-" :  If (WEXT2 < WRETQTY)
+                    WEXT2 -= WQTY
+                  Endif
+                  If ([F:ORD2]ENDDAT <= WRETDAT)
+                    WEXT -= WQTY
+                  Endif
+      When "+" :  If (WEXT2 < WRETQTY)
+                    WEXT2 += WQTY
+                    If (WEXT2 >= WRETQTY)
+                      WFIRAVADAT = [F:ORD2]ENDDAT
+                    Endif
+                  Endif
+                  If ([F:ORD2]ENDDAT <= WRETDAT)
+                    WEXT += WQTY
+                  Endif
+    Endcase
+
+$SPREV
+Next
+
+# Issue 133705 - 2019-04-08 by STLIG : first availability date found set first availability quantity..
+If (WFIRAVADAT <> [0/0/0])
+  WFIRAVAQTY = WEXT2
+Endif
+
+Filter [ORD2]
+Return
+
+############################################################
+$LOA_INI
+Case WSIG
+    When "-": WEXT  -= WSTO
+              WEXT2 -= WSTO
+    When "+": WEXT  += WSTO
+              WEXT2 += WSTO
+Endcase
+Return
+###########################################################
+Subprog HAB_ACT(LFCY, LOPT, LRET)
+Value     Char     LFCY
+Value     Char     LOPT
+Variable  Integer  LRET
+
+LRET = 1
+# Ctrl autorisation bouton
+GBIDC2=LOPT : GFCY=LFCY : Gosub AUTORIS_OPT From CONTX3
+If !GBIDI2 : LRET = 0  : Endif
+
+End
+########################################################################
+# vérif encours
+$CHECK_WIP
+Call CHECK_WIP([M:MFGK]WIPTYP, [M:MFGK]ITMREF, [M:MFGK]WIPNUM, [M:MFGK]PRVQTY, C_QTY, WRET) From MFGLIB
+If !WRET : Return : Endif
+
+If [F:ITM]ITMREF  <> [M:MFGK]ITMREF
+    Read [ITM]ITM0=[M:MFGK]ITMREF
+    If fstat : Raz [F:ITM] : Endif
+Endif
+If find([M:MFGK]WIPTYP,2,5)
+    GMESSAGE  = mess(220,193,1)
+Else
+    GMESSAGE  = mess(222,193,1)
+Endif
+GMESSAGE -= "("+num$(C_QTY)-[F:ITM]STU+")"+"\"+mess(221,193,1)
+
+Return
+
+#########################################################################
+$CHARGE_MBW6
+# Issue X3-67758 - 2019-03-20 by STWIL : Increase the maximum number of days for the graph to 300.
+# Normally the number of days of the graph will be the end date of the criteria - todays date.
+# But if the number of days is less than or equal to zero then make it 1.
+Local Integer WROW
+WROW = ([M:MGD]MSTDAT - date$) + 1
+If WROW > 300
+    WROW = 300
+Endif
+If WROW <= 0
+    WROW = 1
+Endif
+Local Decimal WSTO(WROW)
+Local Decimal WMAX(WROW)
+Local Decimal WSAF(WROW)
+Local Decimal WDEM(WROW)
+Local Decimal WRES(WROW)
+Local Integer WFLG(WROW)
+Local Char    WABS(8)(WROW)
+Local Date    WABSDAT(WROW)
+Local Date    WDAT
+Local Integer I, J
+
+If [F:ITM]ITMREF <> [M:MGD]ITMREF
+    Read [ITM]ITM0=[M:MGD]ITMREF
+Endif
+If [F:ITF]ITMREF <> [M:MGD]ITMREF | [F:ITF]STOFCY <> [M:MGD]FCY
+# If [F:ITF]ITMREF <> [M:MGD]ITMREF : # GH 10/04/2015 bug 104152
+    Read [ITF]ITF0=[M:MGD]ITMREF;[M:MGD]FCY
+Endif
+
+# Constitution table labels abscisses
+WDAT = date$
+For I = 0 To WROW-1
+  If I = 0 | dayn(WDAT) = 1
+    WABS(I) = format$("D:"+GFMDAT,WDAT)
+    WABSDAT(I) = WDAT
+  Else
+    WABS(I) = " "
+  Endif
+  WDAT += 1
+Next I
+
+
+# Constitution table des valeurs
+Raz WFLG
+For I = 0 To [M:MGD]NBLIG-1
+  If [M:MGD]WIPTYPSTA(I) = "***" | [M:MGD]ENDDAT(I) <= date$
+    WSTO(0) = [M:MGD]EXTSTO(I)
+  Else
+    J = [M:MGD]ENDDAT(I) - date$
+    If J < WROW
+      If WFLG(J) = 0
+          WFLG(J) = 1
+          WSTO(J) = [M:MGD]EXTSTO(I)
+          If (func CBNLIB.ISDEM([M:MGD]WIPTYP(I)))
+             WDEM(J)+= [M:MGD]RMNEXTQTY(I)
+          Else
+             WRES(J)+= [M:MGD]RMNEXTQTY(I)
+          Endif
+      Else
+        If [M:MGD]EXTSTO(I) > WSTO(J)
+          WSTO(J) = [M:MGD]EXTSTO(I)
+          If (func CBNLIB.ISDEM([M:MGD]WIPTYP(I)))
+             WDEM(J)+= [M:MGD]RMNEXTQTY(I)
+          Else
+             WRES(J)+= [M:MGD]RMNEXTQTY(I)
+          Endif
+        Endif
+      Endif
+    Else
+      Break
+    Endif
+  Endif
+Next I
+For I = 0 To WROW-1
+  If  I > 0 & WFLG(I) = 0
+    WSTO(I) = WSTO(I-1)
+  Endif
+  WMAX(I) = int([F:ITF]MAXSTO)
+  WSAF(I) = int([F:ITF]SAFSTO)
+Next I
+
+Effzo [M:MBW6]
+For I = 0 To WROW-1
+  [M:MBW6]ITMREF(I) = [M:MGD]ITMREF
+  [M:MBW6]STOFCY(I) = [M:MGD]FCY
+  [M:MBW6]STU(I)    = [M:MGD]STU
+  [M:MBW6]WABSDAT(I) = WABS(I)
+  [M:MBW6]WABS(I) =    WABSDAT(I)
+  [M:MBW6]WSTO(I) = WSTO(I)
+  [M:MBW6]WMAX(I) = WMAX(I)
+  [M:MBW6]WSAF(I) = WSAF(I)
+  [M:MBW6]WDEM(I) = WDEM(I)
+  [M:MBW6]WRES(I) = WRES(I)
+Next I
+[M:MBW6]NBLIGC = WROW
+Return
+
+###########################################################################
+# récupération données document pour les plans
+$GET_DOCUMENT_DATA
+# GH 14/11/12 bug 85907 ajout des tests dim([M]UOM(nolign-1))>0
+
+Case [F:ORD]WIPTYP
+    When 1,8: # 1,9 : # GH 14/11/12 bug 85907
+                 Case [F:ORD]WIPSTA
+                   When 1, 2 :  Case [F:ORD]ABBFIL
+                                   When "SOQ":    If dim([M]NETPRI(nolign-1)) > 0 | dim([M]UOM(nolign-1)) > 0  : # GH 14/11/12 bug 85907
+                                                      Read [SOP]SOP0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                                                      If fstat : Raz [F:SOP] : Endif
+                                                  Endif
+                                                  If dim([M]UOM(nolign-1)) > 0
+                                                     [M]UOM(nolign-1)    = [F:SOP]SAU
+                                                  Endif
+                                                  If dim([M]NETPRI(nolign-1)) > 0 : # GH 19/09/12
+                                                     [M]NETPRI(nolign-1) = [F:SOP]NETPRI
+                                                  Endif
+                                                  If dim([M]CUR(nolign-1)) > 0
+                                                      Read [SOH]SOH0=[F:ORD]VCRNUM
+                                                      If fstat : Raz [F:SOH] : Endif
+                                                      [M]CUR(nolign-1) = [F:SOH]CUR
+                                                  Endif
+                                   When "SOC":    If dim([M]NETPRI(nolign-1)) > 0
+                                                      Read [SOQ]SOQ0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                                                      If !fstat
+                                                          Filter [SOP] Where SOHNUM=[F:ORD]VCRNUM & SOPLIN=[F:ORD]VCRLIN &
+&                                                                            ENDDAT>=[F:SOQ]DEMDLVDAT Order By Key SOP0
+                                                          Read [SOP] First
+                                                          If fstat : Raz [F:SOP] : Endif
+                                                          Filter [SOP]
+                                                          [M]NETPRI(nolign-1) = [F:SOP]NETPRI
+                                                      Endif
+                                                  Endif
+                                                  If dim([M]CUR(nolign-1)) > 0
+                                                      Read [SOH]SOH0=[F:ORD]VCRNUM
+                                                      If fstat : Raz [F:SOH] : Endif
+                                                      [M]CUR(nolign-1) = [F:SOH]CUR
+                                                  Endif
+                                                  # récupération unité document
+                                                  If dim([M]UOM(nolign-1)) > 0
+                                                      Read [SOC]SOC0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+                                                      If fstat : Raz [F:SOC] : Endif
+                                                      [M]UOM(nolign-1) = [F:SOC]SAU
+                                                  Endif
+                               Endcase
+                   # GH 21/05/2013 bug 89214 SOP géré comme SOF
+                   #When 2:    If dim([M]NETPRI(nolign-1)) > 0
+                   #              Read [SOQ]SOQ0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                   #              If !fstat
+                   #                    Filter [SOP] Where SOHNUM=[F:ORD]VCRNUM & SOPLIN=[F:ORD]VCRLIN &
+                   #                    &                  ENDDAT>=[F:SOQ]DEMDLVDAT Order By Key SOP0
+                   #                    Read [SOP] First
+                   #                    If fstat : Raz [F:SOP] : Endif
+                   #                    Filter [SOP]
+                   #                    [M]NETPRI(nolign-1) = [F:SOP]NETPRI
+                   #               Endif
+                   #            Endif
+                   #            If dim([M]CUR(nolign-1)) > 0
+                   #                Read [SOH]SOH0=[F:ORD]VCRNUM
+                   #               If fstat : Raz [F:SOH] : Endif
+                   #                [M]CUR(nolign-1) = [F:SOH]CUR
+                   #            Endif
+                   #            # récupération unité document
+                   #            If dim([M]UOM(nolign-1)) > 0
+                   #                Read [SOC]SOC0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+                   #                If fstat : Raz [F:SOC] : Endif
+                   #                [M]UOM(nolign-1) = [F:SOC]SAU
+                   #            Endif
+               Endcase
+               If find([F:ORD]FMI,3,5,6) & WIPTYP=1 : # If find([F:ORD]FMI,3,5,6) : # GH 14/11/12 bug 85907
+                  If [F:SOQ]SOHNUM <> [F:ORD]VCRNUM | [F:SOQ]SOPLIN <> [F:ORD]VCRLIN | [F:SOQ]SOQSEQ <> [F:ORD]VCRSEQ
+                     Read [SOQ]SOQ0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                  Else
+                     fstat=0 : # GH 10/05/12 bug 81822
+                  Endif
+                  If !fstat
+                     [M]VCRNUMORI(nolign-1) = [F:SOQ]FMINUM
+                     [M]VCRLINORI(nolign-1) = [F:SOQ]FMILIN
+                     [M]VCRSEQORI(nolign-1) = [F:SOQ]FMISEQ
+                  Endif
+               Endif
+
+    When 2,7:  Case [F:ORD]WIPSTA
+                   When 1:     Case [F:ORD]ABBFIL
+                                   When "POQ":    If dim([M]NETPRI(nolign-1)) > 0
+                                                      Read [POP]POP0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                                                      If fstat : Raz [F:POP] : Endif
+                                                      [M]NETPRI(nolign-1) = [F:POP]NETPRI
+                                                  Endif
+                                                  If dim([M]CUR(nolign-1)) > 0
+                                                      Read [POH]POH0=[F:ORD]VCRNUM
+                                                      If fstat : Raz [F:POH] : Endif
+                                                      [M]CUR(nolign-1) = [F:POH]CUR
+                                                  Endif
+                                                  # récupération unité document
+                                                  If dim([M]UOM(nolign-1)) > 0
+                                                      Read [POQ]POQ0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                                                      If fstat : Raz [F:POQ] : Endif
+                                                      [M]UOM(nolign-1) = [F:POQ]UOM
+                                                  Endif
+                                   When "POC":    If dim([M]NETPRI(nolign-1)) > 0
+                                                      Read [POQ]POQ0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                                                      If !fstat
+                                                          Filter [POP] Where POHNUM=[F:ORD]VCRNUM & POPLIN=[F:ORD]VCRLIN &
+&                                                                            POPDAT>=[F:POQ]DEMRCPDAT Order By Key POP1
+                                                          Read [POP] First
+                                                          If fstat : Raz [F:POP] : Endif
+                                                          Filter [POP]
+                                                          [M]NETPRI(nolign-1) = [F:POP]NETPRI
+                                                      Endif
+                                                  Endif
+                                                  If dim([M]CUR(nolign-1)) > 0
+                                                      Read [POH]POH0=[F:ORD]VCRNUM
+                                                      If fstat : Raz [F:POH] : Endif
+                                                      [M]CUR(nolign-1) = [F:POH]CUR
+                                                  Endif
+                                                  # récupération unité document
+                                                  If dim([M]UOM(nolign-1)) > 0
+                                                      Read [POC]POC0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+                                                      If fstat : Raz [F:POC] : Endif
+                                                      [M]UOM(nolign-1) = [F:POC]PUU
+                                                  Endif
+                               Endcase
+                   When 2:     Case [F:ORD]ABBFIL
+                                   When "PSD":    If dim([M]NETPRI(nolign-1)) > 0 | dim([M]CUR(nolign-1)) >0 | dim([M]UOM(nolign-1)) > 0 : # GH 14/11/12 bug 85907
+                                                      Read [PSD]PSD0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+                                                      If fstat : Raz [F:PSD] : Endif
+                                                  Endif
+                                                  If dim([M]NETPRI(nolign-1)) > 0
+                                                      [M]NETPRI(nolign-1) = [F:PSD]NETPRI
+                                                  Endif
+                                                  If dim([M]CUR(nolign-1)) > 0
+                                                      [M]CUR(nolign-1) = [F:PSD]CUR
+                                                  Endif
+                                                  If dim([M]UOM(nolign-1)) > 0
+                                                      [M]UOM(nolign-1) = [F:PSD]PUU
+                                                  Endif
+                                   When "POC":    If dim([M]NETPRI(nolign-1)) > 0
+                                                      Read [POQ]POQ0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                                                      If !fstat
+                                                          Filter [POP] Where POHNUM=[F:ORD]VCRNUM & POPLIN=[F:ORD]VCRLIN &
+&                                                                            POPDAT>=[F:POQ]DEMRCPDAT Order By Key POP1
+                                                          Read [POP] First
+                                                          If fstat : Raz [F:POP] : Endif
+                                                          Filter [POP]
+                                                          [M]NETPRI(nolign-1) = [F:POP]NETPRI
+                                                      Endif
+                                                  Endif
+                                                  If dim([M]CUR(nolign-1)) > 0
+                                                      Read [POH]POH0=[F:ORD]VCRNUM
+                                                      If fstat : Raz [F:POH] : Endif
+                                                      [M]CUR(nolign-1) = [F:POH]CUR
+                                                  Endif
+                                                  # récupération unité document
+                                                  If dim([M]UOM(nolign-1)) > 0
+                                                      Read [POC]POC0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+                                                      If fstat : Raz [F:POC] : Endif
+                                                      [M]UOM(nolign-1) = [F:POC]PUU
+                                                  Endif
+
+                                   Endcase
+               Endcase
+
+    # Issue 74281 - 2011-07-11 by CCC : Alimentation de l'unité de document pour les services de sous-traitance
+    When 4:    Case [F:ORD]VCRTYP
+                  When 10 :  If dim([M]UOM(nolign-1)) > 0
+                                 If !clalev([F:MFO]) : Local File MFGOPE [MFO] : Endif
+                                 Filter [MFO] Where MFGNUM=[F:ORD]VCRNUM & SCOITMREF=[F:ORD]ITMREF
+                                 Read [MFO] First
+                                 Filter [MFO]
+                                 If fstat : Raz [F:MFO] : Endif
+                                 [M]UOM(nolign-1) = [F:MFO]OPEUOM
+                             Endif
+                  When 36 :  If dim([M]UOM(nolign-1)) > 0
+                                 If !clalev([F:SCS]) : Local File SCOSRV [SCS] : Endif
+                                 If [F:SCS]SCONUM<>[F:ORD]VCRNUM
+                                   Read [SCS]SCS0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+                                   If fstat : Raz [F:SCS] : Endif
+                                 Endif
+                                 [M]UOM(nolign-1) = [F:SCS]SCOPUU
+                             Endif
+               Endcase
+
+    When 5,9:  # When 5 # GH 14/11/12 bug 85907
+               If dim([M]UOM(nolign-1)) > 0
+                   If !clalev([F:MFI]) : Local File MFGITM [MFI] : Endif
+                   Read [MFI]MFI0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+                   If fstat : Raz [F:MFI] : Endif
+                   [M]UOM(nolign-1) = [F:MFI]UOM
+               Endif
+
+    When 13:   If dim([M]UOM(nolign-1)) > 0
+                   If !clalev([F:SCI]) : Local File SCOITM [SCI] : Endif
+                   Read [SCI]SCI0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+                   If fstat : Raz [F:SCI] : Endif
+                   [M]UOM(nolign-1) = [F:SCI]PUU
+               Endif
+
+Endcase
+Return
+
+
+###########################################################################
+# chargement tableau plan de travail et plan d'affectation
+$LOAD_MGD_MLB
+Local Integer ISINTERCPY
+Local Decimal WSHIQTYSTU                                   # Issue 108577 - by GA 07/2015
+Local Char PROJECT(40)
+Local Char BUDGET(15)
+Local Char TASK(15)
+Local Integer RETSTA
+
+nolign = 1
+
+For [ORD]
+    If nolign = GBMAX : Break : Endif
+
+    # on ignore les prévisions de conso (SOS) dans l'horizon de la demande
+    If [F:BTS]HORDEM = 2 & [F:ORD]WIPTYP = 1 & [F:ORD]WIPSTA = 3
+        If [M]FOH <> 0 & [F:ORD]ENDDAT <= [M]FOHDAT
+            Goto NXT_ORD
+        Elsif  [F:ORD]ENDDAT <= date$
+            Goto NXT_ORD
+        Endif
+    Endif
+
+    # on ignore les prévisions de conso (SOS) échues
+    If [M]SOSCOD = 2 & [F:ORD]WIPTYP = 1 & [F:ORD]WIPSTA = 3 & [F:ORD]ENDDAT < date$
+    # If [M]SOSCOD = 2 & [F:ORD]WIPTYP = 1 & [F:ORD]WIPSTA = 3 & [F:ORD]ENDDAT <= date$ : # GH 27/01/2015 bug 105739
+        Goto NXT_ORD
+    Endif
+
+    # filtre origine des suggestions CBN/PDP
+    If [F:ORD]WIPTYP <> 1 & [F:ORD]WIPSTA = 3
+        If [M]MRPFLG = 1 & [F:ORD]ORI <> 5 : Goto NXT_ORD : Endif
+        If [M]MRPFLG = 2 & [F:ORD]ORI <> 6 : Goto NXT_ORD : Endif
+    Endif
+
+    # point d'entrée permettant de sauter des enregistrements de la sélection (09.04 24686)
+    GPE=0
+    GPOINT = "CHECKORD" : Gosub ENTREE From EXEFNC
+    If GPE : Goto NXT_ORD : Endif
+
+    # prise en compte du % de perte dans l'affichage du stock projeté
+    If [F:ORD]WIPTYP = 5 & find([F:ORD]WIPSTA,1,2,3) & [M]SHRFLG = 2 & [F:ITF]SHR > 0
+       If [F:TUN]UOM <>[F:ITM]STU
+            Read [TUN]TUN0= [F:ITM]STU
+            If fstat : Raz [F:TUN] : Endif
+       Endif
+       [F:ORD]EXTQTY    = arr(([F:ORD]EXTQTY*100)/(100+[F:ITF]SHR),10^-[F:TUN]UOMDEC)
+       [F:ORD]RMNEXTQTY = arr(([F:ORD]RMNEXTQTY*100)/(100+[F:ITF]SHR),10^-[F:TUN]UOMDEC)
+    Endif
+
+    [M] = [F:ORD]
+
+    [M]WIPTYPSTA(nolign-1)  = mess([F:ORD]WIPTYP,341,1)+mess([F:ORD]WIPSTA,342,1)
+
+    If find([F:ORD]WIPTYP,5,6,9) & find([F:ORD]WIPSTA,1,2) & GMODU(8) = 2
+        Read [MFG]MFG0=[F:ORD]VCRNUM
+        If fstat : Raz [F:MFG]
+        Else
+            If [F:ORD]WIPTYP = 5
+                If [F:MFG]OBJDAT <> [0/0/0]
+                    [M]OBJDAT(nolign-1) = [F:MFG]OBJDAT
+                    [M]ELFLG(nolign-1)  = [F:MFG]OBJDAT - [F:ORD]ENDDAT
+                Else
+                    [M]OBJDAT(nolign-1) = [F:ORD]ENDDAT
+                    [M]ELFLG(nolign-1)  = 0
+                Endif
+                If dim([M]MFGDES(nolign-1)) > 0
+                    Read [MFI]MFI0=[F:ORD]VCRNUM;[F:ORD]VCRLIN
+                    If fstat : Raz [F:MFI]
+                    Else
+                        [M]MFGDES(nolign-1) = [F:MFI]MFGDES
+                    Endif
+                Endif
+            Endif
+            If [F:MFG]MFGSTA = 1 & [F:MFG]MFGTRKFLG = 4 : [M]WIPTYPSTA(nolign-1) += ">" : Endif
+        Endif
+    Endif
+
+    ISINTERCPY = 0
+   # FQ 63497 GA 06/2010 tenir compte des SOx intersite
+    If [F:ORD]WIPTYP = 1 & GMODU(5) = 2
+        If [F:ORD]BPRNUM <> ""
+            Read [BPR]BPR0=[F:ORD]BPRNUM
+            If fstat : Raz [F:BPR] : Endif
+
+            # Inter-société ?
+            If [F:BPR]FCY <> ""
+                ISINTERCPY = func BENCHLIBP.ISINTERCPY([F:BPR]FCY, [F:ORD]STOFCY)
+            Endif
+
+            # si on ne veut pas les SO inter-sociétés
+            If ISINTERCPY
+                If [F:BTS]ICPYFLG = 3 : Goto NXT_ORD : Endif
+                If ISINTERCPY : [M]WIPTYPSTA(nolign-1) +=  chr$(126) : Endif
+            Endif
+        Endif
+        # si on ne veut que les SO inter-sociétés
+        If !ISINTERCPY & [F:BTS]ICPYFLG = 2 : Goto NXT_ORD : Endif
+
+        # en cours
+        If [F:ORD]WIPSTA = 1
+            Read [SOH]SOH0=[F:ORD]VCRNUM
+            If fstat : Raz [F:SOH] : Endif
+            If dim([F:SOH]DLVSTA)>0 & [F:SOH]DLVSTA > 1 : [M]WIPTYPSTA(nolign-1) += ">" : Endif
+        Endif
+    Endif
+    If [F:ORD]WIPTYP = 2 & GMODU(6) = 2
+        If [F:ORD]BPRNUM <> ""
+            If [F:BPR]BPRNUM <> [F:ORD]BPRNUM
+                Read [BPR]BPR0=[F:ORD]BPRNUM
+                If fstat : Raz [F:BPR] : Endif
+            Endif
+
+            # Inter-société ?
+            If [F:BPR]FCY <> ""
+                ISINTERCPY = func BENCHLIBP.ISINTERCPY([F:BPR]FCY, [F:ORD]STOFCY)
+            Endif
+
+            # si on ne veut pas les PO inter-sociétés
+            If ISINTERCPY
+                If [F:BTS]ICPYFLG = 3 : Goto NXT_ORD : Endif
+                If ISINTERCPY : [M]WIPTYPSTA(nolign-1) +=  chr$(126) : Endif
+            Endif
+        Endif
+        # si on ne veut que les PO inter-sociétés
+        If !ISINTERCPY & [F:BTS]ICPYFLG = 2 : Goto NXT_ORD : Endif
+    Endif
+
+    # on somme les quantités liées aux SOS
+    If  dim([L]WQSOS)=1 & [F:BTS]HORDEM = 2 & [M]WIPTYP(nolign-1) =1 & [M]WIPSTA(nolign-1) =3
+        WQSOS += [F:ORD]RMNEXTQTY
+    Endif
+
+    If [F:ORD]WIPTYP = 13 & find([F:ORD]WIPSTA,1,2) & GMODU(6) = 2
+        Read [SCO]SCO0=[F:ORD]VCRNUM
+        If fstat : Raz [F:SCO]
+        Else
+            If [F:SCO]SCOSTA = 1 & [F:SCO]SCOTRKFLG = 4 : [M]WIPTYPSTA(nolign-1) += ">" : Endif
+            If dim([M]MFGDES(nolign-1)) > 0
+             [M]MFGDES(nolign-1) = [F:SCO]SCODES : # GH 09/01/2012 bug 78926
+            Endif
+        Endif
+    Endif
+
+    # Shipped and/or partially receipt ?
+    Raz WSHIQTYSTU                                 # Issue 108577 - by GA 07/2015
+    If find([F:ORD]WIPTYP,2,7) & GMODU(6) = 2 & [F:ORD]ABBFIL = "POQ" & [F:ORD]WIPSTA = 1
+        Read [POH]POH0=[F:ORD]VCRNUM
+        If fstat : Raz [F:POH] : Endif
+      # Issue 108577 - by GA 07/2015: Shipment in Planning workbench
+        Read [POQ]POQ0=[F:ORD]VCRNUM;[F:ORD]VCRLIN;[F:ORD]VCRSEQ
+        If fstat : Raz [F:POQ] : Endif
+        WSHIQTYSTU=[F:POQ]SHIQTYSTU
+        If WSHIQTYSTU>0
+           [M]WIPTYPSTA(nolign-1) += "<"
+           If dim([M]SHIQTYSTU(nolign-1))>0 [M]SHIQTYSTU(nolign-1)=WSHIQTYSTU Endif
+        Endif
+        If [F:POH]RCPFLG = 2 : [M]WIPTYPSTA(nolign-1) += ">" : Endif
+    Endif
+
+    If [F:ITF]ITMREF <> [M]ITMREF | [F:ITF]STOFCY <> [M]FCY
+        Read [ITF]ITF0=[M]ITMREF;[M]FCY
+        If fstat : Raz [F:ITF] : Endif
+    Endif
+    [M]PLANNER2(nolign-1) = [F:ITF]PLANNER
+    [M]BUY(nolign-1)      = [F:ITF]BUY
+    If dim([M]XMRPMES(nolign-1)) > 0
+        If [M]MRPMES(nolign-1) > 0
+            [M]XMRPMES(nolign-1) = mess([M]MRPMES(nolign-1),318,1)
+        Else
+            [M]XMRPMES(nolign-1) = mess(1,318,1)
+        Endif
+        If ([M]WIPTYP(nolign-1) = 1) & ([M]WIPSTA(nolign-1) = 1) & ([M]ENDDAT(nolign-1) < date$)
+            [M]XMRPMES(nolign-1) = mess(60,190,1)
+        Endif
+    Endif
+
+    If (func CBNLIB.ISDEM([M]WIPTYP(nolign-1)))
+        [M]SIG(nolign-1) = "-"
+    Else
+        [M]SIG(nolign-1) = "+"
+    Endif
+
+    # récupération données supplémentaires sur document
+    Gosub GET_DOCUMENT_DATA From BENCHLIB
+
+    # Issue 110957 - 2015-10-07 by GH
+    If dim([M]CRID)>0 & varmode([M]CRID(nolign-1))<>3
+       If dim([M]IECCVALMAJ)<0 | ([F:ORD]ECCVALMAJ=[M]IECCVALMAJ & [F:ORD]ECCVALMIN=[M]IECCVALMIN)
+          [M]CRID(nolign-1) = [M]ICRID
+       Else
+          [M]CRID(nolign-1) = func TRTX3FNC.CCMID([F:ORD]ITMREF,[F:ORD]ECCVALMAJ,[F:ORD]ECCVALMIN)
+       Endif
+       If dim([M]CRFLG)>0
+          [M]CRFLG(nolign-1) = string$([M]CRID(nolign-1)<>"","151")
+       Endif
+    Endif
+
+    # mémorisation code objet (pour action tunnel)
+    Case [M]WIPTYP(nolign-1)
+        When 1:         Case [M]WIPSTA(nolign-1)
+                            When 1, 2 : Case [M]ABBFIL(nolign-1)
+                                         When "SOQ" : [M]CODOBJ(nolign-1)  = "SOH"
+                                                      [M]CODCLE(nolign-1)  = [M]VCRNUM(nolign-1)
+                                                      [M]CODCLE2(nolign-1) = num$([M]VCRLIN(nolign-1))
+                                         When "SOC" : [M]CODOBJ(nolign-1)  = "SOQ"
+                                                      [M]CODCLE(nolign-1)  = num$([M]VCRLIN(nolign-1))
+                                                      [M]CODCLE2(nolign-1) = [M]VCRNUM(nolign-1)
+                                        Endcase
+                            # GH 21/05/2013 bug 89214 SOP géré comme SOF
+                            # When 2 : Case [M]ABBFIL(nolign-1)
+                            #             When "SOC" : [M]CODOBJ(nolign-1)  = "SOQ"
+                            #                          [M]CODCLE(nolign-1)  = num$([M]VCRLIN(nolign-1))
+                            #                          [M]CODCLE2(nolign-1) = [M]VCRNUM(nolign-1)
+                            #         Endcase
+                        Endcase
+
+        When 2,7:       Case [M]WIPSTA(nolign-1)
+                            When 1 : Case [M]ABBFIL(nolign-1)
+                                         When "POQ" : [M]CODOBJ(nolign-1) = "POH"
+                                                      [M]CODCLE(nolign-1) = [M]VCRNUM(nolign-1)
+                                                      [M]CODCLE2(nolign-1)= num$([M]VCRLIN(nolign-1))
+                                         When "POC" : [M]CODOBJ(nolign-1) = "POD"
+                                                      [M]CODCLE(nolign-1) = num$([M]VCRLIN(nolign-1))
+                                                      [M]CODCLE2(nolign-1)= [M]VCRNUM(nolign-1)
+                                     Endcase
+                            When 2 : Case [M]ABBFIL(nolign-1)
+                                         When "PSD" : [M]CODOBJ(nolign-1) = "PSH"
+                                                      [M]CODCLE(nolign-1) = [M]VCRNUM(nolign-1)
+                                                      [M]CODCLE2(nolign-1)= num$([M]VCRLIN(nolign-1))
+                                         When "POC" : [M]CODOBJ(nolign-1) = "POD"
+                                                      [M]CODCLE(nolign-1) = num$([M]VCRLIN(nolign-1))
+                                                      [M]CODCLE2(nolign-1)= [M]VCRNUM(nolign-1)
+                                     Endcase
+                        Endcase
+        When 5,6,9:     [M]CODOBJ(nolign-1) = "MFG"
+                        [M]CODCLE(nolign-1)  = [M]VCRNUM(nolign-1)
+                        [M]CODCLE2(nolign-1) = num$([M]VCRLIN(nolign-1))
+        When 4:       If find([M]WIPSTA(nolign-1),1,2)
+                          Case [M]ABBFIL(nolign-1)
+                                         When "MFO" : [M]CODOBJ(nolign-1) = "MFG"
+                                                      [M]CODCLE(nolign-1)  = [M]VCRNUM(nolign-1)
+                                                      [M]CODCLE2(nolign-1) = num$([M]VCRLIN(nolign-1))
+                                         When "SCS" : [M]CODOBJ(nolign-1) = "SCO"
+                                                      [M]CODCLE(nolign-1) = [M]VCRNUM(nolign-1)
+                                                      [M]CODCLE2(nolign-1)  = num$([M]VCRLIN(nolign-1))
+                          Endcase
+                      Endif
+        When 3,13:    [M]CODOBJ(nolign-1) = "SCO"
+                      [M]CODCLE(nolign-1) = [M]VCRNUM(nolign-1)
+                      [M]CODCLE2(nolign-1)  = num$([M]VCRLIN(nolign-1))
+        # Issue 107498/101 - 2016-05-02 by ALSHE : Action menue
+        When 14:      RETSTA = func PIMPL_CSTD_PROGS.PJM_KEY_SPLIT(GACTX, [M]PJT(nolign-1), PROJECT, BUDGET, TASK)
+                      [M]CODOBJ(nolign-1) = "PJM"
+                      [M]CODCLE(nolign-1) = PROJECT
+                      [M]CODCLE2(nolign-1)= num$([M]VCRNUM(nolign-1))
+    Endcase
+
+    # analyse date besoin
+    If find([F:ORD]WIPTYP,2,5,7,13) & find ([F:ORD]WIPSTA,1,2)    # POP,POF,WOP,WOF,TRP,TRF,EOP,EOF
+        If find([F:ITF]REOMGTCOD,2,3)    # réappro PDP/CBN
+            Read [TRP]TRP0=[F:ITF]REOPOL
+            If fstat : Raz [F:TRP]
+            Else
+                If [F:TRP]PLNANYCOD = 2 & [F:ITF]REOCOD <> 1    # replanification + type suggestion<>pas de suggestion
+                    Read [PCB]PCB0=[F:ORD]STOFCY
+                    If fstat : Raz [F:PCB]
+                    Else
+                        Case [F:ORD]WIPTYP
+                            When 5 :    # WO
+                                        Case [F:ORD]WIPSTA
+                                            When 1 :
+                                                Case [F:ITF]REOMGTCOD
+                                                When 2 :  # CBN
+                                                          If [F:PCB]RPLMOD(0) = 3 & [F:PCB]MRPANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                When 3 :  # PDP
+                                                          If [F:PCB]RPLMODS(0) = 3 & [F:PCB]MPSANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                Endcase
+                                            When 2 :
+                                                Case [F:ITF]REOMGTCOD
+                                                When 2 :  # CBN
+                                                          If [F:PCB]RPLMOD(1) = 3  & [F:PCB]MRPANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                When 3 :  # PDP
+                                                          If [F:PCB]RPLMODS(1) = 3 & [F:PCB]MPSANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                Endcase
+                                        Endcase
+                            When 2 :    # PO
+                                        Case [F:ORD]WIPSTA
+                                            When 1 :
+                                                Case [F:ITF]REOMGTCOD
+                                                When 2 :  # CBN
+                                                          If [F:PCB]RPLMOD(2) = 3  & [F:PCB]MRPANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                When 3 :  # PDP
+                                                          If [F:PCB]RPLMODS(2) = 3 & [F:PCB]MPSANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                Endcase
+                                            When 2 :
+                                                Case [F:ITF]REOMGTCOD
+                                                When 2 :  # CBN
+                                                          If [F:PCB]RPLMOD(3) = 3 & [F:PCB]MRPANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                When 3 :  # PDP
+                                                          If [F:PCB]RPLMODS(3) = 3 & [F:PCB]MPSANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                Endcase
+                                        Endcase
+                            When 7 :    # TR
+                                        Case [F:ORD]WIPSTA
+                                            When 1 :
+                                                Case [F:ITF]REOMGTCOD
+                                                When 2 :  # CBN
+                                                          If [F:PCB]RPLMOD(4) = 3 & [F:PCB]MRPANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                When 3 :  # PDP
+                                                          If [F:PCB]RPLMODS(4) = 3 & [F:PCB]MPSANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                Endcase
+                                            When 2 :
+                                                Case [F:ITF]REOMGTCOD
+                                                When 2 :  # CBN
+                                                          If [F:PCB]RPLMOD(5) = 3 & [F:PCB]MRPANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                When 3 :  # PDP
+                                                          If [F:PCB]RPLMODS(5) = 3 & [F:PCB]MPSANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                Endcase
+                                        Endcase
+                            When 13:    # EO
+                                        Case [F:ORD]WIPSTA
+                                            When 1 :
+                                                Case [F:ITF]REOMGTCOD
+                                                When 2 :  # CBN
+                                                          If [F:PCB]RPLMOD(6) = 3 & [F:PCB]MRPANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                When 3 :  # PDP
+                                                          If [F:PCB]RPLMODS(6) = 3 & [F:PCB]MPSANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                Endcase
+                                            When 2 :
+                                                Case [F:ITF]REOMGTCOD
+                                                When 2 :  # CBN
+                                                          If [F:PCB]RPLMOD(7) = 3  & [F:PCB]MRPANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                When 3 :  # PDP
+                                                          If [F:PCB]RPLMODS(7) = 3 & [F:PCB]MPSANYLTI <> 0
+                                                              [M]REQDAT(nolign-1) = [M]MRPDAT(nolign-1)
+                                                          Endif
+                                                Endcase
+                                        Endcase
+                        Endcase
+                    Endif
+                Endif
+            Endif
+        Endif
+    Endif
+    If [M]REQDAT(nolign-1) = [0/0/0] : [M]REQDAT(nolign-1) = [M]ENDDAT(nolign-1) : Endif
+
+    # point d'entrée permettant de renseigner des zones spécifiques
+    GPOINT = "ADDLIN" : Gosub ENTREE From EXEFNC
+
+    nolign += 1
+$NXT_ORD
+Next
+
+[M]NBLIG  = nolign-1
+Return
+
+###########################################################################
+$LOAD_EXTQTY
+Local Integer I
+Local Char    WFCY(GLONFCY)
+Local Decimal WQTY
+Local Decimal WEXT
+Local Integer WRET
+Local Decimal WTRF, WTRFCAL
+
+WEXT   = 0
+#nolign = 1 : # GH 25/07/2013 bug 91371
+
+Call LECITV2([M]FCY, [M]ITMREF, WRET) From MFGLIB
+If WRET <> 0 : Return : Endif
+
+# Révision calcul du stock de départ
+WEXT += [F:ITV]PHYSTO
+WEXT += [F:ITV]PLFPHYSTO
+WEXT -= [F:ITV]PHYALL
+WEXT -= [F:ITV]GLOALL
+WEXT += [F:ITV]SCOPHYSTO
+WEXT -= [F:ITV]SCOPHYALL
+
+WFCY    = [M]FCY
+WITMREF = [M]ITMREF
+WTRF    = [F:ITV]TRFSTO
+Gosub TRT_TRANSIT From CNSSPRSTD
+WEXT += WTRFCAL
+
+If [M]CTLCOD = 2
+    WEXT += [F:ITV]CTLSTO
+    WEXT += [F:ITV]PLFCTLSTO
+    WEXT += [F:ITV]SCOCTLSTO
+    WEXT -= [F:ITV]CTLALL
+    WEXT -= [F:ITV]SCOCTLALL
+Endif
+If [M]WAICOD <> 2
+    WEXT -= [F:ITV]WAISTO
+Endif
+If dim(GSTODISSCO) > 0 & GSTODISSCO = 1
+    WEXT -= [F:ITV]SCOPHYSTO
+    WEXT += [F:ITV]SCOPHYALL
+    If [M]CTLCOD = 2
+        WEXT -= [F:ITV]SCOCTLSTO
+        WEXT += [F:ITV]SCOCTLALL
+    Endif
+Endif
+
+# PE pour prendre la main sur le stock de départ
+GPOINT = "STRSTO"
+Gosub ENTREE From EXEFNC
+
+# Suppression des SOS dont qté = 0
+For I = [M]NBLIG - 1 To 0 Step -1
+   If [M]RMNEXTQTY(I) = 0
+      Dela I,1 [M]NBLIG
+      [M]NBLIG -=1
+   Endif
+Next I
+
+# mise à jour du stock prévisionnel
+For I = 0 To [M]NBLIG-1
+    If (func CBNLIB.ISDEM([M]WIPTYP(I)))
+        [M]SIG(I) = "-"
+    Else
+        [M]SIG(I) = "+"
+    Endif
+    #WQTY = ([M]RMNEXTQTY(I) - [M]ALLQTY(I)) : # GH 25/10/12 bug 85481
+    WQTY = max(0,[M]RMNEXTQTY(I) - [M]ALLQTY(I) - [M]MTOQTY(I))
+
+    Case [M]SIG(I)
+        When "-": WEXT -= WQTY
+        When "+": WEXT += WQTY
+    Endcase
+
+    [M]EXTSTO(I) = WEXT
+Next I
+
+Return
+
+########################################################################
+# Solde horizon demande                                                #
+########################################################################
+$DISPLAY_MRP
+Local Char       WPAR(10)
+Local Integer    I, J
+Local Integer    WLIG, WLIGDEB , WLIGFIN
+Local Date       WDAT
+Local Integer    WDEMBUC1, WDEMBUC2
+Local Date       WCALDATD, WCALDATF
+Local Integer    WSEM, WNBJOU
+Local Integer    WCOR
+Local Integer    WCOD
+Local Decimal    WDEL
+Local Decimal    WDMYI
+Local Date       WDMYD
+Local Integer    WDEMBUC          # Bucket demande
+Local Decimal    WQSOP            # Quantité ordres planifiés
+Local Decimal    WQSOF            # Quantité ordres fermes
+Local Decimal    WQSOS            # Quantité ordres prévisions
+Local Decimal    WQRST            # Quantité de régularisation SOS
+
+If [M]FOH<>0
+    WCALDATD = [M]FOHDAT
+Else
+    WCALDATD = date$
+Endif
+
+# recherche date fin traitement : on recherche la date de la SOF/SOP la + éloignée dans le temps
+For I=0 To [M]NBLIG-1
+    If [M]WIPTYP(I) =1 & find([M]WIPSTA(I),1,2) & [M]ENDDAT(I)>= WCALDATD & [M]ENDDAT(I) > WCALDATF
+            WCALDATF = [M]ENDDAT(I)
+            WLIG = I
+            WLIGFIN = I
+    Endif
+Next I
+
+# Y a-t-il une SOS associée à la SOF/SOP ?
+For I=WLIG+1 To [M]NBLIG-1
+    If [M]WIPTYP(I) =1 & [M]WIPSTA(I) =3
+        # l'unité de regroupement est la semaine : on recherche si
+        # les 2 dates appartiennent à la même semaine
+        WDEMBUC1 =  (year([M]ENDDAT(I))*100)+week([M]ENDDAT(I))
+        WDEMBUC2 =  (year(WCALDATF)*100)+week(WCALDATF)
+        If WDEMBUC1 = WDEMBUC2 & [M]STRDAT(I)<= WCALDATF & [M]ENDDAT(I)> WCALDATF
+            WCALDATF = [M]ENDDAT(I)
+            WLIGFIN = I
+        Endif
+    Endif
+Next I
+# Si on n'a pas trouvé de date de fin, c'est qu'il n'y a pas de SOF/SOP dans les enregistrements sélectionnés
+If WCALDATF = [0/0/0] : Return : Endif
+
+# Recherche du n° de ligne de l'enregistrement dont la date de fin est la plus proche de WCALDATD
+
+## GH 29/11/12 bug 86243
+#I=0
+#While [M]ENDDAT(I)<= WCALDATD
+#    WLIGDEB = I
+#    I += 1
+#Wend
+For I=0 To [M]NBLIG-1
+    If [M]ENDDAT(I) > WCALDATD : Break : Endif
+    WLIGDEB = I
+Next I
+
+WNBJOU = (WCALDATF-WCALDATD)+1
+Call PARAM([M]FCY,"FIRWRKDAY",WPAR) From ADOVAL
+If val(WPAR) < 1 | val(WPAR) > 7
+    WSEM = 1
+Else
+    WSEM = val(WPAR)
+Endif
+If WSEM = 1
+    WCOR = 7
+Else
+    WCOR = WSEM-1
+Endif
+WCOD = 1
+WDEL = WNBJOU
+# calcul date fin horizon demande arrondi fin semaine
+Call CALDAT("+",WCOR,WCALDATD,WCOD,WDEL,WDMYI,WDMYD,WCALDATF) From CBNLIB
+
+# Recherche du n° de ligne de l'enregistrement dont la date de fin est la plus proche de WCALDATF
+## GH 29/11/12 bug 86243
+#I = WLIGFIN
+#While [M]ENDDAT(I)<= WCALDATF
+#     WLIGFIN = I
+#     I += 1
+#Wend
+For I=WLIGFIN To [M]NBLIG-1
+    If [M]ENDDAT(I) > WCALDATF : Break : Endif
+    WLIGFIN = I
+Next I
+
+# chargement de la zone contenant le numéro de semaine
+For I = 0 To [M]NBLIG-1
+    If [M]WIPTYP(I)=1
+        If [M]ENDDAT(I)< WCALDATD
+            WDAT = WCALDATD
+        Else
+            WDAT = [M]ENDDAT(I)
+        Endif
+        [M]DEMBUC(I) = (year(WDAT)*100)+week(WDAT)
+    Endif
+Next I
+
+Gosub COR_SOS
+Return
+
+###########################################################################
+# Correction des prévisions par des déductions des ordre planifiés et ferme
+# dans l'horizon de la demande
+$COR_SOS
+Raz  WQSOP, WQSOF, WQSOS, WDEMBUC
+
+For I = WLIGDEB To  WLIGFIN+1
+    # GH 10/07/15 bug 107237
+    # If [M]WIPTYP(I)=1 &  [M]ENDDAT(I)>=WCALDATD
+    #     If WDEMBUC <> 0 & WDEMBUC <> [M]DEMBUC(I)
+    If I>[M]NBLIG-1 | ([M]WIPTYP(I)=1 & [M]ENDDAT(I)>=WCALDATD)
+        If WDEMBUC <> 0 & (I>[M]NBLIG-1 | WDEMBUC<>[M]DEMBUC(I))
+            If (WQSOF <> 0 | WQSOP<>0) & WQSOS<>0
+                Gosub RUP_DEMBUC
+            Endif
+            Raz  WQSOP, WQSOF, WQSOS
+        Endif
+        Case [M]WIPSTA(I)
+          When 1 : WQSOF += [M]RMNEXTQTY(I)
+          When 2 : WQSOP += [M]RMNEXTQTY(I)
+          When 3 : WQSOS += [M]RMNEXTQTY(I)
+        Endcase
+        WDEMBUC = [M]DEMBUC(I)
+    Endif
+Next I
+Return
+
+###########################################################################
+# Rupture bucket demande : correction des SOS
+$RUP_DEMBUC
+WQRST = WQSOP+WQSOF
+
+## GH 29/11/12 bug 86243
+#J = WLIGDEB
+#While [M]DEMBUC(J) <= WDEMBUC
+#   If [M]WIPTYP(J)=1 & [M]WIPSTA(J)=3  & [M]DEMBUC(J)=WDEMBUC
+#            If WQRST >= WQSOS
+#                [M]RMNEXTQTY(J) = 0
+#            Else
+#                If [M]RMNEXTQTY(J)>= WQRST
+#                    [M]RMNEXTQTY(J)  -= WQRST
+#                    WQRST = 0
+#                Else
+#                    WQRST -= [M]RMNEXTQTY(J)
+#                    [M]RMNEXTQTY(J)= 0
+#                Endif
+#            Endif
+#   Endif
+#   J += 1
+#Wend
+For J=WLIGDEB To [M]NBLIG-1
+   If [M]DEMBUC(J) > WDEMBUC : Break : Endif
+   If [M]WIPTYP(J)=1 & [M]WIPSTA(J)=3  & [M]DEMBUC(J)=WDEMBUC
+        If WQRST >= WQSOS
+            [M]RMNEXTQTY(J) = 0
+        Else
+            If [M]RMNEXTQTY(J)>= WQRST
+                [M]RMNEXTQTY(J)  -= WQRST
+                WQRST = 0
+            Else
+                WQRST -= [M]RMNEXTQTY(J)
+                [M]RMNEXTQTY(J)= 0
+            Endif
+        Endif
+   Endif
+Next J
+Return
+
+########################################################################
+# Préparation du filtre sur la table encours                           #
+########################################################################
+$LOAD_FILTER
+Raz XCRITERE
+Raz XCRITERE1
+Raz XCRITERE2
+Raz XCRITERE3
+Raz XCRITERE4
+
+######################################
+# SOx = Commandes Client             #
+######################################
+# ordres de type SOS
+If [F:BTS]SUG(0) = 2
+    XCRITERE  = "(WIPTYP=1&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type SOP
+If [F:BTS]PLN(0) = 2
+    XCRITERE  = "(WIPTYP=1&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type SOF
+If [F:BTS]LAN(0) = 2
+    XCRITERE  = "(WIPTYP=1&WIPSTA=1)"
+    Gosub LOAD_CRITERE
+Endif
+
+######################################
+# POx = Commandes Fournisseur        #
+######################################
+# ordres de type POS
+If [F:BTS]SUG(1) = 2
+    XCRITERE  = "(WIPTYP=2&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type POP
+If [F:BTS]PLN(1) = 2
+    XCRITERE  = "(WIPTYP=2&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type POF
+If [F:BTS]LAN(1) = 2
+    XCRITERE  = "(WIPTYP=2&WIPSTA=1)"
+    Gosub LOAD_CRITERE
+Endif
+
+######################################
+# MSx = Matières sous-traitance      #
+######################################
+# ordres de type MSS
+If [F:BTS]SUG(2) = 2
+    XCRITERE  = "(WIPTYP=3&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type MSP
+If [F:BTS]PLN(2) = 2
+    XCRITERE  = "(WIPTYP=3&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+
+# ordres de type MSF
+If [F:BTS]LAN(2) = 2
+    XCRITERE  = "(WIPTYP=3&WIPSTA=1)"
+    Gosub LOAD_CRITERE
+Endif
+
+######################################
+# SCx = Services sous-traitance      #
+######################################
+# ordres de type SCS
+If [F:BTS]SUG(3) = 2
+    XCRITERE  = "(WIPTYP=4&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type SCP
+If [F:BTS]PLN(3) = 2
+    XCRITERE  = "(WIPTYP=4&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+
+# ordres de type SCF
+If [F:BTS]LAN(3) = 2
+    XCRITERE  = "(WIPTYP=4&WIPSTA=1)"
+    Gosub LOAD_CRITERE
+Endif
+
+
+######################################
+# WOx = Ordres de fabrication        #
+######################################
+# ordres de type WOS
+If [F:BTS]SUG(4) = 2
+    XCRITERE  = "(WIPTYP=5&WIPSTA=3)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type WOP
+If [F:BTS]PLN(4) = 2
+    XCRITERE  = "(WIPTYP=5&WIPSTA=2)"
+    Gosub LOAD_CRITERE
+Endif
+# ordres de type WOF
+If [F:BTS]LAN(4) = 2
+    XCRITERE  = "(WIPTYP=5&WIPSTA=1)"
+    Gosub LOAD_CRITERE
+Endif
+
+######################################
+# MWx = Besoins matière              #
+######################################
+# ordres de type MWS
+If [F:BTS]SUG(5) = 2
+    XCRITERE  = "(WIPTYP=6&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type MWP
+If [F:BTS]PLN(5) = 2
+    XCRITERE  = "(WIPTYP=6&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+
+# ordres de type MWF
+If [F:BTS]LAN(5) = 2
+    XCRITERE  = "(WIPTYP=6&WIPSTA=1)"
+    Gosub LOAD_CRITERE1
+Endif
+
+
+######################################
+# TRx = Ordres intersite             #
+######################################
+# ordres de type TRS
+If [F:BTS]SUG(6) = 2
+    XCRITERE  = "(WIPTYP=7&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type TRP
+If [F:BTS]PLN(6) = 2
+    XCRITERE  = "(WIPTYP=7&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type TRF
+If [F:BTS]LAN(6) = 2
+    XCRITERE  = "(WIPTYP=7&WIPSTA=1)"
+    Gosub LOAD_CRITERE1
+Endif
+
+######################################
+# TPx = Demandes intersite           #
+######################################
+# ordres de type TPS
+If [F:BTS]SUG(7) = 2
+    XCRITERE  = "(WIPTYP=8&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type TPP
+If [F:BTS]PLN(7) = 2
+    XCRITERE  = "(WIPTYP=8&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type TPF
+If [F:BTS]LAN(7) = 2
+    XCRITERE  = "(WIPTYP=8&WIPSTA=1)"
+    Gosub LOAD_CRITERE1
+Endif
+
+######################################
+# BWx = Sous-produits                #
+######################################
+# ordres de type BWS
+If [F:BTS]SUG(8) = 2
+    XCRITERE  = "(WIPTYP=9&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type BWP
+If [F:BTS]PLN(8) = 2
+    XCRITERE  = "(WIPTYP=9&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+
+# ordres de type BWF
+If [F:BTS]LAN(8) = 2
+    XCRITERE  = "(WIPTYP=9&WIPSTA=1)"
+    Gosub LOAD_CRITERE1
+Endif
+
+
+######################################
+# ordres de type CRF
+If [F:BTS]LAN(9) = 2
+    XCRITERE  = "(WIPTYP=12&WIPSTA=1)"
+    Gosub LOAD_CRITERE1
+Endif
+
+######################################
+# EOx = Ordre de sous-traitance      #
+######################################
+# ordres de type EOS
+If [F:BTS]SUG(10) = 2
+    XCRITERE  = "(WIPTYP=13&WIPSTA=3)"
+    Gosub LOAD_CRITERE1
+Endif
+# ordres de type EOP
+If [F:BTS]PLN(10) = 2
+    XCRITERE  = "(WIPTYP=13&WIPSTA=2)"
+    Gosub LOAD_CRITERE1
+Endif
+
+# ordres de type EOF
+If [F:BTS]LAN(10) = 2
+    XCRITERE  = "(WIPTYP=13&WIPSTA=1)"
+    Gosub LOAD_CRITERE1
+Endif
+
+# Issue number 107498/9
+######################################
+# MTx = Project demand
+######################################
+# Issue 107498/108 - 2016-08-16 by JUSYN : check for PJM activity code
+If  func AFNC.ACTIV("PJM")
+    # order type MTF
+    If [F:BTS]LAN(11) = 2
+        XCRITERE  = "(WIPTYP=14&WIPSTA=1)"
+        Gosub LOAD_CRITERE1
+    Endif
+    # End issue number 107498/9
+
+    # Order type MTP Issue 107498/102
+    If [F:BTS]PLN(11) = 2
+        XCRITERE  = "(WIPTYP=14&WIPSTA=2)"
+        Gosub LOAD_CRITERE1
+    Endif
+Endif
+# End issue 107498/102
+
+Return
+
+############################################################
+$LOAD_CRITERE
+If len(XCRITERE)+len(XCRITERE1)+1 < 250
+  If XCRITERE1 <> ""
+      XCRITERE1 += "|"
+  Endif
+  XCRITERE1 += XCRITERE
+Else
+  If XCRITERE2 <> ""
+     XCRITERE2 += "|"
+  Endif
+  XCRITERE2 += XCRITERE
+Endif
+
+Return
+
+############################################################
+$LOAD_CRITERE1
+If len(XCRITERE)+len(XCRITERE3)+1 < 250
+  If XCRITERE3 <> ""
+      XCRITERE3 += "|"
+  Endif
+  XCRITERE3 += XCRITERE
+Else
+  If XCRITERE4 <> ""
+     XCRITERE4 += "|"
+  Endif
+  XCRITERE4 += XCRITERE
+Endif
+
+Return
+
+######################################################################################
+$MEM_VCR
+If dim(GVCR) > 0
+    GVCR = [M]VCRNUM(nolign-1)
+    GLIN = [M]VCRLIN(nolign-1)
+    GSEQ = [M]VCRSEQ(nolign-1)
+Endif
+Return
