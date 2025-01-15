@@ -1,0 +1,194 @@
+$ACTION
+  #FMU Migration
+  ###Gosub $ACTION From SPEENTSDHYCA
+  Gosub CLIENT_DEV From SPEUTIL
+
+    Case ACTION
+        When "CALPORT"      :    Gosub CALPORT
+        When "MODCPTLIV"    :    Gosub MODCPTLIV
+        When "CFMDLVMAJ"    :    Gosub CFMDLVMAJ
+    Endcase
+
+Return
+
+#------------------------------------------------------------------------------------------------------------
+$CALPORT
+If GIMPORT & dim([M:SDH1]XSOHNUM(0))>0 & [M:SDH1]XSOHNUM(0)<>""
+  If !clalev([F:ZOH]) Then Local File SORDER [F:ZOH] : Endif
+  Read [F:ZOH]SOH0=[M:SDH1]XSOHNUM(0)
+  If !fstat & [F:ZOH]INVDTAAMT(3)<>0
+    WPOINT_ENTREE=1
+    LAMTFRE = [F:ZOH]INVDTAAMT(3)
+    STAT=0
+  Endif
+Endif
+Return
+#------------------------------------------------------------------------------------------------------------
+$MODCPTLIV
+If !clalev([F:YCC])  : Local File YCLSPACK  [YCC]  : Endif
+If !clalev([F:YCC2]) : Local File YCLSPACK  [YCC2] : Endif
+If !clalev([F:ZITM]) : Local File ITMMASTER [ZITM] : Endif
+If !clalev([F:ZSTO]) : Local File STOCK     [ZSTO] : Endif
+If !clalev([F:ZSOH]) : Local File SORDER    [ZSOH] : Endif
+If !clalev([F:ZSOQ]) : Local File SORDERQ   [ZSOQ] : Endif
+Local Decimal Z_GROW, Z_WEPAL
+Local Integer Z_ERR
+Local Integer Z_OK
+
+#-- On ne vérifie les validations que pour l'export, hors Belgique.
+If pat([F:SDH]BPCORD,"9*") & !pat([F:SDH]BPCORD,"91BE*")
+    Read [F:ZSOH]SOH0=[F:SDH]SOHNUM
+    If [F:ZSOH]ZPREP="MONO"
+        For [F:YCC]YCC0 Where [F:YCC]SDHNUM=[F:SDH]SDHNUM & [F:YCC]CLOFLG=2
+            [L]Z_GROW+=[F:YCC]NETWEI
+            [L]Z_WEPAL=0
+            #-- Vérif palette par palette
+            For [F:ZSTO]STO0 Where [F:ZSTO]CTRNUM=[F:YCC]CTRNUM & [F:ZSTO]STOFCY=[F:YCC]STOFCY
+                Read [F:ZITM]ITM0=[F:ZSTO]ITMREF
+                [L]Z_WEPAL+=[F:ZITM]ITMWEI*[F:ZSTO]QTYSTU
+            Next
+            If [L]Z_WEPAL>=[F:YCC]NETWEI
+                [L]Z_ERR=1
+                Call ECR_TRACE("Erreur sur la palette"-[F:YCC]PCK-"("+num$([F:YCC]CTRNUM)+")",1) From GESECRAN
+            Endif
+        Next
+    Else
+        For [F:YCC]YCC0 Where [F:YCC]SDHNUM=[F:SDH]SDHNUM & [F:YCC]CLOFLG=2
+            [L]Z_GROW+=[F:YCC]NETWEI
+            [L]Z_WEPAL=0
+            For [F:YCC2]YCC0 Where [F:YCC2]SDHNUM=[F:SDH]SDHNUM & [F:YCC2]PCK=[F:YCC]PCK
+                #-- Vérif palette par palette
+                For [F:ZSTO]STO0 Where [F:ZSTO]CTRNUM=[F:YCC2]CTRNUM & [F:ZSTO]STOFCY=[F:YCC2]STOFCY
+                    Read [F:ZITM]ITM0=[F:ZSTO]ITMREF
+                    [L]Z_WEPAL+=[F:ZITM]ITMWEI*[F:ZSTO]QTYSTU
+                Next
+            Next
+            If [L]Z_WEPAL>=[F:YCC]NETWEI
+                [L]Z_ERR=1
+                Call ECR_TRACE("Erreur sur le carton"-"("+num$([F:YCC]CTRNUM)+")",1) From GESECRAN
+            Endif
+        Next
+    Endif
+
+
+    If [L]Z_GROW<=[F:SDH]NETWEI or [L]Z_ERR=1
+        [L]Z_OK=1
+        Call OUINON("Incohérence dans les poids de la livraison.\Continuer la validation ?",[L]Z_OK) From GESECRAN
+        If [L]Z_OK<2
+            [V]GOK=0
+            #Call MESSAGE("Abandon validation - Poids des palettes incohérent") From GESECRAN
+        Endif
+    Endif
+Endif
+
+#@BCH le 25 09 2012 (Début)
+#-> S'il existe une quantité sur la commande négative, on bloque la validation du BL
+If [V]GOK
+    If [F:SOH]SOHNUM<>[F:SDH]SOHNUM    :    Read [F:SOH]SOH0=[F:SDH]SOHNUM    :    Endif
+    For [F:ZSOQ]SOQ0 Where [F:ZSOQ]SOHNUM=[F:SDH]SOHNUM
+        If ([F:ZSOQ]ODLQTYSTU<0 or [F:ZSOQ]DLVQTYSTU<0) & [F:SOH]ZERRFLG=2
+            [V]GOK=0
+            [L]Z_ERR=1
+            Call ECR_TRACE("!! Il existe des quantités en livraison négatives sur le BL.\!! Merci de contacter le service Méthodes",1) From GESECRAN
+            Break
+        Endif
+    Next
+Endif
+#@BCH le 25 09 2012 (Fin)
+
+
+
+#@BCH le 26 07 2012 (Début)
+#-> Dans le cas de préparations manuelles (sans passer par les terminaux portables), il peut arriver que des colis
+#-> n'aient pas de num livraison d'attribué alors qu'ils sont utilisés..
+#-> C'est pourquoi il est nécessaire de faire une boucle de mise à jour des colis
+#-> en fonction des allocations détaillées au titre de la commande.
+If [V]GOK
+    #@BCH le 28 09 2012 (Debut) : modification des regles de mise à jour de la table ZCOLIS suite aux erreurs bordereaux
+    If !clalev([F:ZCO])  : Local File ZCOLIS    [ZCO]  : Endif
+    Update [F:ZCO] Where [F:ZCO]SDHNUM=[F:SDH]SDHNUM With [F:ZCO]SDHNUM=""
+    For [F:STA]STA0 Where [F:STA]ALLTYP=2 & [F:STA]VCRTYP=4 & [F:STA]VCRNUM=[F:SDH]SDHNUM
+        Read [F:STO]STO0=[F:STA]STOFCY;[F:STA]STOCOU
+        If !fstat & [F:STO]CTRNUM<>""
+            Read [F:ZCO]ZCO0=[F:STO]STOFCY;[F:STO]CTRNUM
+            If !fstat
+                [F:ZCO]SDHNUM=[F:SDH]SDHNUM
+                Rewrite [F:ZCO]
+            Endif
+        Endif
+    Next
+
+#    If !clalev([F:ZSOH]) : Local File SORDER    [ZSOH] : Endif
+#    If !clalev([F:ZSTO]) : Local File STOCK     [ZSTO] : Endif
+#    If !clalev([F:ZCO])  : Local File ZCOLIS    [ZCO]  : Endif
+#    Read [F:ZSOH]SOH0=[F:SDH]SOHNUM
+#    If [F:ZSOH]ZCODRGP<>"" & [F:ZSOH]BPTNUM<>""
+#        For [F:ZCO]ZCO0 Where [F:ZCO]ZCODRGP=[F:ZSOH]ZCODRGP
+#            #- Est-ce qu'il existe une allocation détaillée sur le CTRNUM ?
+#            Filter [F:ZSTO] Where [F:ZSTO]CUMALLQTY>0 & [F:ZSTO]CTRNUM=[F:ZCO]CTRNUM
+#            Read [F:ZSTO]STO0 First
+#            If !fstat
+#                [F:ZCO]SDHNUM=[F:SDH]SDHNUM
+#                Rewrite [F:ZCO]
+#                If fstat : [V]GOK=0 : Break : Endif
+#            Else
+#                [F:ZCO]SDHNUM=""
+#                Rewrite [F:ZCO]
+#                If fstat : [V]GOK=0 : Break : Endif
+#            Endif
+#            Filter [F:ZSTO]
+#        Next
+#    Endif
+Endif
+#@BCH le 28 09 2012 (Fin)
+#@BCH le 26 07 2012 (Fin)
+
+Return
+
+
+#------------------------------------------------------------------------------------------------------------
+$CFMDLVMAJ
+# OP le 19/04/12 : on lance la génération du fichier transport
+#BCH le 18/06/2012 : si la commande n'a pas de code regroupement et pas de code transporteur, pas d'EDI !
+If !clalev([F:ZSOH]) : Local File SORDER    [ZSOH] : Endif
+#BCH le 12/12/2012 : si le transporteur n'est pas coché 'Activation EDI', pas d'EDI !
+If !clalev([F:ZBPT]) : Local File BPCARRIER [ZBPT] : Endif
+
+Local Integer Z_STA, Z_NUMCHG
+
+Read [F:ZSOH]SOH0=[F:SDH]SOHNUM
+If [F:ZSOH]ZCODRGP=""
+    Call ECR_TRACE("Pas de code regroupement, pas de fichier EDI généré",0) From GESECRAN
+Elsif [F:ZSOH]ZCODRGP<>"" & [F:ZSOH]BPTNUM=""
+    Call ECR_TRACE("Pas de code fournisseur, pas de fichier EDI généré",-1) From GESECRAN
+Else
+    Read [F:ZBPT]BPT0=[F:ZSOH]BPTNUM
+    If fstat : Raz [F:ZBPT] : Endif
+    If [F:ZBPT]ZEDIFLG<>2    #EDI inactif chez ce transporteur
+        Call ECR_TRACE("Transporteur"-[F:ZBPT]BPTNAM-"non géré en EDI, pas de fichier EDI généré",-1) From GESECRAN
+        #Pas non plus de bordereau
+        #Call CHARGEMENT([F:SDH]SDHNUM, [L]Z_NUMCHG, [L]Z_STA) From SPEZEX
+    Elsif [F:SDH]ZEDIBLK=2    #EDI Bloqué
+        Call ECR_TRACE("La livraison est cochée BLOCAGE EDI, pas de fichier EDI généré",-1) From GESECRAN
+        Call ECR_TRACE("Alimentation bordereau",0) From GESECRAN
+        Call CHARGEMENT([F:SDH]SDHNUM, [L]Z_NUMCHG, [L]Z_STA) From SPEZEX
+    Else
+        If [V]GSERVEUR
+            Call ECR_TRACE("Validation au pistolet",-1) From GESECRAN
+        Else
+            Call ECR_TRACE("Validation en interactif",0) From GESECRAN
+        Endif
+        Call ECR_TRACE("Generation fichier EDI vers"-[F:ZSOH]BPTNUM,0) From GESECRAN
+        Call EDI_CDT([F:SDH]SDHNUM) From ZEDI
+        Call ECR_TRACE("Alimentation bordereau",0) From GESECRAN
+        Call CHARGEMENT([F:SDH]SDHNUM, [L]Z_NUMCHG, [L]Z_STA) From SPEZEX
+        If [L]Z_STA=0
+            Call ECR_TRACE("Alimentation bordereau n°"-num$([L]Z_NUMCHG),0) From GESECRAN
+        Else
+            Call ECR_TRACE("Erreur n°"-num$([L]Z_STA),0) From GESECRAN
+        Endif
+
+    Endif
+Endif
+Return
+
