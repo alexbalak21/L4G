@@ -70,15 +70,15 @@ If pat([F:SDH]BPCORD,"9*") & !pat([F:SDH]BPCORD,"91BE*")
         Next
     Endif
 
-
-    If [L]Z_GROW<=[F:SDH]NETWEI or [L]Z_ERR=1
-        [L]Z_OK=1
-        Call OUINON("Incohérence dans les poids de la livraison.\Continuer la validation ?",[L]Z_OK) From GESECRAN
-        If [L]Z_OK<2
-            [V]GOK=0
-            #Call MESSAGE("Abandon validation - Poids des palettes incohérent") From GESECRAN
-        Endif
-    Endif
+#BKV - 14/01/25 - 3005385 - Suppretion du message à la demande du client
+    # If [L]Z_GROW<=[F:SDH]NETWEI or [L]Z_ERR=1
+    #     [L]Z_OK=1
+    #     Call OUINON("Incohérence dans les poids de la livraison.\Continuer la validation ?",[L]Z_OK) From GESECRAN
+    #     If [L]Z_OK<2
+    #         [V]GOK=0
+    #         #Call MESSAGE("Abandon validation - Poids des palettes incohérent") From GESECRAN
+    #     Endif
+    # Endif
 Endif
 
 #@BCH le 25 09 2012 (Début)
@@ -123,7 +123,7 @@ If [V]GOK
 #    If !clalev([F:ZCO])  : Local File ZCOLIS    [ZCO]  : Endif
 #    Read [F:ZSOH]SOH0=[F:SDH]SOHNUM
 #    If [F:ZSOH]ZCODRGP<>"" & [F:ZSOH]BPTNUM<>""
-#        For [F:ZCO]ZCO0 Where [F:ZCO]ZCODRGP=[F:ZSOH]ZCODRGP
+#           
 #            #- Est-ce qu'il existe une allocation détaillée sur le CTRNUM ?
 #            Filter [F:ZSTO] Where [F:ZSTO]CUMALLQTY>0 & [F:ZSTO]CTRNUM=[F:ZCO]CTRNUM
 #            Read [F:ZSTO]STO0 First

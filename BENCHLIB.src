@@ -3914,7 +3914,8 @@ For [ORD]
     Endif
 
     # on somme les quantités liées aux SOS
-    If  dim([L]WQSOS)=1 & [F:BTS]HORDEM = 2 & [M]WIPTYP(nolign-1) =1 & [M]WIPSTA(nolign-1) =3
+    If  dim(
+        WQSOS)=1 & [F:BTS]HORDEM = 2 & [M]WIPTYP(nolign-1) =1 & [M]WIPSTA(nolign-1) =3
         WQSOS += [F:ORD]RMNEXTQTY
     Endif
 
