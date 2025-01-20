@@ -1,0 +1,23 @@
+#BKV - 17/01/25 -3005267  mise à jour des prix des operation de gammes
+
+If !clalev([F:ZROO]) : Local File ROUOPE [ZROO] : Endif #GAMMES OPERATIONS
+If !clalev([F:ZITF]) : Local File ITMFACILIT  [ZITF] : Endif #ARTICLES-SITES
+If !clalev([F:ZPPL]) : Local File PPRICLIST [ZPPL] : Endif #TARIFS FOURNISSEURS
+Local Decimal LOT_ECO
+Filter [F:ZROO] Where [F:ZROO]SCOCOD <> 1 and [F:ZROO]ITMREF = "00500004A" # Si article est sous-traitance
+For [F:ZROO]
+LOT_ECO = 0
+Read [F:ZITF]ITF0 = [F:ZROO]ITMREF ; [F:ZROO]FCY # Selectionne l'article-site
+If !fstat
+LOT_ECO = [F:ZITF]REOMINQTY
+#                     Code Sous-trait                           Code Fourn                 Article Lance                   Article Sous-traitance
+Filter [F:ZPPL] Where [F:ZPPL]PLI = "1002" and [F:ZPPL]PLICRI1 = [F:ZROO]BPRNUM and [F:ZPPL]PLICRI3 = [F:ZROO]ITMREF and [F:ZPPL]PLICRI2 = [F:ZROO]SCOITMREF
+& and LOT_ECO >= [F:ZPPL]MINQTY and LOT_ECO <= [F:ZPPL]MAXQTY and gdat$(1,2,2024) >= [F:ZPPL]PLISTRDAT and gdat$(1,2,2024) <= [F:ZPPL]PLIENDDAT
+For [F:ZPPL]
+Infbox num$([F:ZPPL]PRI)
+Next
+Endif
+Next
+End
+
+#               LOT ECO COMPRIS ENTRE LE MAX ET LE MIN            Date d'aujourd'hui comprise entre les dates limites
