@@ -1,23 +1,34 @@
-#BKV - 17/01/25 -3005267  mise à jour des prix des operation de gammes
+#BKV - 17/01/25 -3005267  mise à jour des prix des operation de gammes par rapport aux fiches tarifs
+#ZMAJROU
+Call OUVRE_TRACE('ZMAJROU') From LECFIC
 
 If !clalev([F:ZROO]) : Local File ROUOPE [ZROO] : Endif #GAMMES OPERATIONS
 If !clalev([F:ZITF]) : Local File ITMFACILIT  [ZITF] : Endif #ARTICLES-SITES
 If !clalev([F:ZPPL]) : Local File PPRICLIST [ZPPL] : Endif #TARIFS FOURNISSEURS
 Local Decimal LOT_ECO
-Filter [F:ZROO] Where [F:ZROO]SCOCOD <> 1 and [F:ZROO]ITMREF = "00500004A" # Si article est sous-traitance
+
+Filter [F:ZROO] Where [F:ZROO]SCOCOD <> 1 # and [F:ZROO]ITMREF = "00500004A" # Si article est sous-traitance
 For [F:ZROO]
+#ECRITURE ITMREF DANS LA TRACE
+Call ECR_TRACE ('Article:' - [F:ZROO]ITMREF,0) From GESECRAN
 LOT_ECO = 0
 Read [F:ZITF]ITF0 = [F:ZROO]ITMREF ; [F:ZROO]FCY # Selectionne l'article-site
 If !fstat
 LOT_ECO = [F:ZITF]REOMINQTY
 #                     Code Sous-trait                           Code Fourn                 Article Lance                   Article Sous-traitance
+#               LOT ECO COMPRIS ENTRE LE MAX ET LE MIN            Date d'aujourd'hui comprise entre les dates limites
 Filter [F:ZPPL] Where [F:ZPPL]PLI = "1002" and [F:ZPPL]PLICRI1 = [F:ZROO]BPRNUM and [F:ZPPL]PLICRI3 = [F:ZROO]ITMREF and [F:ZPPL]PLICRI2 = [F:ZROO]SCOITMREF
-& and LOT_ECO >= [F:ZPPL]MINQTY and LOT_ECO <= [F:ZPPL]MAXQTY and gdat$(1,2,2024) >= [F:ZPPL]PLISTRDAT and gdat$(1,2,2024) <= [F:ZPPL]PLIENDDAT
+& and LOT_ECO >= [F:ZPPL]MINQTY and LOT_ECO <= [F:ZPPL]MAXQTY and date$ >= [F:ZPPL]PLISTRDAT and date$ <= [F:ZPPL]PLIENDDAT
 For [F:ZPPL]
-Infbox num$([F:ZPPL]PRI)
+[F:ZROO]REFPRI = ([F:ZPPL]PRI / [F:ZPPL]PRIDIV)
+#ECRITURE MAJ OPE GAMME DANS LA TRACE
+Call ECR_TRACE ('Article Ss-trait:' - [F:ZROO]SCOITMREF - " Fiche Tarif:" - [F:ZPPL]PLICRD - 'Ancien Prix:' - num$([F:ZROO]REFPRI) - "Nouveau Prix:" - num$(([F:ZPPL]PRI / [F:ZPPL]PRIDIV)),0) From
+& GESECRAN
+Rewrite [F:ZROO]
+If fstat Infbox "Erreur d'ecriture de la table ROUOPE." : Endif
 Next
 Endif
 Next
+Call FERME_TRACE From LECFIC
+Call LEC_TRACE From LECFIC
 End
-
-#               LOT ECO COMPRIS ENTRE LE MAX ET LE MIN            Date d'aujourd'hui comprise entre les dates limites
