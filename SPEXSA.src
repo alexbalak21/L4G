@@ -1,0 +1,3154 @@
+##############################################################################################################
+#    TRAITEMENT    : SPEXSA
+#    PROJET        : Gestion des non-conformités dans X3
+#    VERSION       : 2
+#    DESCRIPTION   : Traitement de gestion de l'objet XSA
+#_____________________________________________________________________________________________________________
+#    REGISTRE DES VERSIONS
+#
+# Date          Version      Auteur
+# 22/06/23                   ACL  - Evolutions
+# ??/??/????    1            Benoit CHUARD - initialisation du traitement
+# 16/09/2013    2            Benoit CHUARD - Evolution post-déploiement #25
+# 16/09/2013    2            Benoit CHUARD - Evolution post-déploiement #11
+# 25/09/2013    2            Benoit CHUARD - Evolution post-déploiement #29 & #30
+# 25/09/2013    2            Benoit CHUARD - Evolution post-déploiement #33
+# 26/09/2013    2            Benoit CHUARD - Evolution post-déploiement #18
+# 26/09/2013    2            Benoit CHUARD - Evolution post-déploiement #14
+# 01/10/2013    2            Benoit CHUARD - Evolution post-déploiement #15
+# 02/10/2013    2            Benoit CHUARD - Evolution post-déploiement #26
+# 14/09/2017    2            FFY KARDOL ajout recherche prix suivant méthode valo de l'article site
+# 22/11/2018    -            FMU KARDOL 207973
+# 17/07/19                   LCA -216936 - Problème pour saisir un tiers sur une non conformité
+# 30/08/19                   LCA - 218180 - Zone qté en A dans les non conformités mal alimentée
+#
+##############################################################################################################
+#-------------------------------------------------------------------------------------------------------------
+
+End
+
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+
+#If dim([M:XSA0]XNCNUM)>0
+#    Actzo [M:XSA0]
+#    Actzo [M:XSA1]
+#Endif
+
+Case ACTION
+    When "OUVRE"                :    Gosub OUVRE
+    When "LIENS"
+        Gosub LIENS
+        If [V]GFONCTION1<>"GESXSA" & [F:XSA]XTYPPIE<>14 & [F:XSA]ZOBJ=""
+            Gosub ADD_LIENS
+            Gosub ADD_LIENS2 # FMU le 22/11/18 : 207973
+        Endif
+    When "RAZCRE", "RAZDUP"         :    Gosub RAZCRE
+    When "VERIF_CRE","VERIF_MOD"    :    Gosub VERIF_CRE
+    When "AVANT_MODFIC"             :    Gosub AVANT_MODFIC
+    When "INICRE", "INIMOD"         :    Gosub INICRE
+    When "CREATION", "MODIF"        :    Gosub CREATION
+    When "APRES_CRE", "APRES_MOD"   :    Gosub APRES_CRE
+    When "ANNULE"                   :    Gosub ANNULE
+    When "SETBOUT"                  :    Gosub SETBOUT
+    When "STYLE"                    : Gosub STYLE
+Endcase
+Return
+
+$STYLE
+Chgfmt [M:XSA4]XCONTRO With "-K:10"
+If left$([M:XSA0]XNCNUM,2)="24"
+  Chgfmt [M:ZSA6]XINDGRA With "-K:10"
+  #
+  Chgfmt [M:ZSA10]ZTEXRAC With "-K:10"
+  Chgfmt [M:ZSA10]ZTEXRAC2 With "-K:10"
+  Chgfmt [M:ZSA10]ZFREQ With "-K:10"
+  Chgfmt [M:ZSA10]ZGRAV With "-K:10"
+  Chgfmt [M:ZSA10]ZSTARISK With "-K:10"
+#  Chgfmt [M:XSA4]XCONTRO With "-K:10"
+Else
+  Chgfmt [M:ZSA6]XINDGRA With "K:50"
+  #
+  Chgfmt [M:ZSA10]ZTEXRAC With "K:250"
+  Chgfmt [M:ZSA10]ZTEXRAC2 With "K:250"
+  Chgfmt [M:ZSA10]ZFREQ With "N:5"
+  Chgfmt [M:ZSA10]ZGRAV With "N:5"
+  Chgfmt [M:ZSA10]ZSTARISK With "N:5"
+ # Chgfmt [M:XSA4]XCONTRO With "K:10"
+Endif
+Return
+
+#-----------------------------------------------------------------------------------
+$ADD_LIENS2
+# FMU le 22/11/18 : 207973
+If dim(GZRELIT)<0 Then
+  If GREP="" Then
+    Global Integer GZRELIT
+    Gosub RELIT From GOBJSUB
+    Kill GZRELIT
+  Endif
+Endif
+Return
+
+#-----------------------------------------------------------------------------------
+$OUVRE
+#-- Ouverture des tables
+If !clalev([F:ZIV])  : Local File ZINVEST    [ZIV]  : Endif
+If !clalev([F:ITM])  : Local File ITMMASTER  [ITM]  : Endif
+If !clalev([F:ITV])  : Local File ITMMVT     [ITV]  : Endif
+If !clalev([F:ITG])  : Local File ITMCATEG   [ITG]  : Endif
+If !clalev([F:ITC])  : Local File ITMCOST    [ITC]  : Endif
+If !clalev([F:ADI])  : Local File ATABDIV    [ADI]  : Endif
+If !clalev([F:ZNA])  : Local File ZNATURE    [ZNA]  : Endif
+If !clalev([F:XNA])  : Local File XNCNATURE  [XNA]  : Endif
+If !clalev([F:SDH])  : Local File SDELIVERY  [SDH]  : Endif
+If !clalev([F:ZCN])  : Local File ZCAUSE     [ZCN]  : Endif
+If !clalev([F:XDE])  : Local File XNCDEFAUT  [XDE]  : Endif
+If !clalev([F:ZXL])  : Local File ZXNCLOT    [ZXL]  : Endif
+If !clalev([F:ZPC])  : Local File ZPARCRI    [ZPC]  : Endif
+If !clalev([F:ZXC])  : Local File ZXSACRI    [ZXC]  : Endif
+If !clalev([F:ZBE])  : Local File ZBENNE     [ZBE]  : Endif
+If !clalev([F:ZBN])  : Local File ZBENNENC   [ZBN]  : Endif
+If !clalev([F:STL])  : Local File STOLOT     [STL]  : Endif
+If !clalev([F:ZCB])  : Local File ZXNCCTRBPS [ZCB]  : Endif
+If !clalev([F:ZLB])  : Local File ZXNCLOTBPS [ZLB]  : Endif
+If !clalev([F:ZXSA]) : Local File XNCSAI     [ZXSA] : Endif
+If !clalev([F:ZXK])  : Local File ZXNCLNK    [ZXK]  : Endif
+
+If !clalev([F:YTXC]) Local File TEXCLOB [YTXC] Endif
+
+# FMU le 26/07/18 : 204414
+If !clalev([F:SLF])  : Local File STOLOTFCY  [SLF]  : Endif
+
+#-- Déclaration des variables
+Local    Integer Z_TABZBE(3)
+Local    Decimal Z_TABQTYNC(3), Z_TABQTYDES(3)
+Local    Integer Z_WRKFLW        #@V2.#18
+
+Read [F:XSA]XSA0 Last
+CLE1=[F:XSA]XNCNUM
+
+
+Return
+
+
+#-----------------------------------------------------------------------------------
+$SETBOUT
+#-- Activation des tunnels vers consultations
+CHMEN +="A1234"
+
+#-- Activation des tunnels
+If pat([M:XSA1]ITMREF,"3*")
+    CHMEN +="B6"
+Endif
+
+
+#-- Si fiche cloturée, désactivation modification
+If [F:XSA]XSTATU>3
+    Call VIREBOUT(CHAINE,"M") From GOBJET
+#-- Si fiche au statut créée, on peut supprimer la fiche
+Elsif [F:XSA]XSTATU>1
+    Call VIREBOUT(CHAINE,"A") From GOBJET
+Endif
+
+#--> Désactivation de la duplication
+Call VIREBOUT(CHAINE,"D") From GOBJET
+Read [F:STL]STL0=[M:XSA1]ITMREF;[M:XSA1]ZLOTNC(0)
+If fstat : Infbox "Read Error" : Endif
+Infbox [M:XSA1]ITMREF
+Infbox [M:XSA1]ZLOTNC(0)
+Infbox "Fournisseur : " - [F:STL]BPSNUM
+Return
+
+#-----------------------------------------------------------------------------------
+$ADD_LIENS
+#-- Actions liées à la création en tunnel via le développement Kardol
+
+#Call AM_XTYPPIE([M:XSA1]XTYPPIE)
+#Call AM_XNUMPIE([M:XSA1]XNUMPIE)
+#If !find([M:XSA1]XTYPPIE,4,6)
+#    Call AM_XLINPIE([M:XSA1]XLINPIE)
+#Endif
+#[F:XSA] = [M:XSA1]
+#[F:XSA]XINDGRA=1
+#Rewrite [F:XSA]
+
+#--> Gestion des lots impactés
+Delete [F:ZXL] Where [F:ZXL]XNCNUM=[F:XSA]XNCNUM
+Raz [F:ZXL]
+For nolign=1 To [M:XSA1]ZNBLOT
+    [F:ZXL]ZXLLIG=nolign-1
+    [F:ZXL] = [M:XSA0]
+    [F:ZXL] = [M:XSA1]
+    Write [F:ZXL]
+Next
+
+
+#--> Gestion des infos fournisseur
+If [F:XSA]XTIERS=2
+    #-- Tableau des lots
+    Raz [F:ZLB]
+    For [S]nolign=1 To [M:ZSA5]NBLOTBPS
+        [F:ZLB] = [M:XSA0]
+        [F:ZLB] = [M:ZSA5]
+        Write [F:ZLB]
+    Next [S]nolign
+Endif
+
+#> Emission workflow
+#Call WORKBOUT("XSA",[F:XSA]XNCNUM) From GOBJACT
+
+#@V2.#15_str
+#If find(left$([F:XSA]ITMREF,1),"1","2","7")
+#    Call WORKBOUT("ZZY",[F:XSA]XNCNUM) From GOBJACT
+#Elsif left$([F:XSA]ITMREF,1)="3"
+#    Call WORKBOUT("ZZX",[F:XSA]XNCNUM) From GOBJACT
+#Endif
+#@V2.#15_end
+
+Return
+
+#-----------------------------------------------------------------------------------
+$LIENS
+Actzo [M:XSA0]
+Actzo [M:XSA1]
+
+Raz [M:ZSA8]ZINVCSTTOT,ZINVCSTCPL
+
+#-- Gestion des investigations/actions
+#nolign=0
+#For [F:ZIV]ZIV0 Where [F:ZIV]XNCNUM=[F:XSA]XNCNUM
+ #   nolign+=1
+#    [M:ZSA7] = [F:ZIV]
+ #   [M:ZSA8]ZINVCSTTOT+=[F:ZIV]ZINVCST
+ #   Read [F:ADI]CODE=1512;[F:ZIV]ZINVEST
+#    If !fstat
+  #      [M:ZSA7]ZINVTYP(nolign-1)=[F:ADI]A1
+#    Endif
+ #   If [M:ZSA7]ZINVSTA(nolign-1)=2
+ #       Actzo [M:ZSA7]ZCPLDAT(nolign-1)
+ #       [M:ZSA8]ZINVCSTCPL+=[F:ZIV]ZINVCST
+#    Else
+ #       Diszo [M:ZSA7]ZCPLDAT(nolign-1)
+ #   Endif
+#Next
+#[M:ZSA7]NBINV=nolign
+#Affzo [M:ZSA7]
+
+#If [F:XSA]ZCKLST(2)=2 or [F:XSA]ZCKLST(3)=2
+  #  Diszo [M:ZSA7]5
+#Else
+ #   Actzo [M:ZSA7]5
+#Endif
+
+#-- Gestion coût de destruction
+#[M:ZSA8]ZQTYRNC(0) = [F:XSA]ZQTYSTU
+If [F:XSA]ITMREF<>""
+    Read [F:ITM]ITM0=[F:XSA]ITMREF
+    Read [F:ITG]ITG1(1)=[F:ITM]TCLCOD
+    If [F:ITG]VLTCOD="STD"
+        Read [F:ITC]ZITC4=[F:XSA]XSAFCY;[F:XSA]ITMREF;1;year([F:XSA]CREDAT);0
+        [M:ZSA8]ZVALUNI(0)=[F:ITC]VLTTOT
+
+# 14/09/2017    2            FFY KARDOL ajout recherche prix suivant méthode valo de l'article site
+#    Elsif [F:ITG]VLTCOD="FIF"
+
+     Elsif [F:ITG]VLTCOD="FIF"or [F:ITG]VLTCOD="PMP" or [F:ITG]VLTCOD="FGX"
+        Read [F:ITV]ITV0=[F:XSA]ITMREF;[F:XSA]XSAFCY
+        [M:ZSA8]ZVALUNI(0)=[F:ITV]AVC
+    Endif
+    [M:ZSA8]ZMULTI(0)="x"
+    [M:ZSA8]ZEGAL(0)="="
+    [M:ZSA8]ZVLTTOT(0)=[M:ZSA8]ZVALUNI(0)*[M:ZSA8]ZQTYRNC(0)
+Endif
+[M:ZSA8]NBDES=1
+
+
+Raz [M:ZSA8]ZCSTTOT, ZCSTTOTCPL
+#@V2.#29&#30_str
+#[M:ZSA8]ZCSTTOT+=[M:ZSA8]ZGESFOR
+#[M:ZSA8]ZCSTTOT+=[M:ZSA8]ZINVCSTTOT
+#[M:ZSA8]ZCSTTOT+=[M:ZSA8]ZVLTTOT(0)
+#[M:ZSA8]ZCSTTOT+=[M:ZSA8]ZBECST
+#
+#[M:ZSA8]ZCSTTOTCPL+=[M:ZSA8]ZGESFOR
+#[M:ZSA8]ZCSTTOTCPL+=[M:ZSA8]ZINVCSTCPL
+#[M:ZSA8]ZCSTTOTCPL+=[M:ZSA8]ZVLTTOTCPL(0)
+#[M:ZSA8]ZCSTTOTCPL+=[M:ZSA8]ZBECSTCPL
+
+Call CALC_CST("", 0)
+#@V2.#29&#30_end
+
+Affzo [M:ZSA8]
+
+
+#--> Gestion des codes nature
+Raz [M:XSA1]ZNBNAT
+For [F:ZNA]ZNA0 Where [F:ZNA]XNCNUM=[F:XSA]XNCNUM
+    Read [F:XNA]XNA0=[F:ZNA]CODNAT
+    If fstat : Raz [F:XNA] : Endif
+
+    [M:XSA1]XTYPDEF([M:XSA1]ZNBNAT) = [F:XNA]XTYPDEF
+    [M:XSA1]ZLIBNAT([M:XSA1]ZNBNAT) = [F:XNA]XDES
+    [M:XSA1]ZTYPNAT([M:XSA1]ZNBNAT) = [F:XNA]XINTEXT
+    [M:XSA1]ZNBNAT+=1
+Next
+Affzo [M:XSA1]
+
+#--> Gestion des codes cause
+#Raz [M:XSA2]ZNBCAU
+#Filter [F:XDE]
+#For [F:ZCN]ZCN0 Where [F:ZCN]XNCNUM=[F:XSA]XNCNUM
+#    Read [F:XDE]XDE0=[F:ZCN]CODCAU
+#    If fstat : Raz [F:XDE] : Endif
+
+#    [M:XSA2]ZCODE([M:XSA2]ZNBCAU)   = [F:XDE]XCODE
+#    [M:XSA2]ZDES([M:XSA2]ZNBCAU)    = [F:XDE]XDES
+#    [M:XSA2]ZCODFAM([M:XSA2]ZNBCAU) = [F:XDE]XCODFAM
+#    [M:XSA2]ZNBCAU+=1
+#Next
+#Affzo [M:XSA2]
+
+
+#-- Check-list
+For I=0 To dim([F:XSA]ZCKLST)-1
+    If [F:XSA]ZCKLST(I)=2
+        Actzo [M:ZSA9]ZREPBPCDAT(I)
+    Else
+        Diszo [M:ZSA9]ZREPBPCDAT(I)
+    Endif
+Next I
+If [F:XSA]ZCKLST(4)=2 or [F:XSA]ZCKLST(5)=2
+    Diszo [M:XSA2]20
+Else
+    Actzo [M:XSA2]20
+Endif
+
+
+#--> Gestion des Tiers
+If [F:XSA]TYPDEST=4
+    Actzo [M:XSA1]20
+    Case [F:XSA]XTIERS
+        When 1
+            Actzo [M:XSA1]BPCNUM
+            Diszo [M:XSA1]BPSNUM,BPTNUM
+        When 2
+            Actzo [M:XSA1]BPSNUM
+            Diszo [M:XSA1]BPCNUM,BPTNUM
+        When 3
+            Actzo [M:XSA1]BPTNUM
+            Diszo [M:XSA1]BPSNUM,BPCNUM
+    Endcase
+    Affzo [M:XSA1]20
+Else
+    Diszo [M:XSA1]20
+Endif
+
+#--> Gestion écran détail fournisseur
+If [F:XSA]XTIERS=2 & [F:XSA]BPSNUM<>""
+    Actzo [M:ZSA5]
+    #-- Tableau des cartons
+    nolign=0
+    For [F:ZCB]ZCB0 Where [F:ZCB]XNCNUM=[F:XSA]XNCNUM
+        nolign+=1
+        [M:ZSA5] = [F:ZCB]
+    Next
+    [M:ZSA5]NBCTRBPS=nolign
+
+    #-- Tableau des lots
+    nolign=0
+    For [F:ZLB]ZLB0 Where [F:ZLB]XNCNUM=[F:XSA]XNCNUM
+        nolign+=1
+        [M:ZSA5] = [F:ZLB]
+    Next
+    [M:ZSA5]NBLOTBPS=nolign
+
+    Affzo [M:ZSA5]
+Else
+    Raz [M:ZSA5]
+    Affzo [M:ZSA5]
+    Diszo [M:ZSA5]
+Endif
+
+
+#--> Gestion des lots impactés
+nolign=0
+For [F:ZXL]ZXL0 Where [F:ZXL]XNCNUM=[F:XSA]XNCNUM
+    nolign+=1
+    [M:XSA1] = [F:ZXL]
+
+#@V2.#25_str
+    Read [F:STL]STL0=[F:XSA]ITMREF;[F:ZXL]ZLOTNC
+    If fstat : Raz [F:STL] : Endif
+
+[M:XSA1]ZLOTFRS(nolign-1)=[F:STL]USRFLD1 : Affzo [M:XSA1]ZLOTFRS(nolign-1)
+
+# FMU le 26/07/18 : 204414
+###    [M:XSA1]ZAAAPHY(nolign-1) = [F:STL]AAACUMQTY
+###    [M:XSA1]ZCTLPHY(nolign-1) = [F:STL]QQQCUMQTY
+###    [M:XSA1]ZREJPHY(nolign-1) = [F:STL]RRRCUMQTY
+#LCA 30/08/19 - 218180 - Zone qté en A dans les non conformités mal alimentée
+Local Decimal ZAAACUMQTY : [L]ZAAACUMQTY=0
+Local Decimal ZQQQCUMQTY : [L]ZQQQCUMQTY=0
+Local Decimal ZRRRCUMQTY : [L]ZRRRCUMQTY=0
+
+For [SLF]SLF0 Where ITMREF=[F:STL]ITMREF
+&                 & LOT=[F:STL]LOT
+&                 & SLO=[F:STL]SLO
+&                 & STOFCY=[F:XSA]XSAFCY
+#  [M:XSA1]ZAAAPHY(nolign-1) += [SLF]AAACUMQTY
+#  [M:XSA1]ZCTLPHY(nolign-1) += [SLF]QQQCUMQTY
+#  [M:XSA1]ZREJPHY(nolign-1) += [SLF]RRRCUMQTY
+  [L]ZAAACUMQTY += [SLF]AAACUMQTY
+  [L]ZQQQCUMQTY += [SLF]QQQCUMQTY
+  [L]ZRRRCUMQTY += [SLF]RRRCUMQTY
+Next
+#\FMU
+  [M:XSA1]ZAAAPHY(nolign-1) = [L]ZAAACUMQTY
+  [M:XSA1]ZCTLPHY(nolign-1) = [L]ZQQQCUMQTY
+  [M:XSA1]ZREJPHY(nolign-1) = [L]ZRRRCUMQTY
+#fin LCA 30/08/19
+
+#@V2.#25_end
+
+Next
+[M:XSA1]ZNBLOT=nolign
+Affzo [M:XSA1]
+
+#-- Gestion de la criticité
+[M:ZSA6] = [F:XSA]
+nolign=0
+For [F:ZPC]ZPC0
+    nolign+=1
+    [M:ZSA6] = [F:ZPC]
+    Read [F:ZXC]ZXC0=[F:XSA]XNCNUM;[F:ZPC]GRPNUM;[F:ZPC]CRINUM;[F:ZPC]REPONSE
+    If !fstat
+        [M:ZSA6]ACTFLG(nolign-1)=2
+    Endif
+Next
+[M:ZSA6]NBZPC=nolign
+Affzo [M:ZSA6]
+
+
+#-- Gestion des liens entre NC
+Raz [M:ZSA4]NBNCP, NBNCF, XNCRSP, ITMRSP, XNCIMP, ITMIMP
+For [F:ZXK]ZXK0 Where [F:ZXK]XNCNUM=[F:XSA]XNCNUM
+    [M:ZSA4]XNCIMP([M:ZSA4]NBNCF) = [F:ZXK]XNCLNK
+    Read [F:ZXSA]XSA0=[F:ZXK]XNCLNK
+    If fstat : Raz [F:ZXSA] : Endif
+    [M:ZSA4]ITMIMP([M:ZSA4]NBNCF)=[F:ZXSA]ITMREF
+
+    Read [F:ZXL]ZXL0(1)=[F:ZXK]XNCLNK
+    If fstat : Raz [F:ZXL] : Endif
+    [M:ZSA4]LOTIMP([M:ZSA4]NBNCF)=[F:ZXL]ZLOTNC
+    Affzo [M:ZSA4]LOTIMP([M:ZSA4]NBNCF)
+
+    [M:ZSA4]NBNCF+=1
+Next
+For [F:ZXK]ZXK1 Where [F:ZXK]XNCLNK=[F:XSA]XNCNUM
+    [M:ZSA4]XNCRSP([M:ZSA4]NBNCP) = [F:ZXK]XNCNUM
+    Read [F:ZXSA]XSA0=[F:ZXK]XNCNUM
+    If fstat : Raz [F:ZXSA] : Endif
+    [M:ZSA4]ITMRSP([M:ZSA4]NBNCP)=[F:ZXSA]ITMREF
+
+    Read [F:ZXL]ZXL0(1)=[F:ZXK]XNCNUM
+    If fstat : Raz [F:ZXL] : Endif
+    [M:ZSA4]LOTRSP([M:ZSA4]NBNCP)=[F:ZXL]ZLOTNC
+    Affzo [M:ZSA4]LOTRSP([M:ZSA4]NBNCP)
+
+    [M:ZSA4]NBNCP+=1
+Next
+Affzo [M:ZSA4]5,10
+
+#-- Date de livraison si BL
+If [F:XSA]XTYPPIE=8
+    Read [F:SDH]SDH0=[M:XSA1]XNUMPIE
+    If fstat : Raz [F:SDH] : Endif
+    [M:XSA1]ZSHIDAT=[F:SDH]SHIDAT
+Else
+    Raz [M:XSA1]ZSHIDAT
+Endif
+Affzo [M:XSA1]ZSHIDAT
+
+
+#acl le 23/06/23
+Gosub RECUP_CLOB
+Gosub RECUP_XNCACL
+Gosub RECUP_GRAVITE
+Gosub RECUP_OCCURENCE
+Gosub RECUP_CAPA
+
+Gosub RECUP_XACLOB
+Return
+
+#-----------------------------------------------------------------------------------
+$RAZCRE
+#-- Gestion de la criticité
+Raz [M:ZSA6]
+nolign=0
+For [F:ZPC]ZPC0
+    nolign+=1
+    [M:ZSA6] = [F:ZPC]
+    Read [F:ZXC]ZXC0=[F:XSA]XNCNUM;[F:ZPC]GRPNUM;[F:ZPC]CRINUM;[F:ZPC]REPONSE
+    If !fstat
+        [M:ZSA6]ACTFLG(nolign-1)=2
+    Endif
+Next
+[M:ZSA6]NBZPC=nolign
+Affzo [M:ZSA6]
+
+#-- Gestion des liens entre NC
+Raz [M:ZSA4]NBNCP, NBNCF, XNCRSP, ITMRSP, XNCIMP, ITMIMP
+Affzo [M:ZSA4]5,10
+
+[M:ZSA6]XINDGRA=1
+Affzo [M:ZSA6]XINDGRA
+
+#Diszo [M:XSA1]XTIERS, BPCNUM, BPSNUM, BPTNUM
+#acl le 23/06/23
+Gosub RECUP_GRAVITE
+Gosub RECUP_OCCURENCE
+
+Return
+
+#-----------------------------------------------------------------------------------
+$VERIF_CRE
+Local Integer Z_INDGRA, Z_OK
+
+If [M:XSA1]ITMREF="" & [M:XSA0]XTYPE=2
+    Call ERREUR("Code article obligatoire !") From GESECRAN
+    [L]OK=0
+    Return
+Endif
+
+[L]Z_INDGRA=[M:ZSA6]XINDGRA
+If [M:ZSA6]ZTOTQUO>0 & [M:ZSA6]ZTOTQUO <= 30 & [L]Z_INDGRA<>2
+        [L]Z_INDGRA=2
+Elsif [M:ZSA6]ZTOTQUO>30 & [M:ZSA6]ZTOTQUO<=200 & [L]Z_INDGRA<>3
+        [L]Z_INDGRA=3
+Elsif [M:ZSA6]ZTOTQUO>200 & [M:ZSA6]ZTOTQUO<=5000 & [L]Z_INDGRA<>4
+        [L]Z_INDGRA=4
+Elsif [L]Z_INDGRA<>5 & [M:ZSA6]ZTOTQUO>5000
+        [L]Z_INDGRA=5
+Endif
+
+#If [L]Z_INDGRA<>[M:ZSA6]XINDGRA
+#    [L]Z_OK=1
+#    Call OUINON("Passage auto vers la criticité"-mess([L]Z_INDGRA,1028,1)-"?",[L]Z_OK) From GESECRAN
+#    If [L]Z_OK=2
+#       [M:ZSA6]XINDGRA=[L]Z_INDGRA
+#        Affzo [M:ZSA6]XINDGRA
+#    Endif
+#Endif
+
+#@V2.#18_str
+If [M:XSA0]XSTATU>3 & [F:XSA]XSTATU<4
+    [L]Z_WRKFLW=2
+Else
+    [L]Z_WRKFLW=1
+Endif
+#@V2.#18_end
+
+#ACL le 23/06/22
+If ACTION="VERIF_CRE"
+  If [M:X4SA8]XSTATU=0 : [M:X4SA8]XSTATU=1 : Endif
+  If [M:XSA4]XSTATU=0 : [M:XSA4]XSTATU=1 : Endif
+Endif
+If ACTION="VERIF_MOD"
+  #lors de la clôture, contrôler que le champ impact DM (ZIMPDM) n'a pas la valeur "à spécifier"
+  If find([M:XSA0]XSTATU,4,5)>0 and [M:XSA0]ZIMPDM<2 and left$([M:XSA0]XNCNUM,2)="24"
+    Call ECR_TRACE("le champ impact DM doit être renseigné",1) From GESECRAN
+    OK=0
+  Endif
+#  If find([M:XSA0]XSTATU,4,5)>0 and [M:ZSA6]XINDGRA<2
+#    Call ECR_TRACE("le champ Indice gravité doit être renseigné",1) From GESECRAN
+#    OK=0
+#  Endif
+  #Mettre en obligatoire la coche de la gravité et occurrence.
+  If find([M:XSA0]XSTATU,4,5)>0 and  find(2,[M:ZSA6]GRVFLG)=0 and left$([M:XSA0]XNCNUM,2)="24"
+    Call ECR_TRACE("la gravité doit être renseignée",1) From GESECRAN
+    OK=0
+  Endif
+  If find([M:XSA0]XSTATU,4,5)>0 and  find(2,[M:ZSA6]OCCFLG)=0 and left$([M:XSA0]XNCNUM,2)="24"
+    Call ECR_TRACE("l'occurrence doit être renseignée",1) From GESECRAN
+    OK=0
+  Endif
+Endif
+
+#ACL le 23/06/22
+If [M:XSA4]NBLIG>0 and [M:XSA0]XSTATU=1 :  [M:XSA0]XSTATU=3 : Endif
+If [M:XSA4]NBCAP>0 and find([M:XSA0]XSTATU,1,3)>0 :  [M:XSA0]XSTATU=2 : Endif
+Gosub GERE_CAPA
+
+Return
+
+#-----------------------------------------------------------------------------------
+$AVANT_MODFIC
+#-- Est-ce que le n° de benne a été modifié ?
+If [M:ZSA8]ZBENUM<>[F:XSA]ZBENUM
+    [L]Z_TABZBE(0)=2                 #-> Oui
+    [L]Z_TABZBE(1)=[F:XSA]ZBENUM     #-> Ancienne valeur
+    [L]Z_TABZBE(2)=[M:ZSA8]ZBENUM    #-> Nouvelle valeur
+Else
+    [L]Z_TABZBE(0)=1                 #-> Non
+Endif
+
+#-- Est-ce que la quantité impactée a été modifiée ?
+If [M:ZSA8]ZQTYRNC<>[F:XSA]ZQTYRNC
+    [L]Z_TABQTYNC(0)=2                 #-> Oui
+    [L]Z_TABQTYNC(1)=[F:XSA]ZQTYRNC    #-> Ancienne valeur
+    [L]Z_TABQTYNC(2)=[M:ZSA8]ZQTYRNC   #-> Nouvelle valeur
+Else
+    [L]Z_TABQTYNC(0)=1                 #-> Non
+Endif
+
+#-- Est-ce que la quantité détruite a été modifiée ?
+If [M:ZSA8]ZDESTRUCT<>[F:XSA]ZQTYRNC
+    [L]Z_TABQTYDES(0)=2                 #-> Oui
+    [L]Z_TABQTYDES(1)=[F:XSA]ZDESTRUCT  #-> Ancienne valeur
+    [L]Z_TABQTYDES(2)=[M:ZSA8]ZDESTRUCT #-> Nouvelle valeur
+Else
+    [L]Z_TABQTYDES(0)=1                 #-> Non
+Endif
+
+Return
+
+
+#-----------------------------------------------------------------------------------
+$INICRE
+Gosub GERE_CLOB
+Return
+
+
+#-----------------------------------------------------------------------------------
+$CREATION
+#Delete [F:ZIV] Where [F:ZIV]XNCNUM=[F:XSA]XNCNUM
+
+#Raz [F:ZIV]
+#[F:ZIV]XNCNUM=[F:XSA]XNCNUM
+#For nolign=1 To [M:ZSA7]NBINV
+#    [F:ZIV]       = [M:ZSA7]
+#    [F:ZIV]ZIVLIG = nolign*1000
+ #   Write [F:ZIV]
+#Next
+
+
+#--> Gestion des codes nature
+Delete [F:ZNA] Where [F:ZNA]XNCNUM=[F:XSA]XNCNUM
+
+Raz [F:ZNA]
+[F:ZNA]XNCNUM=[F:XSA]XNCNUM
+For I=0 To [M:XSA1]ZNBNAT-1
+    [F:ZNA]ZLIG    = I*1000
+    [F:ZNA]CODNAT  = [M:XSA1]XTYPDEF(I)
+    Write [F:ZNA]
+Next I
+
+#--> Gestion des codes cause défaut
+#Delete [F:ZCN] Where [F:ZCN]XNCNUM=[F:XSA]XNCNUM
+
+#Raz [F:ZCN]
+#[F:ZCN]XNCNUM=[F:XSA]XNCNUM
+#For I=0 To [M:XSA2]ZNBCAU-1
+#    [F:ZCN]ZLIG    = I*1000
+#    [F:ZCN]CODCAU  = [M:XSA2]ZCODE(I)
+#   Write [F:ZCN]
+#Next I
+
+#--> Gestion des lots impactés
+Delete [F:ZXL] Where [F:ZXL]XNCNUM=[F:XSA]XNCNUM
+
+Raz [F:ZXL]
+For nolign=1 To [M:XSA1]ZNBLOT
+    [F:ZXL]ZXLLIG=nolign-1
+    [F:ZXL] = [M:XSA0]
+    [F:ZXL] = [M:XSA1]
+    Write [F:ZXL]
+Next
+
+#- Gestion criticité
+Delete [F:ZXC] Where [F:ZXC]XNCNUM=[F:XSA]XNCNUM
+Raz [F:ZXC]
+For nolign=1 To [M:ZSA6]NBZPC
+    If [M:ZSA6]ACTFLG(nolign-1)=2
+        [F:ZXC] = [M:XSA0]
+        [F:ZXC] = [M:ZSA6]
+        Write [F:ZXC]
+    Endif
+Next
+
+#--> Gestion écran détail fournisseur
+Delete [F:ZCB] Where [F:ZCB]XNCNUM=[F:XSA]XNCNUM
+Delete [F:ZLB] Where [F:ZLB]XNCNUM=[F:XSA]XNCNUM
+If [F:XSA]XTIERS=2
+    #-- Tableau des cartons
+    Raz [F:ZCB]
+    For [S]nolign=1 To [M:ZSA5]NBCTRBPS
+        [F:ZCB] = [M:XSA0]
+        [F:ZCB] = [M:ZSA5]
+        Write [F:ZCB]
+    Next [S]nolign
+
+    #-- Tableau des lots
+    Raz [F:ZLB]
+    For [S]nolign=1 To [M:ZSA5]NBLOTBPS
+        [F:ZLB] = [M:XSA0]
+        [F:ZLB] = [M:ZSA5]
+        Write [F:ZLB]
+    Next [S]nolign
+Endif
+
+#-- Gestion des bennes de déchets
+If [L]Z_TABZBE(0)=2
+    #N° de benne a été modifié
+    #-- On enlève la NC de la précédente benne
+    Delete [F:ZBN] Where [F:ZBN]XNCNUM=[F:XSA]XNCNUM & [F:ZBN]ZBENUM=[L]Z_TABZBE(1)
+    #-- On recalcule le montant de la précedente benne
+    If [L]Z_TABZBE(1)<>0
+        Call CALC_CST_BENNE([L]Z_TABZBE(1)) From SPEZBE
+    Endif
+
+    #--On ajoute la NC à la nouvelle benne
+    Read [F:ZBE]ZBE0=[L]Z_TABZBE(2)
+    If fstat : Raz [F:ZBE] : Endif
+
+    If [L]Z_TABZBE(2)<>0
+        Raz [F:ZBN]
+        [F:ZBN]ZBENUM=[L]Z_TABZBE(2)
+        [F:ZBN]XNCNUM=[F:XSA]XNCNUM
+        [F:ZBN]WEIPRI=[F:ZBE]ZBEWEIPRI
+        Write [F:ZBN]
+        #-- On recalcule le montant de la nouvelle benne
+        Call CALC_CST_BENNE([L]Z_TABZBE(2)) From SPEZBE
+
+        If [M:ZSA8]ZDESTRUCT>0
+            Read [F:ZBE]ZBE0=[L]Z_TABZBE(2)
+            Read [F:ZBN]ZBN0=[F:ZBE]ZBENUM;[F:XSA]XNCNUM
+            If [F:ZBN]WEIDEC<>0 & [F:ZBE]REMPLIS>0
+                [F:XSA]ZBECSTCPL = [F:ZBE]VLTFOR*([F:ZBN]WEIDEC/[F:ZBE]REMPLIS)+ [F:ZBN]WEIDEC*[F:ZBN]WEIPRI
+            Else
+                [F:XSA]ZBECSTCPL = 0
+            Endif
+            [M:ZSA8]ZBECSTCPL=[F:XSA]ZBECSTCPL : Affzo [M:ZSA8]ZBECSTCPL
+            Rewrite [F:XSA]
+        Else
+            #-- On va rechercher le montant à ré-imputer à la fiche
+            Read [F:ZBE]ZBE0=[L]Z_TABZBE(2)
+            Read [F:ZBN]ZBN0=[F:ZBE]ZBENUM;[F:XSA]XNCNUM
+            If [F:ZBN]WEIDEC<>0 & [F:ZBE]REMPLIS>0
+                [F:XSA]ZBECST = [F:ZBE]VLTFOR*([F:ZBN]WEIDEC/[F:ZBE]REMPLIS)+ [F:ZBN]WEIDEC*[F:ZBN]WEIPRI
+            Else
+                [F:XSA]ZBECST = 0
+            Endif
+            [M:ZSA8]ZBECST=[F:XSA]ZBECST : Affzo [M:ZSA8]ZBECST
+            Rewrite [F:XSA]
+        Endif
+    Endif
+Elsif [M:ZSA8]ZBENUM<>0
+    #N° de benne n'a pas été modifié
+    If [M:ZSA8]ZDESTRUCT>0
+        #Gestion du coût réel
+        If [L]Z_TABQTYDES(0)=2
+            #La qté détruite a été modifiée
+            Call CALC_CST_BENNE([F:XSA]ZBENUM) From SPEZBE
+            #-- On va rechercher le montant à ré-imputer à la fiche
+            Read [F:ZBE]ZBE0=[F:XSA]ZBENUM
+            Read [F:ZBN]ZBN0=[F:XSA]ZBENUM;[F:XSA]XNCNUM
+            If [F:ZBE]REMPLIS>0
+                [F:XSA]ZBECSTCPL = [F:ZBE]VLTFOR*([F:ZBN]WEIDEC/[F:ZBE]REMPLIS)+ [F:ZBN]WEIDEC*[F:ZBN]WEIPRI
+            Else
+                [F:XSA]ZBECSTCPL = [F:ZBE]VLTFOR+ [F:ZBN]WEIDEC*[F:ZBN]WEIPRI
+            Endif
+            [M:ZSA8]ZBECSTCPL=[F:XSA]ZBECSTCPL : Affzo [M:ZSA8]ZBECSTCPL
+            Rewrite [F:XSA]
+        Endif
+    Else
+        #Gestion du coût prévisionnel
+        If [M:ZSA8]ZQTYRNC>0 & [L]Z_TABQTYNC(0)=2
+            #La qté impactée a été modifiée
+            Call CALC_CST_BENNE([F:XSA]ZBENUM) From SPEZBE
+            #-- On va rechercher le montant à ré-imputer à la fiche
+            Read [F:ZBE]ZBE0=[F:XSA]ZBENUM
+            Read [F:ZBN]ZBN0=[F:XSA]ZBENUM;[F:XSA]XNCNUM
+            If [F:ZBE]REMPLIS>0
+                [F:XSA]ZBECST = [F:ZBE]VLTFOR*([F:ZBN]WEIDEC/[F:ZBE]REMPLIS)+ [F:ZBN]WEIDEC*[F:ZBN]WEIPRI
+            Else
+                [F:XSA]ZBECST = [F:ZBE]VLTFOR+ [F:ZBN]WEIDEC*[F:ZBN]WEIPRI
+            Endif
+            [M:ZSA8]ZBECST=[F:XSA]ZBECST : Affzo [M:ZSA8]ZBECST
+            Rewrite [F:XSA]
+        Endif
+    Endif
+Endif
+
+
+##--> Gestion des bennes de déchets
+#Read [F:ZBN]ZBN1=[F:XSA]XNCNUM
+#If !fstat
+#    Read [F:ZBE]ZBE0=[F:ZBN]ZBENUM
+#    If !fstat
+#        Delete [F:ZBN] Where [F:ZBN]XNCNUM=[F:XSA]XNCNUM
+#        [F:ZBE]VLTTOT=[F:ZBE]VLTFOR
+#        For [F:ZBN]ZBN0 Where [F:ZBN]ZBENUM=[F:ZBE]ZBENUM
+#            [F:ZBE]REMPLIS+=[F:ZBN]WEIDEC
+#            [F:ZBE]VLTTOT +=[F:ZBN]WEIDEC*[F:ZBN]WEIPRI
+#        Next
+#        Rewrite [F:ZBE]
+#    Endif
+#Endif
+#If [M:ZSA8]ZBENUM<>0
+#    Read [F:ZBE]ZBE0=[M:ZSA8]ZBENUM
+#    If !fstat
+#        Raz [F:ZBN]
+#        [F:ZBN]ZBENUM=[M:ZSA8]ZBENUM
+#        [F:ZBN]XNCNUM=[F:XSA]XNCNUM
+#
+#        Read [F:ITM]ITM0=[F:XSA]ITMREF
+#        If !fstat
+#            If [F:ITM]ITMWEI=0
+#                #Call MESSAGE("Poids non renseigné sur la fiche article") From GESECRAN
+#                [F:ZBN]WEIDEC=0
+#            Else
+#                Case [F:ITM]STU
+#                    When "UN"
+#                        If [F:ITM]WEU="g"
+#                            [F:ZBN]WEIDEC=[F:XSA]ZQTYRNC*[F:ITM]ITMWEI/1000
+#                        Else
+#                            [F:ZBN]WEIDEC=[F:XSA]ZQTYRNC*[F:ITM]ITMWEI
+#                        Endif
+#                    When "kg"
+#                        [F:ZBN]WEIDEC=[F:XSA]ZQTYRNC
+#                    When "g"
+#                        [F:ZBN]WEIDEC=[F:XSA]ZQTYRNC/1000
+#                Endcase
+#            Endif
+#        Endif#
+#
+#        [F:ZBN]WEIPRI=[F:ZBE]ZBEWEIPRI
+#        Write [F:ZBN]
+#
+#        [F:ZBE]VLTTOT=[F:ZBE]VLTFOR
+#        For [F:ZBN]ZBN0 Where [F:ZBN]ZBENUM=[F:ZBE]ZBENUM
+#            [F:ZBE]REMPLIS+=[F:ZBN]WEIDEC
+#            [F:ZBE]VLTTOT +=[F:ZBN]WEIDEC*[F:ZBN]WEIPRI
+#        Next
+#        Rewrite [F:ZBE]
+#    Endif
+#Endif
+
+#-- Gestion des liens entre fiches de NC
+Delete [F:ZXK] Where [F:ZXK]XNCNUM=[F:XSA]XNCNUM or [F:ZXK]XNCLNK=[F:XSA]XNCNUM
+Raz [F:ZXK]
+For I=0 To [M:ZSA4]NBNCP-1
+    [F:ZXK]XNCNUM=[M:ZSA4]XNCRSP(I)
+    [F:ZXK]XNCLNK=[F:XSA]XNCNUM
+    Write [F:ZXK]
+Next I
+Raz [F:ZXK]
+For I=0 To [M:ZSA4]NBNCF-1
+    [F:ZXK]XNCLNK=[M:ZSA4]XNCIMP(I)
+    [F:ZXK]XNCNUM=[F:XSA]XNCNUM
+    Write [F:ZXK]
+Next I
+
+
+
+#acl le 23/06/23
+Gosub CREE_CAPA
+Gosub GERE_XNCACL
+Gosub GERE_CLOB_CAPA
+Return
+
+#-----------------------------------------------------------------------------------
+$APRES_CRE
+Gosub ACTION From SPEXSAKAR
+ZGPE=1
+Actzo [M:XSA0]
+Actzo [M:XSA1]
+Actzo [M:XSA4]
+
+#--> Gestion des Tiers
+If [M:XSA1]TYPDEST=4
+    Actzo [M:XSA1]20
+    Case [M:XSA1]XTIERS
+        When 1
+            Actzo [M:XSA1]BPCNUM
+            Diszo [M:XSA1]BPSNUM,BPTNUM
+        When 2
+            Actzo [M:XSA1]BPSNUM
+            Diszo [M:XSA1]BPCNUM,BPTNUM
+        When 3
+            Actzo [M:XSA1]BPTNUM
+            Diszo [M:XSA1]BPSNUM,BPCNUM
+    Endcase
+    Affzo [M:XSA1]20
+Else
+    Diszo [M:XSA1]20
+Endif
+
+#-- Modification liée à la gestion des protocoles de fabrication
+If dim([M:XSA2]ZIMPPRF)<>-1 & left$([M:XSA1]ITMREF,1)="3" & [M:XSA2]ZIMPPRF<=2
+    #-- A l'enreg de la fiche de NC, on va voir s'il existe un enreg sur le lot dans la gestion des PRF
+    If !clalev([F:ZPF])  : Local File ZPRF    [ZPF]  : Endif
+    If !clalev([F:ZPF2]) : Local File ZPRF    [ZPF2] : Endif
+    If !clalev([F:MFI])  : Local File MFGITM  [MFI]  : Endif
+    Local Integer Z_OKPRF
+
+    Trbegin [F:ZPF]
+    #-- On travaille pour chaque lot de la fiche de NC
+    For I=0 To [M:XSA1]ZNBLOT-1
+        If [M:XSA1]ZLOTNC(I)<>""
+            #-- Existe dans ZPRF ?
+            Read [F:ZPF]ZPF3=[M:XSA1]ITMREF;[M:XSA1]ZLOTNC(I)
+            If !fstat
+                #Si déjà enregistré, on ne fait rien
+                If [F:ZPF]CTLNC<>[M:XSA2]ZIMPPRF
+                    #Il existe - màj de l'enreg avec l'information "NC existe" à "oui"
+                    [F:ZPF]CTLNC=[M:XSA2]ZIMPPRF
+                    Rewrite [F:ZPF]
+                    If fstat
+                        [L]Z_OKPRF=1
+                        Break
+                    Endif
+                Endif
+            Else
+                #Pas d'enreg dans ZPRF - création enreg avec information "NC existe" à "oui"
+                Filter [F:MFI]
+                Filter [F:MFI] Where [F:MFI]ITMREF=[M:XSA1]ITMREF & [F:MFI]LOT=[M:XSA1]ZLOTNC(I)
+                Read [F:MFI]MFI0 First
+                If !fstat
+                    Raz [F:ZPF]
+                    [F:ZPF]ITMREF    = [F:MFI]ITMREF
+                    [F:ZPF]WST       = ""
+                    [F:ZPF]ZVERPRF   = ""
+                    [F:ZPF]MFGNUM    = [F:MFI]MFGNUM
+                    [F:ZPF]LOT       = [F:MFI]LOT
+                    If [F:MFI]QUACPLQTY>0
+                        [F:ZPF]CTLRSLT   = 1    #>En cours
+                    Elsif [F:MFI]REJCPLQTY>0 & [F:MFI]REJCPLQTY<>[F:MFI]CPLQTY
+                        [F:ZPF]CTLRSLT   = 2    #>Partiel conforme
+                    Elsif [F:MFI]REJCPLQTY>0
+                        [F:ZPF]CTLRSLT   = 3    #>Non conforme
+                    Else
+                        [F:ZPF]CTLRSLT   = 4    #>Conforme
+                    Endif
+                    [F:ZPF]CTLNC     = [M:XSA2]ZIMPPRF
+                    [F:ZPF]PRDDAT    = [F:MFI]TRKFIRST
+                    [F:ZPF]DLVDAT    = [0/0/0]
+                    [F:ZPF]VALFLG    = 1
+                    [F:ZPF]VALDAT    = [0/0/0]
+                    [F:ZPF]EXTQTY    = [F:MFI]EXTQTY
+                    Write [F:ZPF]
+                    If fstat
+                        [L]Z_OKPRF=1
+                        Break
+                    Endif
+                Endif
+                Filter [F:MFI]
+            Endif
+        Endif
+    Next I
+    If [L]Z_OKPRF=0
+        Commit
+    Else
+        Rollback
+    Endif
+Endif
+
+#@V2.#18_str
+##Envoi d'un mail en clôture de fiche
+If [L]Z_WRKFLW=2 and 1=2
+    Local Char    Z_TBPAR(20)(1..10) , Z_TBVAL(20)(1..10)
+    Local Integer Z_NBPAR
+
+    [L]Z_NBPAR  = 0
+    [L]Z_NBPAR += 1 : [L]Z_TBPAR(Z_NBPAR) = "ncdeb"  : [L]Z_TBVAL(Z_NBPAR) = [F:XSA]XNCNUM
+    [L]Z_NBPAR += 1 : [L]Z_TBPAR(Z_NBPAR) = "ncfin"  : [L]Z_TBVAL(Z_NBPAR) = [F:XSA]XNCNUM
+
+    #-- Déclaration des variables
+    Global Char    Z_XSADEB(25), Z_XSAFIN(25)
+    [V]Z_XSADEB=[F:XSA]XNCNUM
+    [V]Z_XSAFIN=[F:XSA]XNCNUM
+    Call ETAT("ZFICHENC","MAIL",[V]GLANGUE,0,"Edition fiche de synthèse",[L]Z_TBPAR,[L]Z_TBVAL) From AIMP3
+Endif
+#@V2.#18_end
+
+#@V2.#14_str
+If [V]GREP="M" & [V]GPROFIL<>"AQR" & [V]GPROFIL<>"ASAQ" & 1=2
+    Call WORKBOUT("ZZZ",[F:XSA]XNCNUM) From GOBJACT
+Endif
+#@V2.#14_end
+
+#acl le 23/06/23
+Gosub RECUP_XNCACL
+Gosub RECUP_CAPA
+
+Return
+
+
+#-----------------------------------------------------------------------------------
+$ANNULE
+Delete [F:ZIV] Where [F:ZIV]XNCNUM=[F:XSA]XNCNUM
+Delete [F:ZNA] Where [F:ZNA]XNCNUM=[F:XSA]XNCNUM
+Delete [F:ZCN] Where [F:ZCN]XNCNUM=[F:XSA]XNCNUM
+Delete [F:ZXL] Where [F:ZXL]XNCNUM=[F:XSA]XNCNUM
+Delete [F:ZXC] Where [F:ZXC]XNCNUM=[F:XSA]XNCNUM
+Delete [F:ZCB] Where [F:ZCB]XNCNUM=[F:XSA]XNCNUM
+Delete [F:ZLB] Where [F:ZLB]XNCNUM=[F:XSA]XNCNUM
+#clob
+Gosub SUP_CLOB
+Return
+
+
+########################################
+# ATTENTION CODE DUPLIQUE DANS SPEXSAKAR
+# CETTE ACTION N'ACCEPTE PAS DE PARAMETRE
+# ET DOIT SE TROUVER ICI
+########################################
+Subprog C_NBLIG
+If status=65
+    If [M:XSA0]XSTATU=3
+    Infbox (mess(91,1047,1))
+    mkstat=2
+    Endif
+Endif
+If status=68 | status=83
+    If [M:XSA0]XSTATU=3
+    Infbox (mess(91,1047,1))
+    mkstat=2
+    Endif
+Endif
+End
+
+########################################
+Subprog S_XNUMPIE(VALEUR)
+Variable Char    VALEUR()
+End
+
+########################################
+Subprog C_XWST(VALEUR)
+Variable Char    VALEUR()
+End
+
+########################################
+Subprog S_XWST(VALEUR)
+Variable Char    VALEUR()
+End
+
+########################################
+Subprog AS_XDESCRI(VALEUR)
+Variable Char    VALEUR()
+End
+
+########################################
+Subprog AS_XDESREP(VALEUR)
+Variable Char    VALEUR()
+End
+
+########################################
+Subprog C_XNUMACT(VALEUR)
+Variable Char    VALEUR()
+End
+
+
+########################################
+Subprog AV_XWST(VALEUR)
+Variable Char    VALEUR()
+If [M:XSA1]XMACHINE <> "" : mkstat=2 : Endif
+End
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZINVEST(VALEUR)
+Variable Char    VALEUR()
+If !clalev([F:ADI]) : Local File ATABDIV [ADI] : Endif
+Read [F:ADI]CODE=1512;VALEUR
+If !fstat
+    [M:ZSA7]ZINVCST(nolign-1)=[F:ADI]N1
+    [M:ZSA7]ZINVTYP(nolign-1)=[F:ADI]A1
+    Affzo [M:ZSA7]ZINVCST(nolign-1),ZINVTYP(nolign-1)
+Endif
+
+End
+
+
+#@V2.#29&#30_str
+#-----------------------------------------------------------------------------------
+#Subprog AM_ZQTYDEC(VALEUR)
+#Variable Decimal VALEUR
+#
+#[M:ZSA8]ZVLTLIG(nolign-1)  = VALEUR*[M:ZSA8]ZVLTQTY(nolign-1)+(VALEUR<>0)*[M:ZSA8]ZVLTFOR(nolign-1)
+#Affzo [M:ZSA8]ZVLTLIG(nolign-1)
+#
+#Raz [M:ZSA8]ZCSTTOT
+#For I=0 To [M:ZSA8]NBDEC-1
+#    [M:ZSA8]ZCSTTOT    += [M:ZSA8]ZVLTLIG(I)
+#Next I
+#[M:ZSA8]ZCSTTOT+=[M:ZSA8]ZGESFOR
+#[M:ZSA8]ZCSTTOT+=[M:ZSA8]ZINVCSTTOT
+#[M:ZSA8]ZCSTTOT+=[M:ZSA8]ZVLTTOT(0)
+#
+#Affzo [M:ZSA8]ZCSTTOT
+#
+#End
+#@V2.#29&#30_end
+
+
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZGESCST(VALEUR)
+Variable Char VALEUR
+If !clalev([F:ADI]) : Local File ATABDIV [ADI] : Endif
+Read [F:ADI]CODE=1516;VALEUR
+If !fstat
+    [M:ZSA8]ZGESFOR=[F:ADI]N1
+    Affzo [M:ZSA8]ZGESFOR
+Else
+    [M:ZSA8]ZGESFOR=0
+    Affzo [M:ZSA8]ZGESFOR
+Endif
+
+#@V2.#29&#30_str
+#-- Calcul du coût de la NC
+#[M:ZSA8]ZCSTTOT   =[M:ZSA8]ZINVCSTTOT+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECST+[M:ZSA8]ZVLTTOT
+#[M:ZSA8]ZCSTTOTCPL=[M:ZSA8]ZINVCSTCPL+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECSTCPL+[M:ZSA8]ZVLTTOTCPL
+#
+#Affzo [M:ZSA8]ZCSTTOT
+#
+Call CALC_CST("", 0)
+#@V2.#29&#30_end
+
+#-- Fin calcul des CNQ
+
+
+End
+
+
+#@V2.#29&#30_str
+#-----------------------------------------------------------------------------------
+#Subprog AM_ZTYPFLG(VALEUR)
+#Variable Integer VALEUR
+#If VALEUR=2
+#    #-- Calcul du poids à jeter
+#    If !clalev([F:ITM]) : Local File ITMMASTER [ITM] : Endif
+#    Read [F:ITM]ITM0=[M:XSA1]ITMREF
+#    If fstat : Raz [F:ITM] : Endif
+#    [M:ZSA8]ZQTYDEC(nolign-1) = [F:ITM]ITMWEI*[M:XSA1]ZQTYSTU
+#Else
+#    Raz [M:ZSA8]ZQTYDEC(nolign-1)
+#Endif
+#Affzo [M:ZSA8]ZQTYDEC(nolign-1)
+#Call AM_ZQTYDEC([M:ZSA8]ZQTYDEC(nolign-1))
+#
+#End
+#@V2.#29&#30_end
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_XTYPDEF(VALEUR)
+Variable Char    VALEUR()
+#-- Chargement du type et du libellé de la nature
+Read [F:XNA]XNA0=VALEUR
+If !fstat
+    [M:XSA1]ZLIBNAT(nolign-1) = [F:XNA]XDES
+    [M:XSA1]ZTYPNAT(nolign-1) = [F:XNA]XINTEXT
+Endif
+Affzo [M:XSA1]ZLIBNAT(nolign-1),ZTYPNAT(nolign-1)
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZCODE(VALEUR)
+Variable Char    VALEUR()
+Filter [F:XDE]
+Read [F:XDE]XDE0=VALEUR
+If fstat : Raz [F:XDE] : Endif
+
+[M:XSA2]ZDES(nolign-1)    = [F:XDE]XDES
+[M:XSA2]ZCODFAM(nolign-1) = [F:XDE]XCODFAM
+
+Affzo [M:XSA2]ZDES(nolign-1),ZCODFAM(nolign-1)
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZCKLST(VALEUR)
+Variable Integer VALEUR
+
+Case indice
+    When 2,3
+        #Controle sur la présence d'au moins un processus
+        If VALEUR=2 & [M:XSA2]ZPRC(0)="" & [M:XSA2]ZPRC(1)=""
+            Call ERREUR("Au moins un processus doit être renseigné.\Clôture impossible") From GESECRAN
+            mkstat=2
+        Elsif VALEUR=2 & [M:ZSA6]XINDGRA>2
+            If find(0,[M:ZSA7]ZINVCST(0..[M:ZSA7]NBINV-1))
+                Call ERREUR("Tous les coûts investigation/actions doivent être saisis.\Clôture impossible") From GESECRAN
+                mkstat=2
+            Endif
+        Endif
+    When 4,5
+        #Changement de statut et désactivation tableau des causes
+        If VALEUR=2
+          If [M:ZSA7]NBINV=0 & [M:XSA0]XSTATU=1
+              Local Integer Z_OK
+                [L]Z_OK=2
+                Call OUINON("Passage au statut"-mess(4,1031,1)-"?",[L]Z_OK) From GESECRAN
+               If [L]Z_OK=2
+                  [M:XSA0]XSTATU=4
+                   Affzo [M:XSA0]XSTATU
+                Endif
+            Elsif [M:XSA2]ZNBCAU>0 & [M:XSA0]XSTATU=2
+                Local Integer Z_OK
+                [L]Z_OK=2
+                Call OUINON("Passage au statut"-mess(3,1031,1)-"?",[L]Z_OK) From GESECRAN
+               If [L]Z_OK=2
+                  [M:XSA0]XSTATU=3
+                    Affzo [M:XSA0]XSTATU
+                Endif
+            Endif
+            Diszo [M:XSA2]20
+        Else
+            #- On réactive le tableau des causes
+           If indice<>4 & [M:ZSA9]ZCKLST(4)<>2 or indice<>5 & [M:ZSA9]ZCKLST(5)<>2
+                Actzo [M:XSA2]20
+            Endif
+        Endif
+Endcase
+
+If mkstat=0 & VALEUR=2
+ #   -- Gestion du statut de la fiche de NC
+   # - il faut que toutes les lignes investigation soient au statut "Fait"
+    Local Integer Z_OK
+   [L]Z_OK=1
+    For I=0 To [M:ZSA7]NBINV-1
+    If [M:ZSA7]ZINVSTA(I)<>2
+     [L]Z_OK=0
+         Break
+        Endif
+    Next I
+
+    If [L]Z_OK=1
+        Case indice
+            When 1
+                If ([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1) & [M:ZSA9]ZCKLST(2)=2
+&& ([M:ZSA6]XINDGRA=2 or [M:ZSA6]XINDGRA>2 & [M:ZSA9]ZCKLST(3)=2 & [M:ZSA9]ZCKLST(6)=2 & ([M:ZSA9]ZCKLST(4)=2 or [M:ZSA9]ZCKLST(5)=2))
+                    [L]Z_OK=2
+                    Call OUINON("Passage au statut"-mess(4,1031,1)-"?",[L]Z_OK) From GESECRAN
+                    If [L]Z_OK=2
+                        [M:XSA0]XSTATU=4
+                        Affzo [M:XSA0]XSTATU
+                    Endif
+                Endif
+
+            When 2
+                If ([M:ZSA6]XINDGRA=2 & (([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1)
+&& [M:ZSA9]ZCKLST(1)=2 or !([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1)) or [M:ZSA6]XINDGRA>2 & [M:ZSA9]ZCKLST(6)=2 & ([M:ZSA9]ZCKLST(4)=2 or [M:ZSA9]ZCKLST(5)=2)
+&& ([M:XSA1]TYPDEST=1 or [M:ZSA9]ZCKLST(3)=2 & (([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1) & [M:ZSA9]ZCKLST(1)=2 or ([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=2))))
+                    [L]Z_OK=2
+                    Call OUINON("Passage au statut"-mess(4,1031,1)-"?",[L]Z_OK) From GESECRAN
+                    If [L]Z_OK=2
+                        [M:XSA0]XSTATU=4
+                        Affzo [M:XSA0]XSTATU
+                    Endif
+                Endif
+
+            When 3
+                If ([M:ZSA6]XINDGRA>2 & [M:ZSA9]ZCKLST(2)=2 & [M:ZSA9]ZCKLST(6)=2
+&& ([M:ZSA9]ZCKLST(4)=2 or [M:ZSA9]ZCKLST(5)=2) & (([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1) & [M:ZSA9]ZCKLST(1)=2 or ([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=2)))
+                    [L]Z_OK=2
+                    Call OUINON("Passage au statut"-mess(4,1031,1)-"?",[L]Z_OK) From GESECRAN
+                    If [L]Z_OK=2
+                        [M:XSA0]XSTATU=4
+                        Affzo [M:XSA0]XSTATU
+                    Endif
+                Endif
+
+            When 4,5
+                If ([M:ZSA6]XINDGRA>2 & [M:ZSA9]ZCKLST(2)=2 & [M:ZSA9]ZCKLST(6)=2 & ([M:XSA1]TYPDEST=1 or [M:ZSA9]ZCKLST(3)=2
+&& (([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1) & [M:ZSA9]ZCKLST(1)=2 or ([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=2))))
+                    [L]Z_OK=2
+                    Call OUINON("Passage au statut"-mess(4,1031,1)-"?",[L]Z_OK) From GESECRAN
+                    If [L]Z_OK=2
+                        [M:XSA0]XSTATU=4
+                        Affzo [M:XSA0]XSTATU
+                    Endif
+                Endif
+            When 6
+                If ([M:ZSA6]XINDGRA>2 & [M:ZSA9]ZCKLST(2)=2 & ([M:ZSA9]ZCKLST(4)=2 or [M:ZSA9]ZCKLST(5)=2)
+&& ([M:ZSA9]ZCKLST(3)=2) & (([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1) & [M:ZSA9]ZCKLST(1)=2 or ([M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=2)) or [M:XSA1]TYPDEST=1)
+                    [L]Z_OK=2
+                    Call OUINON("Passage au statut"-mess(4,1031,1)-"?",[L]Z_OK) From GESECRAN
+                    If [L]Z_OK=2
+                        [M:XSA0]XSTATU=4
+                        Affzo [M:XSA0]XSTATU
+                    Endif
+                Endif
+
+       Endcase
+    Endif
+Endif
+
+If !mkstat
+    If VALEUR=2
+        Actzo [M:ZSA9]ZREPBPCDAT(indice)
+        [M:ZSA9]ZREPBPCDAT(indice)=date$
+    Else
+        Raz   [M:ZSA9]ZREPBPCDAT(indice)
+        Diszo [M:ZSA9]ZREPBPCDAT(indice)
+    Endif
+Endif
+
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZREPBPCDAT(VALEUR)
+Variable Date    VALEUR
+If VALEUR>date$
+    mkstat=2
+    Call ERREUR("Date incorrecte") From GESECRAN
+Endif
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZINVSTA(VALEUR)
+Variable Integer VALEUR
+If VALEUR=2
+    Actzo [M:ZSA7]ZCPLDAT(nolign-1)
+    [M:ZSA7]ZCPLDAT(nolign-1)=date$
+    Affzo [M:ZSA7]ZCPLDAT(nolign-1)
+Else
+    Diszo [M:ZSA7]ZCPLDAT(nolign-1)
+    Raz [M:ZSA7]ZCPLDAT(nolign-1)
+    Affzo [M:ZSA7]ZCPLDAT(nolign-1)
+Endif
+End
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZCPLDAT(VALEUR)
+Variable Date    VALEUR
+If [M:ZSA7]ZINVSTA(nolign-1)=2 & VALEUR=[0/0/0]
+    Call ERREUR("Zone obligatoire") From GESECRAN
+    mkstat=2
+Elsif VALEUR > date$
+    Call ERREUR("Valeur incorrecte") From GESECRAN
+    mkstat=2
+Endif
+End
+
+#-----------------------------------------------------------------------------------
+Subprog APRES_NBINV
+Local Integer Z_SAVSTA : [L]Z_SAVSTA=status
+
+#> Calcul coût investigations
+#@V2.#25_str
+#[M:ZSA7]ZCSTEXTINV=sum([M:ZSA7]ZINVCST(0..[M:ZSA7]NBINV))    #prévu
+[M:ZSA7]ZCSTEXTINV=0                                         #prévu
+#@V2.#25_end
+[M:ZSA7]ZCSTCPLINV=0                                         #réel
+For I=0 To [M:ZSA7]NBINV
+#@V2.#25_str
+    [M:ZSA7]ZCSTEXTINV+=[M:ZSA7]ZINVCST(I)*[M:ZSA7]ZINVQTY(I)    #prévu
+#@V2.#25_end
+    If [M:ZSA7]ZINVSTA(I)=2
+#@V2.#25_str
+#        [M:ZSA7]ZCSTCPLINV+=[M:ZSA7]ZINVCST(I)
+        [M:ZSA7]ZCSTCPLINV+=[M:ZSA7]ZINVCST(I)*[M:ZSA7]ZINVQTY(I)    #réel
+#@V2.#25_end
+
+    Endif
+Next I
+Affzo [M:ZSA7]ZCSTCPLINV, ZCSTEXTINV
+
+[M:ZSA8]ZINVCSTTOT=[M:ZSA7]ZCSTEXTINV
+[M:ZSA8]ZINVCSTCPL=[M:ZSA7]ZCSTCPLINV
+Affzo [M:ZSA8]ZINVCSTTOT,ZINVCSTCPL
+
+
+#-- Calcul du coût de la NC
+#@V2.#29&#30_end
+#[M:ZSA8]ZCSTTOT   =[M:ZSA8]ZINVCSTTOT+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECST+[M:ZSA8]ZVLTTOT
+#[M:ZSA8]ZCSTTOTCPL=[M:ZSA8]ZINVCSTCPL+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECSTCPL+[M:ZSA8]ZVLTTOTCPL
+#
+#Affzo [M:ZSA8]ZCSTTOT, ZINVCSTTOT, ZINVCSTCPL, ZCSTTOTCPL
+#
+Call CALC_CST("", 0)
+#@V2.#29&#30_end
+#-- Fin calcul des CNQ
+
+If [M:XSA0]XSTATU=1 & [L]Z_SAVSTA<>6 & [L]Z_SAVSTA<>65
+    Local Integer Z_OK
+    [L]Z_OK=2
+    Call OUINON("Passage au statut"-mess(2,1031,1)-"?",[L]Z_OK) From GESECRAN
+    If [L]Z_OK=2
+        [M:XSA0]XSTATU=2
+        Affzo [M:XSA0]XSTATU
+    Endif
+Endif
+
+End
+
+
+#-----------------------------------------------------------------------------------
+#LCA 17/07/19 -216936 - Problème pour saisir un tiers sur une non conformité
+Subprog AM_TYPDEST(VALEUR)
+Variable Integer VALEUR
+#If VALEUR=3
+If VALEUR=4 #LCA 17/07/19 -216936 - Problème pour saisir un tiers sur une non conformité
+    Actzo [M:XSA1]20
+    [M:XSA1]XTIERS=1
+    Call AM_XTIERS([M:XSA1]XTIERS)
+Else
+    Diszo [M:XSA1]20
+    Raz [M:XSA1]BPCNUM,BPSNUM
+    Affzo [M:XSA1]BPCNUM,BPSNUM, XTIERS
+    If VALEUR=3 : Actzo [M:XSA1]BPTNUM : Endif
+Endif
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_XTIERS(VALEUR)
+Variable Integer VALEUR
+Case VALEUR
+    When 1
+        Actzo [M:XSA1]BPCNUM
+        Diszo [M:XSA1]BPSNUM,BPTNUM
+        Raz [M:XSA1]BPSNUM,BPTNUM,BPCNUM
+
+    When 2
+        Actzo [M:XSA1]BPSNUM
+        Diszo [M:XSA1]BPCNUM,BPTNUM
+        Raz [M:XSA1]BPCNUM,BPTNUM,BPSNUM
+
+    When 3
+        Actzo [M:XSA1]BPTNUM
+        Diszo [M:XSA1]BPSNUM,BPCNUM
+        Raz [M:XSA1]BPSNUM,BPCNUM,BPTNUM
+
+Endcase
+Affzo [M:XSA1]20
+
+#-- ecran détail fournisseur
+If VALEUR<>2
+    Raz [M:ZSA5]
+    Affzo [M:ZSA5]
+    Diszo [M:ZSA5]
+Else
+    Actzo [M:ZSA5]
+Endif
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ITMREF(VALEUR)
+Variable Char    VALEUR()
+Local Integer Z_OUINON
+If [M:XSA1]ZNBLOT>0
+    Call AVERTIR("Code article modifié, raz du tableau des lots ?",[L]Z_OUINON) From GESECRAN
+    If [L]Z_OUINON=2
+        Raz [M:XSA1]ZNBLOT, ZLOTNC, ZCTLPHY, ZREJPHY, ZQTYNC, ZAAAPHY, ZLOTFRS
+        Affzo [M:XSA1]30
+    Else
+        VALEUR=[M:XSA1]ITMREF
+        End
+    Endif
+Endif
+
+#-- Chargement de l'US
+Read [F:ITM]ITM0=VALEUR
+If fstat : Raz [F:ITM] : Endif
+[M:XSA1]ZUS=[F:ITM]STU
+Affzo [M:XSA1]ZUS
+
+#-- Chargement du client CFS
+If [F:ITM]TSICOD(0)<"Z"
+    [M:XSA1]ZCFS="DAC"
+Else
+    If !clalev([F:ZAXX]) : Local File ATEXTRA [ZAXX] : Endif
+    Read [F:ZAXX]AXX0="ATABDIV";"SHODES";[V]GLANGUE;"20";[F:ITM]TSICOD(0)
+    If !fstat
+        [M:XSA1]ZCFS=[F:ZAXX]TEXTE
+    Endif
+Endif
+Affzo [M:XSA1]ZCFS
+
+#ACL le 23/06/23 - PMP
+[M]ZPMP=func PMP([M:XSA0]XSAFCY,VALEUR)
+Affzo [M]ZPMP
+
+Local File ITMMASTER [ZITM]
+Read [F:ZITM]ITM0=VALEUR
+If [S]fstat=0 and [ZITM]ZDM=2
+  [M:ZSA6]ZIMPDMFLG=2
+  Affzo [M:ZSA6]ZIMPDMFLG
+Endif
+Close Local File [ZITM]
+
+End
+
+######################################
+Funprog PMP(FCY,ITMREF)
+Value Char FCY
+Value Char ITMREF
+Local Decimal YPMP
+Local File ITMMVT [YITV]
+If [L]FCY=""
+  Filter [F:YITV] Where [F:YITV]ITMREF=[L]ITMREF
+Else
+  Filter [F:YITV] Where [F:YITV]STOFCY=[L]FCY and [F:YITV]ITMREF=[L]ITMREF
+Endif
+
+Read [F:YITV] First
+If [S]fstat=0
+  [L]YPMP=[F:YITV]AVC
+Endif
+
+Filter [F:YITV]
+Close Local File [YITV]
+End [L]YPMP
+
+#-----------------------------------------------------------------------------------
+Subprog AM_LOTPIECEG(VALEUR)
+Variable Char    VALEUR()
+#-- Chargement des infos liées à la déclaration de prod du couple article/lot
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_XNUMPIE(VALEUR)
+Variable Char VALEUR
+
+Local Integer Z_OUINON
+If [M:XSA1]ZNBLOT>0
+    Call AVERTIR("Num pièce modifié, raz du tableau des lots ?",[L]Z_OUINON) From GESECRAN
+    If [L]Z_OUINON=2
+        Raz [M:XSA1]ZNBLOT, ZLOTNC, ZCTLPHY, ZREJPHY, ZQTYNC, ZAAAPHY, ZLOTFRS
+        Affzo [M:XSA1]30
+        Raz [M:ZSA8]ZVALUNI, ZQTYRNC, ZVLTTOT, ZVLTTOTCPL, ZDESTRUCT
+        Affzo [M:ZSA8]10
+    Else
+        VALEUR=[M:XSA1]ITMREF
+        mkstat=2
+        End
+    Endif
+Endif
+
+
+#-- Chargement de la première ligne du tableau des lots
+Case [M:XSA1]XTYPPIE
+    When 4
+        #OF
+        If !clalev([F:MFI]) : Local File MFGITM [MFI] : Endif
+        Read [F:MFI]MFI0(1)=VALEUR
+        If !fstat
+            [M:XSA1]XLINPIE = [F:MFI]MFGLIN
+            [M:XSA1]ITMREF  = [F:MFI]ITMREF
+
+            Read [F:ITM]ITM0=[M:XSA1]ITMREF
+            If fstat : Raz [F:ITM] : Endif
+            [M:XSA1]ZUS=[F:ITM]STU
+            Affzo [M:XSA1]XLINPIE, ITMREF, ZUS
+
+            #-- Chargement du client CFS
+            If [F:ITM]TSICOD(0)<"Z"
+                [M:XSA1]ZCFS="DAC"
+            Else
+                If !clalev([F:ZAXX]) : Local File ATEXTRA [ZAXX] : Endif
+                Read [F:ZAXX]AXX0="ATABDIV";"SHODES";[V]GLANGUE;"20";[F:ITM]TSICOD(0)
+                If !fstat
+                    [M:XSA1]ZCFS=[F:ZAXX]TEXTE
+                Endif
+            Endif
+            Affzo [M:XSA1]ZCFS
+
+
+            [M:XSA1]ZLOTNC  = [F:MFI]LOT
+            [M:XSA1]ZITMVER = [F:MFI]XVERSIONC
+            [M:XSA1]ZAAAPHY = [F:MFI]CPLQTY
+            [M:XSA1]ZCTLPHY = [F:MFI]QUACPLQTY
+            [M:XSA1]ZREJPHY = [F:MFI]REJCPLQTY
+            [M:XSA1]ZNBLOT  = 1
+            Affzo [M:XSA1]30
+        Endif
+
+    When 6
+        #Déclaration de prod
+        If !clalev([F:MKI]) : Local File MFGITMTRK [MKI] : Endif
+        If !clalev([F:MFI]) : Local File MFGITM    [MFI] : Endif
+        Local Char    Z_LOT(20)
+        Local Decimal Z_AAA,Z_QQQ, Z_RRR
+
+        Read [F:MKI]MKI0(1)=VALEUR
+        If !fstat
+            [M:XSA1]XLINPIE = [F:MKI]ITMTRKLIN
+            [M:XSA1]ITMREF  = [F:MKI]ITMREF
+
+            Read [F:ITM]ITM0=[M:XSA1]ITMREF
+            If fstat : Raz [F:ITM] : Endif
+            [M:XSA1]ZUS=[F:ITM]STU
+            Affzo [M:XSA1]XLINPIE, ITMREF, ZUS
+
+            #-- Chargement du client CFS
+            If [F:ITM]TSICOD(0)<"Z"
+                [M:XSA1]ZCFS="DAC"
+            Else
+                If !clalev([F:ZAXX]) : Local File ATEXTRA [ZAXX] : Endif
+                Read [F:ZAXX]AXX0="ATABDIV";"SHODES";[V]GLANGUE;"20";[F:ITM]TSICOD(0)
+                If !fstat
+                    [M:XSA1]ZCFS=[F:ZAXX]TEXTE
+                Endif
+            Endif
+            Affzo [M:XSA1]ZCFS
+
+            [L]Z_LOT=[F:MKI]LOT
+            [M:XSA1]ZLOTNC  = [F:MKI]LOT
+            [M:XSA1]ZNBLOT  = 1
+
+            Read [F:MFI]MFI0=[F:MKI]MFGNUM;[F:MKI]MFGLIN
+            [M:XSA1]ZITMVER = [F:MFI]XVERSIONC
+
+            Raz [L]Z_AAA, [L]Z_QQQ, [L]Z_RRR
+            For [F:MKI]MKI0 Where [F:MKI]MFGTRKNUM=VALEUR & [F:MKI]LOT=[L]Z_LOT
+                [L]Z_AAA+= [F:MKI]CPLQTY*(pat([F:MKI]STA,"A*"))
+                [L]Z_QQQ+= [F:MKI]CPLQTY*(pat([F:MKI]STA,"Q*"))
+                [L]Z_RRR+= [F:MKI]CPLQTY*(pat([F:MKI]STA,"R*") & [F:MKI]STA<>"RBT")
+            Next
+            [M:XSA1]ZAAAPHY = [L]Z_AAA
+            [M:XSA1]ZCTLPHY = [L]Z_QQQ
+            [M:XSA1]ZREJPHY = [L]Z_RRR
+            Affzo [M:XSA1]30
+
+        Endif
+
+
+    When 7
+    When 999
+        #Finalement géré au niveau des lignes
+        #Contrôle qualité
+        If !clalev([F:QLD]) : Local File STOQLYD [QLD] : Endif
+        Local Char    Z_LOT(20)
+        Local Decimal Z_AAA,Z_QQQ, Z_RRR
+        Read [F:QLD]QLD0(2)=28;VALEUR
+        If !fstat
+            [M:XSA1]XLINPIE = [F:QLD]VCRLIN
+            [M:XSA1]ITMREF  = [F:QLD]ITMREF
+
+            Read [F:ITM]ITM0=[M:XSA1]ITMREF
+            If fstat : Raz [F:ITM] : Endif
+            [M:XSA1]ZUS=[F:ITM]STU
+            Affzo [M:XSA1]XLINPIE, ITMREF, ZUS
+
+            #-- Chargement du client CFS
+            If [F:ITM]TSICOD(0)<"Z"
+                [M:XSA1]ZCFS="DAC"
+            Else
+                If !clalev([F:ZAXX]) : Local File ATEXTRA [ZAXX] : Endif
+                Read [F:ZAXX]AXX0="ATABDIV";"SHODES";[V]GLANGUE;"20";[F:ITM]TSICOD(0)
+                If !fstat
+                    [M:XSA1]ZCFS=[F:ZAXX]TEXTE
+                Endif
+            Endif
+            Affzo [M:XSA1]ZCFS
+
+            [L]Z_LOT=[F:QLD]LOT
+            [M:XSA1]ZLOTNC  = [F:QLD]LOT
+            [M:XSA1]ZNBLOT  = 1
+            Raz [M:XSA1]ZITMVER
+
+            Raz [L]Z_AAA, [L]Z_QQQ, [L]Z_RRR
+            For [F:QLD]QLD0 Where [F:QLD]VCRNUM=VALEUR & [F:QLD]LOT=[L]Z_LOT
+                [L]Z_AAA+= [F:QLD]QTYSTU*(pat([F:QLD]STA,"A*"))
+                [L]Z_QQQ+= [F:QLD]QTYSTU*(pat([F:QLD]STA,"Q*"))
+                [L]Z_RRR+= [F:QLD]QTYSTU*(pat([F:QLD]STA,"R*") & [F:QLD]STA<>"RBT")
+            Next
+            [M:XSA1]ZAAAPHY = [L]Z_AAA
+            [M:XSA1]ZCTLPHY = [L]Z_QQQ
+            [M:XSA1]ZREJPHY = [L]Z_RRR
+            Affzo [M:XSA1]30
+        Endif
+
+Endcase
+
+#- Alimentation de la partie "Tiers"
+If [M:XSA1]XTYPPIE=1       #Réception
+    If !clalev([F:PTH]) : Local File PRECEIPT [PTH] : Endif
+    Read [F:PTH]PTH0=VALEUR
+    If !fstat
+        [M:XSA1]TYPDEST=4 : Call AM_TYPDEST([M:XSA1]TYPDEST)   :    Affzo [M:XSA1]TYPDEST
+        [M:XSA1]XTIERS=2  : Call AM_XTIERS([M:XSA1]XTIERS)     :    Affzo [M:XSA1]XTIERS
+        [M:XSA1]BPSNUM=[F:PTH]BPSNUM : Affzo [M:XSA1]BPSNUM
+        [M:ZSA5]BPSNUM=[F:PTH]BPSNUM : Affzo [M:ZSA5]BPSNUM
+    Endif
+Elsif [M:XSA1]XTYPPIE=8    #BL
+    If !clalev([F:SDH]) : Local File SDELIVERY [SDH] : Endif
+    Read [F:SDH]SDH0=VALEUR
+    If !fstat
+        [M:XSA1]TYPDEST=4 : Call AM_TYPDEST([M:XSA1]TYPDEST)   :    Affzo [M:XSA1]TYPDEST
+        [M:XSA1]XTIERS=1 : Call AM_XTIERS([M:XSA1]XTIERS) : Affzo [M:XSA1]XTIERS
+        [M:XSA1]BPCNUM=[F:SDH]BPCORD : Affzo [M:XSA1]BPCNUM
+        [M:XSA1]ZSHIDAT=[F:SDH]SHIDAT : Affzo [M:XSA1]ZSHIDAT
+    Endif
+Elsif [M:XSA1]XTYPPIE=9    #Retour client
+    If !clalev([F:SRH]) : Local File SRETURN  [SRH] : Endif
+    Read [F:SRH]SRH0=VALEUR
+    If !fstat
+        [M:XSA1]TYPDEST=4 : Call AM_TYPDEST([M:XSA1]TYPDEST)   :    Affzo [M:XSA1]TYPDEST
+        [M:XSA1]XTIERS=1 : Call AM_XTIERS([M:XSA1]XTIERS) : Affzo [M:XSA1]XTIERS
+        [M:XSA1]BPCNUM=[F:SRH]BPCNUM : Affzo [M:XSA1]BPCNUM
+    Endif
+Else
+    [M:XSA1]TYPDEST=1 : Call AM_TYPDEST([M:XSA1]TYPDEST)   :    Affzo [M:XSA1]TYPDEST
+Endif
+
+#ACL le 23/06/23 - PMP
+[M]ZPMP=func PMP([M:XSA0]XSAFCY,[M:XSA1]ITMREF)
+Affzo [M]ZPMP
+
+End
+
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_XLINPIE(VALEUR)
+Variable Decimal VALEUR
+
+Local Integer Z_OUINON
+If [M:XSA1]ZNBLOT>0
+    Call AVERTIR("Ligne pièce modifiée, raz des infos liées ?",[L]Z_OUINON) From GESECRAN
+    If [L]Z_OUINON=2
+        Raz [M:XSA1]ZNBLOT, ZLOTNC, ZAAAPHY, ZCTLPHY, ZREJPHY, ZQTYNC, ZUS, ZLOTFRS
+        Affzo [M:XSA1]30
+    Else
+        VALEUR=[M:XSA1]XLINPIE
+        mkstat=2
+        End
+    Endif
+Endif
+
+If VALEUR<>0
+    #-- Chargement du tableau des lots
+    Case [M:XSA1]XTYPPIE
+        When 1
+            #Réception fournisseur
+            If !clalev([F:STJ]) : Local File STOJOU    [STJ] : Endif
+            If !clalev([F:PTD]) : Local File PRECEIPTD [PTD] : Endif
+            Local Char    Z_LOT(20)
+            Local Decimal Z_AAA, Z_QQQ, Z_RRR
+            Local Integer Z_LIG
+
+            Read [F:PTD]PTD0=[M:XSA1]XNUMPIE;VALEUR
+            If !fstat
+                [M:XSA1]ITMREF  = [F:PTD]ITMREF
+
+                Read [F:ITM]ITM0=[M:XSA1]ITMREF
+                If fstat : Raz [F:ITM] : Endif
+                [M:XSA1]ZUS=[F:ITM]STU
+                Affzo [M:XSA1]ITMREF, ZUS
+
+                #-- Chargement du client CFS
+                If [F:ITM]TSICOD(0)<"Z"
+                    [M:XSA1]ZCFS="DAC"
+                Else
+                    If !clalev([F:ZAXX]) : Local File ATEXTRA [ZAXX] : Endif
+                    Read [F:ZAXX]AXX0="ATABDIV";"SHODES";[V]GLANGUE;"20";[F:ITM]TSICOD(0)
+                    If !fstat
+                        [M:XSA1]ZCFS=[F:ZAXX]TEXTE
+                    Endif
+                Endif
+                Affzo [M:XSA1]ZCFS
+
+                #-- Chargement du/des lot(s)
+                For [F:STJ]STJ0 Where [F:STJ]STOFCY=[F:PTD]PRHFCY & [F:STJ]ITMREF=[F:PTD]ITMREF & [F:STJ]IPTDAT=[F:PTD]RCPDAT & [F:STJ]VCRTYP=6 & [F:STJ]VCRNUM=[F:PTD]PTHNUM & [F:STJ]VCRLIN=[F:PTD]
+& PTDLIN
+                    [L]Z_LIG=find([F:STJ]LOT,[M:XSA1]ZLOTNC(0..[M:XSA1]ZNBLOT-1))
+                    If [L]Z_LIG
+                        [M:XSA1]ZAAAPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"A*"))
+                        [M:XSA1]ZCTLPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"Q*"))
+                        [M:XSA1]ZREJPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"R*") & [F:STJ]STA<>"RBT")
+                    Else
+                        [M:XSA1]ZAAAPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"A*"))
+                        [M:XSA1]ZCTLPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"Q*"))
+                        [M:XSA1]ZREJPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"R*") & [F:STJ]STA<>"RBT")
+                        [M:XSA1]ZLOTNC([M:XSA1]ZNBLOT)   = [F:STJ]LOT
+                        [M:XSA1]ZITMVER([M:XSA1]ZNBLOT)  = [F:STJ]BPSLOT
+                        #[M:XSA1]ZNBLOT+=1
+
+                        #-- tableau des lots fournisseurs
+                        Read [F:STL]STL0=[F:STJ]ITMREF;[F:STJ]LOT;[F:STJ]SLO
+                        If [F:STL]USRFLD1<>"" & !find([F:STL]USRFLD1,[M:ZSA5]LOTBPSNUM(0..[M:ZSA5]NBLOTBPS-1))
+                            [M:ZSA5]LOTBPSNUM([M:ZSA5]NBLOTBPS)=[F:STL]USRFLD1
+                            [M:ZSA5]NBLOTBPS+=1
+                            Affzo [M:ZSA5]
+                            [M:XSA1]ZLOTFRS([M:XSA1]ZNBLOT)  = [F:STL]USRFLD1
+                        Endif
+
+
+                        [M:XSA1]ZNBLOT+=1
+                    Endif
+                Next
+                Affzo [M:XSA1]30
+
+            Endif
+
+        When 2
+            #Retour fournisseur
+
+        When 7
+        #Contrôle qualité
+        If !clalev([F:QLD]) : Local File STOQLYD [QLD] : Endif
+        If !clalev([F:STL]) : Local File STOLOT  [STL] : Endif
+        Local Char    Z_LOT(20)
+        Local Decimal Z_AAA,Z_QQQ, Z_RRR
+        Read [F:QLD]QLD0=28;[M:XSA1]XNUMPIE;VALEUR
+        If !fstat
+            [M:XSA1]XLINPIE = [F:QLD]VCRLIN
+            [M:XSA1]ITMREF  = [F:QLD]ITMREF
+
+            Read [F:ITM]ITM0=[M:XSA1]ITMREF
+            If fstat : Raz [F:ITM] : Endif
+            [M:XSA1]ZUS=[F:ITM]STU
+            Affzo [M:XSA1]XLINPIE, ITMREF, ZUS
+
+            #-- Chargement du client CFS
+            If [F:ITM]TSICOD(0)<"Z"
+                [M:XSA1]ZCFS="DAC"
+            Else
+                If !clalev([F:ZAXX]) : Local File ATEXTRA [ZAXX] : Endif
+                Read [F:ZAXX]AXX0="ATABDIV";"SHODES";[V]GLANGUE;"20";[F:ITM]TSICOD(0)
+                If !fstat
+                    [M:XSA1]ZCFS=[F:ZAXX]TEXTE
+                Endif
+            Endif
+            Affzo [M:XSA1]ZCFS
+
+            [L]Z_LOT=[F:QLD]LOT
+            [M:XSA1]ZLOTNC   = [F:QLD]LOT
+            Read [F:STL]STL0=[F:ITM]ITMREF;[F:QLD]LOT;""
+            If fstat : Raz [F:STL] : Endif
+            [M:XSA1]ZITMVER  = [F:STL]BPSLOT
+            [M:XSA1]ZNBLOT   = 1
+
+            Raz [L]Z_AAA, [L]Z_QQQ, [L]Z_RRR
+            For [F:QLD]QLD0 Where [F:QLD]VCRNUM=[M:XSA1]XNUMPIE & [F:QLD]LOT=[L]Z_LOT
+                [L]Z_AAA+= [F:QLD]QTYSTU*(pat([F:QLD]STA,"A*"))
+                [L]Z_QQQ+= [F:QLD]QTYSTU*(pat([F:QLD]STA,"Q*"))
+                [L]Z_RRR+= [F:QLD]QTYSTU*(pat([F:QLD]STA,"R*") & [F:QLD]STA<>"RBT")
+            Next
+            [M:XSA1]ZAAAPHY = [L]Z_AAA
+            [M:XSA1]ZCTLPHY = [L]Z_QQQ
+            [M:XSA1]ZREJPHY = [L]Z_RRR
+            Affzo [M:XSA1]30
+        Endif
+
+
+        When 8
+            #BL client
+            If !clalev([F:STJ]) : Local File STOJOU     [STJ] : Endif
+            If !clalev([F:SDD]) : Local File SDELIVERYD [SDD] : Endif
+            Local Char    Z_LOT(20)
+            Local Decimal Z_QQQ, Z_RRR
+            Local Integer Z_LIG
+
+            Read [F:SDD]SDD0=[M:XSA1]XNUMPIE;VALEUR
+            If !fstat
+                [M:XSA1]ITMREF  = [F:SDD]ITMREF
+
+                Read [F:ITM]ITM0=[M:XSA1]ITMREF
+                If fstat : Raz [F:ITM] : Endif
+                [M:XSA1]ZUS=[F:ITM]STU
+                Affzo [M:XSA1]ITMREF, ZUS
+
+                #-- Chargement du client CFS
+                If [F:ITM]TSICOD(0)<"Z"
+                    [M:XSA1]ZCFS="DAC"
+                Else
+                    If !clalev([F:ZAXX]) : Local File ATEXTRA [ZAXX] : Endif
+                    Read [F:ZAXX]AXX0="ATABDIV";"SHODES";[V]GLANGUE;"20";[F:ITM]TSICOD(0)
+                    If !fstat
+                        [M:XSA1]ZCFS=[F:ZAXX]TEXTE
+                    Endif
+                Endif
+                Affzo [M:XSA1]ZCFS
+
+                #-- Chargement du/des lot(s)
+                For [F:STJ]STJ0 Where [F:STJ]STOFCY=[F:SDD]STOFCY & [F:STJ]ITMREF=[F:SDD]ITMREF & [F:STJ]IPTDAT=[F:SDD]SHIDAT & [F:STJ]VCRTYP=4 & [F:STJ]VCRNUM=[F:SDD]SDHNUM & [F:STJ]VCRLIN=[F:SDD]
+& SDDLIN & [F:STJ]QTYSTU<0
+                    [L]Z_LIG=find([F:STJ]LOT,[M:XSA1]ZLOTNC(0..[M:XSA1]ZNBLOT-1))
+                    If [L]Z_LIG
+                        [M:XSA1]ZAAAPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"A*"))*-1
+                        [M:XSA1]ZCTLPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"Q*"))*-1
+                        [M:XSA1]ZREJPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"R*") & [F:STJ]STA<>"RBT")*-1
+                    Else
+                        [M:XSA1]ZAAAPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"A*"))*-1
+                        [M:XSA1]ZCTLPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"Q*"))*-1
+                        [M:XSA1]ZREJPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"R*") & [F:STJ]STA<>"RBT")*-1
+                        [M:XSA1]ZLOTNC([M:XSA1]ZNBLOT)   = [F:STJ]LOT
+                        [M:XSA1]ZITMVER([M:XSA1]ZNBLOT)  = [F:STJ]BPSLOT
+                        [M:XSA1]ZNBLOT+=1
+                    Endif
+                Next
+                Affzo [M:XSA1]30
+            Endif
+
+
+        When 9
+            #Retour client
+            If !clalev([F:STJ]) : Local File STOJOU    [STJ] : Endif
+            If !clalev([F:SRD]) : Local File SRETURND  [SRD] : Endif
+            Local Char    Z_LOT(20)
+            Local Decimal Z_AAA, Z_QQQ, Z_RRR
+            Local Integer Z_LIG
+
+            Read [F:SRD]SRD0=[M:XSA1]XNUMPIE;VALEUR
+            If !fstat
+                [M:XSA1]ITMREF  = [F:SRD]ITMREF
+
+                Read [F:ITM]ITM0=[M:XSA1]ITMREF
+                If fstat : Raz [F:ITM] : Endif
+                [M:XSA1]ZUS=[F:ITM]STU
+                Affzo [M:XSA1]ITMREF, ZUS
+
+                #-- Chargement du client CFS
+                If [F:ITM]TSICOD(0)<"Z"
+                    [M:XSA1]ZCFS="DAC"
+                Else
+                    If !clalev([F:ZAXX]) : Local File ATEXTRA [ZAXX] : Endif
+                    Read [F:ZAXX]AXX0="ATABDIV";"SHODES";[V]GLANGUE;"20";[F:ITM]TSICOD(0)
+                    If !fstat
+                        [M:XSA1]ZCFS=[F:ZAXX]TEXTE
+                    Endif
+                Endif
+                Affzo [M:XSA1]ZCFS
+
+                #-- Chargement du/des lot(s)
+                For [F:STJ]STJ0 Where [F:STJ]STOFCY=[F:SRD]STOFCY & [F:STJ]ITMREF=[F:SRD]ITMREF & [F:STJ]IPTDAT=[F:SRD]RTNDAT & [F:STJ]VCRTYP=13 & [F:STJ]VCRNUM=[F:SRD]SRHNUM & [F:STJ]VCRLIN=[F:SRD]
+& SRDLIN
+                    [L]Z_LIG=find([F:STJ]LOT,[M:XSA1]ZLOTNC(0..[M:XSA1]ZNBLOT-1))
+                    If [L]Z_LIG
+                        [M:XSA1]ZAAAPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"A*"))
+                        [M:XSA1]ZCTLPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"Q*"))
+                        [M:XSA1]ZREJPHY([L]Z_LIG-1)     += [F:STJ]QTYSTU*(pat([F:STJ]STA,"R*") & [F:STJ]STA<>"RBT")
+                    Else
+                        [M:XSA1]ZAAAPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"A*"))
+                        [M:XSA1]ZCTLPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"Q*"))
+                        [M:XSA1]ZREJPHY([M:XSA1]ZNBLOT) += [F:STJ]QTYSTU*(pat([F:STJ]STA,"R*") & [F:STJ]STA<>"RBT")
+                        [M:XSA1]ZLOTNC([M:XSA1]ZNBLOT)   = [F:STJ]LOT
+                        [M:XSA1]ZITMVER([M:XSA1]ZNBLOT)  = [F:STJ]BPSLOT
+                        [M:XSA1]ZNBLOT+=1
+                    Endif
+                Next
+                Affzo [M:XSA1]30
+            Endif
+    Endcase
+Endif
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_XTYPPIE(VALEUR)
+Variable Integer VALEUR
+
+Local Integer Z_OUINON
+If [M:XSA1]ZNBLOT>0
+    Call AVERTIR("Type de pièce modifié, raz des informations liées ?",[L]Z_OUINON) From GESECRAN
+    If [L]Z_OUINON=2
+        Raz [M:XSA1]ZNBLOT, ZLOTNC, ZCTLPHY, ZREJPHY, ZQTYNC, ZAAAPHY,ZLOTFRS
+        Affzo [M:XSA1]30
+
+        [M:XSA1]TYPDEST=1
+        Affzo [M:XSA1]TYPDEST
+
+        [M:XSA1]XTIERS=1
+        Raz BPCNUM, BPSNUM, BPTNUM
+        Affzo [M:XSA1]20
+        Diszo [M:XSA1]XTIERS, BPCNUM, BPSNUM, BPTNUM
+
+        Raz [M:ZSA5]
+        Affzo [M:ZSA5]
+        Diszo [M:ZSA5]
+    Else
+        VALEUR=[M:XSA1]XTYPPIE
+        mkstat=2
+        End
+    Endif
+Endif
+
+Case VALEUR
+    When 4,6,7        :    Diszo [M:XSA1]XLINPIE
+    When Default      :    Actzo [M:XSA1]XLINPIE
+Endcase
+
+Case VALEUR
+    When 1        : [M:XSA1]ZOBJ="PTH"
+    When 2        : [M:XSA1]ZOBJ="PNH"
+    When 3        : [M:XSA1]ZOBJ="PIH"
+    When 4        : [M:XSA1]ZOBJ="MFG"
+    When 5,6      : [M:XSA1]ZOBJ="MTK"
+    When 7        : [M:XSA1]ZOBJ="STQ"
+    When 8        : [M:XSA1]ZOBJ="SDH"
+    When 9        : [M:XSA1]ZOBJ="SRH"
+    When 10       : [M:XSA1]ZOBJ="SIH"
+    When 11       : [M:XSA1]ZOBJ="SIS"
+    When 12       : [M:XSA1]ZOBJ="SCS"
+    When Default  : [M:XSA1]ZOBJ=""
+
+Endcase
+
+End
+
+
+
+
+#-----------------------------------------------------------------------------------
+Subprog AP_XLINPIE(VALEUR)
+Variable Decimal VALEUR
+If [M:XSA1]ZNBLOT=0
+    Call AM_XLINPIE(VALEUR)
+Endif
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZCKLST(VALEUR)
+Variable Integer VALEUR
+
+Case indice
+    When 2,3
+        #Contrôle sur saisie d'un niveau de gestion dossier
+        If VALEUR=2 & [M:ZSA8]ZGESCST=""
+            Call ERREUR("Le niveau des frais de gestion du dossier n'a pas été défini.\Coche impossible") From GESECRAN
+            mkstat=2
+        Endif
+    When 4,5
+        #Controle sur la présence d'au moins une cause saisie
+        If VALEUR=2 & [M:XSA2]ZNBCAU=0
+            Call ERREUR("Au moins une cause doit être saisie.\Coche impossible") From GESECRAN
+            mkstat=2
+        Endif
+Endcase
+
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZNBCAU
+#Infbox num$(nolign)-num$(status)-num$(ZNBCAU)
+#-Gestion du statut de la fiche
+If [M:XSA0]XSTATU=3 & (status=65 & [M:XSA2]ZNBCAU<=1 or find(status,68,83))# & VALEUR=0
+    Local Integer Z_OK
+    [L]Z_OK=2
+    Call OUINON("Passage au statut"-mess(2,1031,1)-"?",[L]Z_OK) From GESECRAN
+    If [L]Z_OK=2
+        [M:XSA0]XSTATU=2
+        Affzo [M:XSA0]XSTATU
+    Endif
+Endif
+
+End
+
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ACTFLG(VALEUR)
+Variable Integer VALEUR
+Local    Integer Z_SUM, Z_GRPCUR, Z_FLG, Z_OK, Z_INDGRA
+Local    Char    Z_CALC(200)
+
+#-- calcul du poids total
+[L]Z_GRPCUR=0
+For I=0 To [M:ZSA6]NBZPC-1
+    If [L]Z_GRPCUR<>[M:ZSA6]GRPNUM(I)# or I=[M:ZSA6]NBZPC-1
+        If [L]Z_GRPCUR<>0 & [L]Z_SUM>0
+            If [L]Z_CALC=""
+                [L]Z_CALC=num$([L]Z_SUM)
+            Else
+                [L]Z_CALC+="*"+num$([L]Z_SUM)
+            Endif
+            Raz [L]Z_SUM
+        Endif
+        [L]Z_GRPCUR=[M:ZSA6]GRPNUM(I)
+    Endif
+    If I=nolign-1 and VALEUR=2 or I<>nolign-1 and [M:ZSA6]ACTFLG(I)=2
+        [L]Z_SUM+=[M:ZSA6]REPQUO(I)
+    Endif
+Next I
+If [L]Z_GRPCUR<>0 & [L]Z_SUM>0
+    If [L]Z_CALC=""
+        [L]Z_CALC=num$([L]Z_SUM)
+    Else
+        [L]Z_CALC+="*"+num$([L]Z_SUM)
+    Endif
+    Raz [L]Z_SUM
+Endif
+
+
+If [L]Z_CALC="" : [L]Z_CALC="0" : Endif
+[M:ZSA6]ZTOTQUO=evalue([L]Z_CALC)
+Affzo [M:ZSA6]ZTOTQUO
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog APRES_ZNBLOT
+#-- Calcul de la quantité impactée
+#-> Somme de toutes les qté impactées
+
+[M:ZSA8]ZQTYRNC(0) = sum([M:XSA1]ZQTYNC(0..[M:XSA1]ZNBLOT))
+[M:ZSA8]ZVLTTOT(0) = [M:ZSA8]ZQTYRNC(0)*[M:ZSA8]ZVALUNI(0)
+Affzo [M:ZSA8]10
+
+#-- Calcul du coût de la NC
+#@V2.#29&#30_str
+#[M:ZSA8]ZCSTTOT=[M:ZSA7]ZCSTEXTINV+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECST+[M:ZSA8]ZVLTTOT
+#Affzo [M:ZSA8]ZCSTTOT
+#
+Call CALC_CST("", 0)
+#@V2.#29&#30_end
+#-- Fin calcul des CNQ
+
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZLOTNC(VALEUR)
+Variable Char    VALEUR()
+Read [F:STL]STL0(2)=[M:XSA1]ITMREF;VALEUR
+If fstat : Raz [F:STL] : Endif
+
+#ACL le 23/06/23 - ajout lot frs
+[M:XSA1]ZLOTFRS(nolign-1)=[F:STL]USRFLD1 : Affzo [M:XSA1]ZLOTFRS(nolign-1)
+
+# FMU le 26/07/18 : 204414
+#-- Chargement de la version et de la qté présente en stock
+[M:XSA1]ZITMVER(nolign-1) = [F:STL]BPSLOT
+###[M:XSA1]ZAAAPHY(nolign-1) = [F:STL]AAACUMQTY
+###[M:XSA1]ZCTLPHY(nolign-1) = [F:STL]QQQCUMQTY
+###[M:XSA1]ZREJPHY(nolign-1) = [F:STL]RRRCUMQTY
+For [SLF]SLF0 Where ITMREF=[F:STL]ITMREF
+&                 & LOT=[F:STL]LOT
+&                 & SLO=[F:STL]SLO
+&                 & STOFCY=[M:XSA0]XSAFCY
+  [M:XSA1]ZAAAPHY(nolign-1) = [SLF]AAACUMQTY
+  [M:XSA1]ZCTLPHY(nolign-1) = [SLF]QQQCUMQTY
+  [M:XSA1]ZREJPHY(nolign-1) = [SLF]RRRCUMQTY
+Next
+#\FMU
+
+Affzo [M:XSA1]ZITMVER(nolign-1),ZAAAPHY(nolign-1),ZCTLPHY(nolign-1),ZREJPHY(nolign-1)
+
+#-- Chargement lot fournisseur dans tableau fournisseur
+If [M:XSA1]XTIERS=2
+#    Read [F:STL]STL0(2)=[M:XSA1]ITMREF;VALEUR
+    If [F:STL]USRFLD1<>"" & !find([F:STL]USRFLD1,[M:ZSA5]LOTBPSNUM(0..[M:ZSA5]NBLOTBPS-1))
+        [M:ZSA5]LOTBPSNUM([M:ZSA5]NBLOTBPS)=[F:STL]USRFLD1
+        [M:ZSA5]NBLOTBPS+=1
+        Affzo [M:ZSA5]
+    Endif
+Endif
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_CTRBPSNUM(VALEUR)
+Variable Char    VALEUR()
+#-- On vérifie l'unicité du n° saisi dans le tableau
+For I=0 To [M:ZSA5]NBCTRBPS
+    If I<>nolign-1 & [M:ZSA5]CTRBPSNUM(I)=VALEUR
+        [S]mkstat=2
+        Call ERREUR("N° de carton déjà saisi en ligne"-num$(I+1)) From GESECRAN
+        Break
+    Endif
+Next I
+
+End
+
+#-----------------------------------------------------------------------------------
+Subprog C_LOTBPSNUM(VALEUR)
+Variable Char    VALEUR()
+#-- On vérifie l'unicité du n° saisi dans le tableau
+For I=0 To [M:ZSA5]NBLOTBPS
+    If I<>nolign-1 & [M:ZSA5]LOTBPSNUM(I)=VALEUR
+        [S]mkstat=2
+        Call ERREUR("N° de lot fournisseur déjà saisi en ligne"-num$(I+1)) From GESECRAN
+        Break
+    Endif
+Next I
+
+End
+
+#-----------------------------------------------------------------------------------
+Subprog AM_BPSNUM(VALEUR)
+Variable Char    VALEUR()
+[M:ZSA5]BPSNUM=VALEUR : Affzo [M:ZSA5]BPSNUM
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_XTYPDEF(VALEUR)
+Variable Char    VALEUR()
+#-- On vérifie que ce code n'a pas déjà été saisi dans le tableau
+For I=0 To min([M:XSA1]ZNBNAT,dim([M:XSA1]XTYPDEF)-1)
+    If I<>nolign-1 & VALEUR=[M:XSA1]XTYPDEF(I)
+        mkstat=2
+        Call ERREUR("Nature déjà saisie en ligne"-num$(I+1)) From GESECRAN
+        Break
+    Endif
+Next I
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZCODE(VALEUR)
+Variable Char    VALEUR()
+#-- On vérifie que ce code n'a pas déjà été saisi dans le tableau
+For I=0 To [M:XSA2]ZNBCAU
+    If I<>nolign-1 & VALEUR=[M:XSA2]ZCODE(I)
+        mkstat=2
+        Call ERREUR("Cause déjà saisie en ligne"-num$(I+1)) From GESECRAN
+        Break
+    Endif
+Next I
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AS_ZMPRC(VALEUR)
+Variable Char    VALEUR()
+If indice=1 & [M:XSA2]ZMPRC(0)=""
+    mkstat=2
+Endif
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZMPRC(VALEUR)
+Variable Char    VALEUR()
+If VALEUR=""
+    If indice=0
+        Raz [M:XSA2]ZPRC, ZMPRC : Affzo [M:XSA2]ZPRC, ZMPRC
+    Else
+        Raz [M:XSA2]ZPRC(indice) : Affzo [M:XSA2]ZPRC(indice)
+    Endif
+Endif
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_XSTATU(VALEUR)
+Variable Integer VALEUR
+Local    Char    Z_OBLZON(250)
+[L]Z_OBLZON="Zone(s) obligatoire(s) :"
+
+#-- Gestion des statuts
+#@V2.#26_str
+#If VALEUR>1
+If VALEUR>1 & VALEUR <5
+#@V2.#26_end
+    #liste des zones obligatoires
+    #Au moins un lot
+    If [M:XSA1]ZNBLOT=0
+        [L]Z_OBLZON-="Lot,"
+        [S]mkstat=2
+    Endif
+    #Au moins une nature
+    If [M:XSA1]ZNBNAT=0
+        [L]Z_OBLZON-="Nature,"
+        [S]mkstat=2
+    Endif
+    #Qté impactée > 0
+    If sum([M:XSA1]ZQTYNC(0..[M:XSA1]ZNBLOT-1))=0
+        [L]Z_OBLZON-="Qté impactée,"
+        [S]mkstat=2
+    Endif
+
+ #   If VALEUR=2 & [M:ZSA7]NBINV=0 & [M:ZSA6]XINDGRA>2
+ #       [L]Z_OBLZON-="Investigations,"
+  #      [S]mkstat=2
+  #  Endif
+
+    If VALEUR=3 & [M:XSA2]ZNBCAU=0
+        [L]Z_OBLZON-="Cause,"
+        [S]mkstat=2
+    Endif
+
+Endif
+#If [S]mkstat
+  #  Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible\"+[L]Z_OBLZON) From GESECRAN
+#Else
+  #  Case VALEUR
+  #      When 2
+  #          If [M:ZSA7]NBINV=0
+   #             mkstat=2
+  #              Call MESSAGE("Pas d'investigation saisie, passage au statut"-mess(VALEUR,1031,1)-"impossible") From GESECRAN
+ #           Endif
+#        When 3
+#            If [M:ZSA9]ZCKLST(4)<2 & [M:ZSA9]ZCKLST(5)<2
+#                mkstat=2
+#                Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible") From GESECRAN
+#            Endif
+
+   #     When 4
+
+ #           If [M:ZSA6]XINDGRA<2
+#                mkstat=2
+ #               Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible\La criticité n'a pas été déterminée") From GESECRAN
+#            Elsif [M:ZSA7]NBINV>0 & find(1,[M:ZSA7]ZINVSTA(0..[M:ZSA7]NBINV))
+#                mkstat=2
+#                Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible\Toutes les actions et investigations doivent être réalisées") From GESECRAN
+#            Elsif [M:ZSA6]XINDGRA=2    #>Criticité mineure
+ #               If [M:XSA1]TYPDEST=1 & [M:ZSA9]ZCKLST(2)<2                                                  #- Mineure & Interne
+  #                  mkstat=2
+    #                Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible") From GESECRAN
+   #             Elsif [M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1 & [M:ZSA9]ZCKLST(1)<2 & [M:ZSA9]ZCKLST(2)<2      #- Mineure & Client
+  #                  mkstat=2
+ #                   Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible") From GESECRAN
+  #              Elsif [M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=2 & [M:ZSA9]ZCKLST(2)<2                            #- Mineure & Fournisseur
+  #                  mkstat=2
+   #                 Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible") From GESECRAN
+  #              Endif
+  #          Else
+    #            If [M:XSA1]TYPDEST=1                                                                        #- Sup Mineure & Interne
+      #              If ([M:ZSA9]ZCKLST(2)<2 & [M:ZSA9]ZCKLST(6)<2 & ([M:ZSA9]ZCKLST(4)<2 or [M:ZSA9]ZCKLST(5)<2))
+      #                  mkstat=2
+     #                   Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible") From GESECRAN
+     #               Endif
+    #            Elsif [M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=1                                                  #- Sup Mineure & Client
+   #                 If ([M:ZSA9]ZCKLST(1)<2 & [M:ZSA9]ZCKLST(2)<2 & [M:ZSA9]ZCKLST(3)<2 & [M:ZSA9]ZCKLST(6)<2 & ([M:ZSA9]ZCKLST(4)<2 or [M:ZSA9]ZCKLST(5)<2))
+   #                     mkstat=2
+   #                     Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible") From GESECRAN
+    #                Endif
+     #           Elsif [M:XSA1]TYPDEST=3 & [M:XSA1]XTIERS=2                                                  #- Sup Mineure & Fournisseur
+     #               If ([M:ZSA9]ZCKLST(2)<2 & [M:ZSA9]ZCKLST(3)<2 & [M:ZSA9]ZCKLST(6)<2 & ([M:ZSA9]ZCKLST(4)<2 or [M:ZSA9]ZCKLST(5)<2))
+   #                     mkstat=2
+      #                  Call MESSAGE("Passage au statut"-mess(VALEUR,1031,1)-"impossible") From GESECRAN
+   #                 Endif
+  #              Endif
+ #           Endif
+ #   Endcase
+#Endif
+
+#If !mkstat & VALEUR<5
+#    Raz [M:XSA0]ZDERCAU
+#    Affzo [M:XSA0]ZDERCAU
+#Endif
+
+End
+
+
+
+#-----------------------------------------------------------------------------------
+Subprog AS_XTYPPIE(VALEUR)
+Variable Integer VALEUR
+
+Raz [V]GMENLOC
+[V]GMENLOC(2)=2
+[V]GMENLOC(3)=2
+[V]GMENLOC(5)=2
+[V]GMENLOC(6)=2
+[V]GMENLOC(9)=2
+[V]GMENLOC(10)=2
+[V]GMENLOC(11)=2
+[V]GMENLOC(12)=2
+[V]GMENLOC(13)=2
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZDESTRUCT(VALEUR)
+Variable Decimal VALEUR
+#-- Calcul du coût de destruction
+[M:ZSA8]ZVLTTOTCPL=[M:ZSA8]ZVALUNI*VALEUR
+Affzo [M:ZSA8]ZVLTTOTCPL
+
+#-- Calcul du coût de la NC
+#@V2.#29&#30_str
+#[M:ZSA8]ZCSTTOTCPL=[M:ZSA8]ZINVCSTCPL+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECSTCPL+[M:ZSA8]ZVLTTOTCPL
+#Affzo [M:ZSA8]ZCSTTOTCPL
+#
+Call CALC_CST("", 0)
+#@V2.#29&#30_end
+
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZDESTRUCT(VALEUR)
+Variable Decimal VALEUR
+If VALEUR > [M:ZSA8]ZQTYRNC(0)
+    Call ERREUR("La quantité détruite ne peut être supérieure à la quantité impactée") From GESECRAN
+    [S]mkstat=2
+Endif
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZINVCST(VALEUR)
+Variable Decimal VALEUR
+End
+#> Calcul coût investigations
+[M:ZSA7]ZCSTEXTINV=sum([M:ZSA7]ZINVCST(0..[M:ZSA7]NBINV))    #prévu
+[M:ZSA7]ZCSTEXTINV-=[M:ZSA7]ZINVCST(nolign-1)
+[M:ZSA7]ZCSTEXTINV+=VALEUR
+Affzo [M:ZSA7]ZCSTCPLINV, ZCSTEXTINV
+
+[M:ZSA8]ZINVCSTTOT=[M:ZSA7]ZCSTEXTINV
+[M:ZSA8]ZINVCSTCPL=[M:ZSA7]ZCSTCPLINV
+
+#-- Calcul du coût de la NC
+#@V2.#29&#30_str
+#[M:ZSA8]ZCSTTOT   =[M:ZSA8]ZINVCSTTOT+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECST+[M:ZSA8]ZVLTTOT
+#[M:ZSA8]ZCSTTOTCPL=[M:ZSA8]ZINVCSTCPL+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECSTCPL+[M:ZSA8]ZVLTTOTCPL
+#
+#Affzo [M:ZSA8]ZCSTTOT, ZINVCSTTOT, ZINVCSTCPL, ZCSTTOTCPL
+#
+Call CALC_CST("", 0)
+#@V2.#29&#30_end
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZINVRES(VALEUR)
+Variable Integer VALEUR
+#-- Si l'action est réalisée, le résultat doit être supérieur à 'a statuter'
+If [M:ZSA7]ZINVSTA(nolign-1)=2 & VALEUR=1
+    Call ERREUR("L'action est réalisée, le résultat est obligatoire") From GESECRAN
+    [S]mkstat=2
+Endif
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZBENUM(VALEUR)
+Variable Decimal VALEUR
+
+If VALEUR=0 : End : Endif
+
+If !clalev([F:ZBE]) : Local File ZBENNE [ZBE] : Endif
+
+#-- On vérifie si la NC est compatible avec le type de déchet de la benne
+Read [F:ZBE]ZBE0=VALEUR
+If !fstat
+    If !((left$([M:XSA1]ITMREF,1)="1" or left$([M:XSA1]ITMREF,1)="2" or left$([M:XSA1]ITMREF,1)="7") and [F:ZBE]TYPDEC=4 or left$([M:XSA1]ITMREF,1)="3"
+&                and [F:ZBE]TYPDEC=3 or left$([M:XSA1]ITMREF,1)="4" and [F:ZBE]TYPDEC=5 or left$([M:XSA1]ITMREF,1)="5"
+&                and ([F:ZBE]TYPDEC=1 or [F:ZBE]TYPDEC=2))
+        [S]mkstat=2
+        Call ERREUR("NC incompatible avec les déchets présents dans la benne") From GESECRAN
+
+    Endif
+Endif
+
+
+End
+
+#-----------------------------------------------------------------------------------
+Subprog AM_ZBENUM(VALEUR)
+Variable Decimal VALEUR
+#-- Raz du coût lié à la gestion de la benne, recalcul des coûts totaux
+Raz [M:ZSA8]ZBECSTCPL, ZBECST
+
+#@V2.#29&#30_str
+#[M:ZSA8]ZCSTTOT   =[M:ZSA8]ZINVCSTTOT+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECST+[M:ZSA8]ZVLTTOT
+#[M:ZSA8]ZCSTTOTCPL=[M:ZSA8]ZINVCSTCPL+[M:ZSA8]ZGESFOR+[M:ZSA8]ZBECSTCPL+[M:ZSA8]ZVLTTOTCPL
+#
+#Affzo [M:ZSA8]ZCSTTOT, ZCSTTOTCPL, ZBECST, ZBECSTCPL
+
+Call CALC_CST("", 0)
+#@V2.#29&#30_end
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_XNCRSP(VALEUR)
+Variable Char    VALEUR()
+If VALEUR=[M:XSA0]XNCNUM
+    mkstat=2
+    Call ERREUR("Une NC ne peut être sa propre cause !") From GESECRAN
+Elsif find(VALEUR,[M:ZSA4]XNCIMP(0..[M:ZSA4]NBNCF))
+    mkstat=2
+    Call ERREUR("NC déjà saisie dans le tableau des impactées") From GESECRAN
+Else
+    #-- Vérification de l'unicité de la valeur saisie
+    For I=0 To [M:ZSA4]NBNCP
+        If VALEUR=[M:ZSA4]XNCRSP(I) & I<>nolign-1
+            mkstat=2
+            Call ERREUR("NC déjà saisie à la ligne"-num$(I+1)) From GESECRAN
+            Break
+        Endif
+    Next I
+Endif
+
+End
+
+#-----------------------------------------------------------------------------------
+Subprog AM_XNCRSP(VALEUR)
+Variable Char    VALEUR()
+If !clalev([F:ZXSA]) : Local File XNCSAI   [ZXSA] : Endif
+If !clalev([F:ZXL])  : Local File ZXNCLOT  [ZXL]  : Endif
+
+#-- Chargement du code article
+Read [F:ZXSA]XSA0=VALEUR
+If fstat : Raz [F:ZXSA] : Endif
+[M:ZSA4]ITMRSP(nolign-1)=[F:ZXSA]ITMREF
+Read [F:ZXL]ZXL0(1)=VALEUR
+If fstat : Raz [F:ZXL] : Endif
+[M:ZSA4]LOTRSP(nolign-1)=[F:ZXL]ZLOTNC
+Affzo [M:ZSA4]LOTRSP(nolign-1)
+
+End
+
+#-----------------------------------------------------------------------------------
+Subprog C_XNCIMP(VALEUR)
+Variable Char    VALEUR()
+If VALEUR=[M:XSA0]XNCNUM
+    mkstat=2
+    Call ERREUR("Une NC ne peut être sa propre cause !") From GESECRAN
+Elsif find(VALEUR,[M:ZSA4]XNCRSP(0..[M:ZSA4]NBNCP))
+    mkstat=2
+    Call ERREUR("NC déjà saisie dans le tableau des responsables") From GESECRAN
+Else
+    #-- Vérification de l'unicité de la valeur saisie
+    For I=0 To [M:ZSA4]NBNCF
+        If VALEUR=[M:ZSA4]XNCIMP(I) & I<>nolign-1
+            mkstat=2
+            Call ERREUR("NC déjà saisie à la ligne"-num$(I+1)) From GESECRAN
+            Break
+        Endif
+    Next I
+Endif
+
+End
+
+#-----------------------------------------------------------------------------------
+Subprog AM_XNCIMP(VALEUR)
+Variable Char    VALEUR()
+If !clalev([F:ZXSA]) : Local File XNCSAI   [ZXSA] : Endif
+If !clalev([F:ZXL])  : Local File ZXNCLOT  [ZXL]  : Endif
+
+#-- Chargement du code article
+Read [F:ZXSA]XSA0=VALEUR
+If fstat : Raz [F:ZXSA] : Endif
+[M:ZSA4]ITMIMP(nolign-1)=[F:ZXSA]ITMREF
+Affzo [M:ZSA4]ITMIMP(nolign-1)
+Read [F:ZXL]ZXL0(1)=VALEUR
+If fstat : Raz [F:ZXL] : Endif
+[M:ZSA4]LOTIMP(nolign-1)=[F:ZXL]ZLOTNC
+Affzo [M:ZSA4]LOTIMP(nolign-1)
+
+End
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZLOTNC(VALEUR)
+Variable Char    VALEUR()
+#-- On vérifie que le lot saisi existe bien pour l'article
+If !clalev([F:STL])  : Local File STOLOT  [STL]  : Endif
+Local Integer Z_OK
+
+Read [F:STL]STL0(2)=[M:XSA1]ITMREF;VALEUR
+If fstat
+    Call AVERTIR("Couple Article/lot inexistant",[L]Z_OK) From GESECRAN
+    If [L]Z_OK<>2
+        mkstat=2
+    Endif
+Endif
+
+End
+
+
+#-----------------------------------------------------------------------------------
+Subprog C_ZDERCAU(VALEUR)
+Variable Char    VALEUR()
+If VALEUR<>"" & [M:XSA0]XSTATU=7
+    #-- On vérifie que la NC saisie existe bien pour l'article
+    If !clalev([F:ZXNC])  : Local File XNCSAI  [ZXNC]  : Endif
+
+    Read [F:ZXNC]XSA0=VALEUR
+    If !fstat
+        If [F:ZXNC]ITMREF<>[M:XSA1]ITMREF
+            Local Integer Z_OK
+            Call AVERTIR(VALEUR-": n° de fiche incohérente. Code article différent entre les deux fiche\"+VALEUR-":"-[F:ZXNC]ITMREF,[L]Z_OK) From GESECRAN
+            If [L]Z_OK<>2
+                [S]mkstat=2
+            Endif
+        Endif
+    Else
+        [S]mkstat=2
+        Call ERREUR(VALEUR-": fiche de non-conformité inexistante") From GESECRAN
+    Endif
+Endif
+End
+
+
+#@V2.#25_str
+#-----------------------------------------------------------------------------------
+Subprog AM_ZINVQTY(VALEUR)
+Variable Decimal VALEUR
+
+
+End
+#@V2.#25_end
+
+#-----------------------------------------------------------------------------------
+#@V2.#29&#30_str
+Subprog AM_ZNEGBPC(VALEUR)
+Variable Decimal VALEUR
+Call CALC_CST("NEGOBPC", VALEUR)
+
+End
+#@V2.#29&#30_end
+
+#-----------------------------------------------------------------------------------
+#@V2.#29&#30_str
+Subprog AM_ZNEGBPS(VALEUR)
+Variable Decimal VALEUR
+If VALEUR>0
+    Call MESSAGE("Attention, la valeur saisie ne doit pas contenir d'éventuels avoirs") From GESECRAN
+Endif
+
+
+Call CALC_CST("NEGOBPS", VALEUR)
+
+End
+#@V2.#29&#30_end
+
+
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#@V2.#29&#30_str
+Subprog CALC_CST(Z_PZONCOU, Z_PVAL)
+Value    Char    Z_PZONCOU()
+Value    Decimal Z_PVAL
+
+Local    Decimal Z_INVEXT, Z_INVCPL, Z_GES, Z_NEGBPC, Z_NEGBPS, Z_ZBEEXT, Z_ZBECPL, Z_DESEXT, Z_DESCPL
+
+#On recalcule les coûts prévisionnels et réèls
+[L]Z_INVEXT    = [M:ZSA8]ZINVCSTTOT
+[L]Z_INVCPL    = [M:ZSA8]ZINVCSTCPL
+[L]Z_GES       = [M:ZSA8]ZGESFOR
+[L]Z_NEGBPC    = [M:ZSA8]ZNEGBPC
+[L]Z_NEGBPS    = [M:ZSA8]ZNEGBPS
+[L]Z_ZBEEXT    = [M:ZSA8]ZBECST
+[L]Z_ZBECPL    = [M:ZSA8]ZBECSTCPL
+[L]Z_DESEXT    = [M:ZSA8]ZVLTTOT
+[L]Z_DESCPL    = [M:ZSA8]ZVLTTOTCPL
+
+Case Z_PZONCOU
+    When "NEGOBPC"        :    [L]Z_NEGBPC = [L]Z_PVAL
+    When "NEGOBPS"        :    [L]Z_NEGBPS = [L]Z_PVAL
+Endcase
+
+[M:ZSA8]ZCSTTOT    = [L]Z_INVEXT + [L]Z_GES + [L]Z_NEGBPC - [L]Z_NEGBPS + [L]Z_ZBEEXT + [L]Z_DESEXT
+[M:ZSA8]ZCSTTOTCPL = [L]Z_INVCPL + [L]Z_GES + [L]Z_NEGBPC - [L]Z_NEGBPS + [L]Z_ZBECPL + [L]Z_DESCPL
+[M:ZSA8]ZTOTDEST   = [L]Z_DESEXT + [L]Z_ZBEEXT    #@V2.#33
+
+Affzo [M:ZSA8]ZCSTTOT,ZCSTTOTCPL
+Affzo [M:ZSA8]ZTOTDEST                            #@V2.#33
+
+End
+#@V2.#29&#30_end
+#-----------------------------------------------------------------------------------
+
+#-----------------------------------------------------------------------------------
+
+
+
+######################################################################################
+
+
+
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran ZXNCSAI9) 28/08/2019 11:19:20 (KDL)
+######################################################################################
+Subprog AM_ZCLONC(VALEUR)
+Variable Integer VALEUR
+Local Integer Z_OK
+ If VALEUR=2
+[L]Z_OK=2
+
+                Call OUINON("Passage au statut"-mess(4,1031,1)-"?",[L]Z_OK) From GESECRAN
+               If [L]Z_OK=2
+  [M:XSA0]XSTATU=4
+                   Affzo [M:XSA0]XSTATU
+                Endif
+Endif
+
+
+######################################################################################
+Subprog AS_ZCLONC(VALEUR)
+Variable Integer VALEUR
+
+If !find(GUSER,'CQGH','CQND','CQCG','CQWN','CQOB')
+  [S]mkstat=2
+Endif
+
+End
+
+
+######################################################################################
+
+######################################################################################
+## ACL le 23/06/23
+######################################################################################
+Subprog APRES_NBLIG
+If find([M:XSA4]CAT(nolign-1),2,3)>0 and [M:XSA0]XSTATU<>4
+[M:XSA0]XSTATU=2 : Affzo [M:XSA0]XSTATU
+Endif
+End
+
+
+
+
+######################################################################################
+
+
+
+
+
+
+
+#gestion du clob
+$GERE_CLOB
+Local Integer WTEXSEQ, STAT
+#If !clalev([F:YTXC]) Local File TEXCLOB [YTXC] Endif
+Delete [F:YTXC] Where [F:YTXC]CODE=[F:XSA]ZCLOBRAC
+Call NUM_TXC("XSA",WTEXSEQ,STAT) From TRTX3TEX
+Raz [F:YTXC]
+[F:YTXC]CODE   = "XSA"+"~"+format$("N0:8#",num$(WTEXSEQ))
+[F:YTXC]TEXTE  = [M:X4SA8]ZZCLOBRAC
+[F:YTXC]IDENT1 = ""
+[F:YTXC]IDENT2 = ""
+[F:YTXC]IDENT3 = [F:YTXC]CODE
+[F:YTXC]CREUSR = GUSER
+[F:YTXC]CREDAT = date$
+[F:YTXC]CRETIM = time
+Write [F:YTXC]
+[F:XSA]ZCLOBRAC=[F:YTXC]CODE
+[M:X4SA8]ZCLOBRAC=[F:YTXC]CODE
+Affzo [M:X4SA8]ZCLOBRAC
+#Close Local File [YTXC]
+Return
+
+#recupo du clob
+$RECUP_CLOB
+#If !clalev([F:YTXC]) Local File TEXCLOB [YTXC] Endif
+Read [F:YTXC]TXC0=[F:XSA]ZCLOBRAC
+If [S]fstat=0
+  [M:X4SA8]ZZCLOBRAC=[F:YTXC]TEXTE
+  Affzo [M:X4SA8]ZZCLOBRAC
+Endif
+#Close Local File [YTXC]
+Return
+
+#suppression du clob
+$SUP_CLOB
+#If !clalev([F:TXC]) Local File TEXCLOB [TXC] Endif
+Delete [F:TXC] Where [F:TXC]CODE=[F:XSA]ZCLOBRAC
+#Close Local File [TXC]
+Return
+
+$GERE_XNCACL
+Local File XNCACL [YACL]
+Local Integer ZI
+For [L]ZI=0 To [M:XSA4]NBLIG-1
+  Read [F:YACL]XLA0=[M:XSA0]XNCNUM;[M:XSA4]XNUMACT(ZI)
+  If [S]fstat=0
+    [F:YACL]ZEFF=[M:XSA4]ZEFF(ZI)
+    [F:YACL]ZPILOTE=[M:XSA4]ZPILOTE(ZI)
+    [F:YACL]ZETAPES=[M:XSA4]ZETAPES(ZI)
+    [F:YACL]ZMETHODE=[M:XSA4]ZMETHODE(ZI)
+    [F:YACL]ZVERIF=[M:XSA4]ZVERIF(ZI)
+    [F:YACL]ZCLODAT=[M:XSA4]ZCLODAT(ZI)
+    [F:YACL]ZDATEND=[M:XSA4]ZDATEND(ZI)
+    [F:YACL]ZDATOUV=[M:XSA4]ZDATOUV(ZI)
+    Rewrite [F:YACL]
+  Endif
+Next
+Close Local File [YACL]
+Return
+
+$RECUP_XNCACL
+Local File XNCACL [YACL]
+Local Integer ZI
+For [L]ZI=0 To [M:XSA4]NBLIG-1
+  [M:XSA4]ZEFF(ZI)=""
+  [M:XSA4]ZPILOTE(ZI)=""
+  [M:XSA4]ZETAPES(ZI)=""
+  [M:XSA4]ZMETHODE(ZI)=""
+  [M:XSA4]ZVERIF(ZI)=""
+  [M:XSA4]ZCLODAT(ZI)=[0/0/0]
+  [M:XSA4]ZDATEND(ZI)=[0/0/0]
+  [M:XSA4]ZDATOUV(ZI)=[0/0/0]
+  Read [F:YACL]XLA0=[M:XSA0]XNCNUM;[M:XSA4]XNUMACT(ZI)
+  If [S]fstat=0
+    [M:XSA4]ZEFF(ZI)=[F:YACL]ZEFF
+    [M:XSA4]ZPILOTE(ZI)=[F:YACL]ZPILOTE
+    [M:XSA4]ZETAPES(ZI)=[F:YACL]ZETAPES
+    [M:XSA4]ZMETHODE(ZI)=[F:YACL]ZMETHODE
+    [M:XSA4]ZVERIF(ZI)=[F:YACL]ZVERIF
+    [M:XSA4]ZCLODAT(ZI)=[F:YACL]ZCLODAT
+    [M:XSA4]ZDATEND(ZI)=[F:YACL]ZDATEND
+    [M:XSA4]ZDATOUV(ZI)=[F:YACL]ZDATOUV
+  Endif
+  Affzo [M:XSA4]ZEFF(ZI)
+  Affzo [M:XSA4]ZPILOTE(ZI)
+  #•  Si action corrective  mettre le statut "action immédiate créée"
+  If [M:XSA4]CAT(ZI)=2 and [M:XSA0]XSTATU<3 and [M:XSA4]XNUMACT(ZI)<>""
+    #[M:XSA0]XSTATU=3 : Affzo [M:XSA0]XSTATU
+  Endif
+Next
+Affzo  [M:XSA4]
+Close Local File [YACL]
+Return
+##########################
+$RECUP_GRAVITE
+Local File APLSTD [YAPL]
+Filter [YAPL] Where [YAPL]LANCHP=6116 and [YAPL]LANNUM>0 and [YAPL]LAN=GLANGUE
+& Order By [YAPL]LANNUM
+Raz [M:ZSA6]NBGRV
+#Raz [M:ZSA6]ZGRV
+For [F:YAPL]
+  [M:ZSA6]GRV([M:ZSA6]NBGRV)=[F:YAPL]LANMES
+  [M:ZSA6]GRVFLG([M:ZSA6]NBGRV)=0
+  If [M:XSA0]XNCNUM<>"" and [F:XSA]ZGRV=[M:ZSA6]NBGRV+1 : [M:ZSA6]GRVFLG([M:ZSA6]NBGRV)=2 : Endif
+  [M:ZSA6]NBGRV+=1
+Next
+Affzo [M:ZSA6]
+Close Local File [YAPL]
+Return
+##########################
+$RECUP_OCCURENCE
+Local File APLSTD [YAPL]
+Filter [YAPL] Where [YAPL]LANCHP=6117 and [YAPL]LANNUM>0 and [YAPL]LAN=GLANGUE
+& Order By [YAPL]LANNUM
+Raz [M:ZSA6]NBOCC
+#Raz [M:ZSA6]ZOCC
+For [F:YAPL]
+  [M:ZSA6]OCC([M:ZSA6]NBOCC)=[F:YAPL]LANMES
+  If [M:XSA0]XNCNUM<>"" and [F:XSA]ZOCC=[M:ZSA6]NBOCC+1 : [M:ZSA6]OCCFLG([M:ZSA6]NBOCC)=2 : Endif
+  [M:ZSA6]NBOCC+=1
+Next
+Affzo [M:ZSA6]
+Close Local File [YAPL]
+Return
+
+###########################
+$GERE_CAPA
+  For I=0 To [M:XSA4]NBCAP-1
+      #on transfere dans l'écran kardol
+      [M:XSA4]CAT([M:XSA4]NBLIG)=[M:XSA4]CAT2(I)
+      [M:XSA4]XTYPACT([M:XSA4]NBLIG)="01"
+      [M:XSA4]GEN([M:XSA4]NBLIG)=[M:XSA4]GEN2(I)
+      [M:XSA4]XNUMACT([M:XSA4]NBLIG)=[M:XSA4]NUMACT2(I)
+      [M:XSA4]ZDATOUV([M:XSA4]NBLIG)=[M:XSA4]ZDATOUV2(I)
+      [M:XSA4]XLIB([M:XSA4]NBLIG)=[M:XSA4]ZLIB2(I)
+      [M:XSA4]XSTATU([M:XSA4]NBLIG)=[M:XSA4]ZSTATU2(I)
+      [M:XSA4]XDESTXT([M:XSA4]NBLIG)=[M:XSA4]ZDESTXT(I)
+      [M:XSA4]XCONDAT([M:XSA4]NBLIG)=[M:XSA4]ZDELAI(I)
+      [M:XSA4]ZPILOTE([M:XSA4]NBLIG)=[M:XSA4]ZPILOTE2(I)
+      [M:XSA4]ZETAPES([M:XSA4]NBLIG)=[M:XSA4]ZETAPES2(I)
+      [M:XSA4]ZMETHODE([M:XSA4]NBLIG)=[M:XSA4]ZMETHODE2(I)
+      [M:XSA4]ZDATEND([M:XSA4]NBLIG)=[M:XSA4]ZDATEND2(I)
+      [M:XSA4]ZVERIF([M:XSA4]NBLIG)=[M:XSA4]ZVERIF2(I)
+      [M:XSA4]ZCLODAT([M:XSA4]NBLIG)=[M:XSA4]ZCLODAT2(I)
+      #
+      If find([M:XSA4]CAT([M:XSA4]NBLIG),2,3) and [M:XSA4]GEN([M:XSA4]NBLIG)=2
+        [M:XSA4]GEN([M:XSA4]NBLIG)=3
+        [M:XSA4]ACTLIN([M:XSA4]NBLIG)=-1
+      Endif
+      [M:XSA4]NBLIG+=1
+  Next
+Return
+
+$CREE_CAPA
+  #creaton des capas
+  For I=0 To [M:XSA4]NBLIG-1
+    If find([M:XSA4]CAT(I),2,3) and [M:XSA4]GEN(I)=3
+      [M:XSA4]GEN(I)=0
+      [M:XSA4]ACTLIN(I)=-1
+      Global Integer GYAI
+      Local Integer STAT
+      Local Char NUMERO(10)
+      Raz [F:X4V]
+      Call NUMERO ("XAC","",date$,"",NUMERO,STAT) From XSUBANM
+      If STAT<>0
+        Infbox mess(14,1047,1): GOK = 0: Return
+      Else
+        [M:XSA4]XNUMACT(I) = NUMERO
+        Affzo [M:XSA4]XNUMACT(I)
+        Gosub ALIM_X4V From SPEXSAKAR
+        Write [X4V]
+        # Création du lien action
+        Gosub ALIM_XLA  From SPEXSAKAR
+        Write [XLA]
+      Endif
+      Kill GYAI
+    Endif
+  Next
+Return
+
+$GERE_CLOB_CAPA
+Local File XKACB[YKACB]
+For I=0 To [M:XSA4]NBLIG-1
+  If find([M:XSA4]CAT(I),2,3)
+    Read [F:YKACB]XKACB0="X4V";"ZDESTXT";[M:XSA4]XNUMACT(I);"0";"FRA"
+    If [S]fstat=0
+      Delete [F:YKACB]Curr
+    Endif
+    Raz [F:YKACB]
+    [F:YKACB]ABRFIC = "X4V"
+    [F:YKACB]ZONE   = "ZDESTXT"
+    [F:YKACB]ID1    = [M:XSA4]XNUMACT(I)
+    [F:YKACB]ID2    = "0"
+    [F:YKACB]LAN    = "FRA"
+    Setlob [F:YKACB]CLOB With [M:XSA4]XDESTXT(I)
+    Write [F:YKACB]
+  Else
+    Read [F:YKACB]XKACB0="X4V";"XDESTXT";[M:XSA4]XNUMACT(I);"0";"FRA"
+    If [S]fstat=0
+      Delete [F:YKACB]Curr
+    Endif
+    Raz [F:YKACB]
+    [F:YKACB]ABRFIC = "X4V"
+    [F:YKACB]ZONE   = "XDESTXT"
+    [F:YKACB]ID1    = [M:XSA4]XNUMACT(I)
+    [F:YKACB]ID2    = "0"
+    [F:YKACB]LAN    = "FRA"
+    Setlob [F:YKACB]CLOB With [M:XSA4]XDESTXT(I)
+    Write [F:YKACB]
+    #
+    Read [F:YKACB]XKACB0="X4V";"RESULT";[M:XSA4]XNUMACT(I);"0";"FRA"
+    If [S]fstat=0
+      Delete [F:YKACB]Curr
+    Endif
+    Raz [F:YKACB]
+    [F:YKACB]ABRFIC = "X4V"
+    [F:YKACB]ZONE   = "RESULT"
+    [F:YKACB]ID1    = [M:XSA4]XNUMACT(I)
+    [F:YKACB]ID2    = "0"
+    [F:YKACB]LAN    = "FRA"
+    Setlob [F:YKACB]CLOB With [M:XSA4]RESULT(I)
+    Write [F:YKACB]
+  Endif
+Next
+Close Local File [YKACB]
+Return
+
+$RECUP_XACLOB
+  Local File XACLOB [ZXAC]
+  Read [ZXAC]XXC0="XSACRI"; [XSA0]XNCNUM;"";""
+  If [S]fstat=0
+    [M:XSA2]XSACRI=[ZXAC]CLOB
+    Affzo [M:XSA2]XSACRI
+  Endif
+  Close Local File  [ZXAC]
+Return
+
+###########################
+$RECUP_CAPA
+  Local Decimal ZHISHTML
+  Effzo [M:XSA4]15
+  For I=0 To [M:XSA4]NBLIG-1
+    If [M:XSA4]CAT(I)>1
+      #on transfere dans l'écran spe
+      [M:XSA4]CAT2([M:XSA4]NBCAP)=[M:XSA4]CAT(I)
+      [M:XSA4]GEN2([M:XSA4]NBCAP)=[M:XSA4]GEN(I)
+      [M:XSA4]NUMACT2([M:XSA4]NBCAP)=[M:XSA4]XNUMACT(I)
+      [M:XSA4]ZDATOUV2([M:XSA4]NBCAP)=[M:XSA4]ZDATOUV(I)
+      [M:XSA4]ZLIB2([M:XSA4]NBCAP)=[M:XSA4]XLIB(I)
+      [M:XSA4]ZSTATU2([M:XSA4]NBCAP)=[M:XSA4]XSTATU(I)
+      [M:XSA4]ZDESTXT([M:XSA4]NBCAP)=[M:XSA4]XDESTXT(I)
+      [M:XSA4]ZDELAI([M:XSA4]NBCAP)=[M:XSA4]XCONDAT(I)
+      [M:XSA4]ZPILOTE2([M:XSA4]NBCAP)=[M:XSA4]ZPILOTE(I)
+      [M:XSA4]ZETAPES2([M:XSA4]NBCAP)=[M:XSA4]ZETAPES(I)
+      [M:XSA4]ZMETHODE2([M:XSA4]NBCAP)=[M:XSA4]ZMETHODE(I)
+      [M:XSA4]ZDATEND2([M:XSA4]NBCAP)=[M:XSA4]ZDATEND(I)
+      [M:XSA4]ZVERIF2([M:XSA4]NBCAP)=[M:XSA4]ZVERIF(I)
+      [M:XSA4]ZCLODAT2([M:XSA4]NBCAP)=[M:XSA4]ZCLODAT(I)
+      Assign "[M:XSA4]ZDESTXT([M:XSA4]NBCAP)" With func SPEXKACBKAR.GETCLOB(
+&                            "X4V",
+&                            "ZDESTXT",
+&                            [M:XSA4]NUMACT2([M:XSA4]NBCAP),
+&                            "0",
+&                            "FRA",ZHISHTML)
+      [M:XSA4]NBCAP+=1
+      Dela I,1 [M:XSA4]NBLIG
+      [M:XSA4]NBLIG -=1
+      I-=1
+    Elsif [M:XSA4]CAT(I)=1
+      Assign "[M:XSA4]XDESTXT (I)" With func SPEXKACBKAR.GETCLOB(
+&                            "X4V",
+&                            "XDESTXT",
+&                            [M:XSA4]XNUMACT(I),
+&                            "0",
+&                            "FRA",ZHISHTML)
+    Endif
+  Next
+  Affzo [M:XSA4]
+Return
+
+######################################################################################
+Subprog C_GRVFLG(VALEUR)
+Variable Integer VALEUR
+If VALEUR=2
+  For I=0 To [M:ZSA6]NBGRV-1
+    If [M:ZSA6]GRVFLG(I)=2 and I<>[S]nolign-1
+      #[S]mkstat=2
+      #GMESSAGE="Une seule case peut être cochée"
+      #VALEUR=1
+      [M:ZSA6]GRVFLG(I)=1 : Affzo [M:ZSA6]GRVFLG(I)
+      Break
+    Endif
+  Next
+Endif
+End
+
+Subprog C_OCCFLG(VALEUR)
+Variable Integer VALEUR
+If VALEUR=2
+  For I=0 To [M:ZSA6]NBOCC-1
+    If [M:ZSA6]OCCFLG(I)=2 and I<>[S]nolign-1
+      #[S]mkstat=2
+      #GMESSAGE="Une seule case peut être cochée"
+      #VALEUR=1
+      [M:ZSA6]OCCFLG(I)=1 : Affzo [M:ZSA6]OCCFLG(I)
+      Break
+    Endif
+  Next
+Endif
+End
+
+######################################################################################
+Subprog AM_GRVFLG(VALEUR)
+Variable Integer VALEUR
+[M:ZSA6]ZGRV=0
+If VALEUR=2 : [M:ZSA6]ZGRV=[S]nolign : Endif
+If [M:ZSA6]ZGRV>0
+  [M:ZSA6]ZCRITICITE=val(right$([M:ZSA6]GRV([M:ZSA6]ZGRV-1),len([M:ZSA6]GRV([M:ZSA6]ZGRV-1))-2))
+Else
+  [M:ZSA6]ZCRITICITE=1
+Endif
+If [M:ZSA6]ZOCC>0
+  [M:ZSA6]ZCRITICITE*=val(right$([M:ZSA6]OCC([M:ZSA6]ZOCC-1),len([M:ZSA6]OCC([M:ZSA6]ZOCC-1))-2))
+Endif
+If [M:ZSA6]ZIMPDMFLG=2
+  [M:ZSA6]ZCRITICITE*=2
+Endif
+Affzo [M:ZSA6]ZCRITICITE
+If [M:ZSA6]ZCRITICITE>=25 : Infbox 'Ouvrir une CAPA ' : Endif
+End
+######################################################################################
+Subprog AM_OCCFLG(VALEUR)
+Variable Integer VALEUR
+[M:ZSA6]ZOCC=0
+If VALEUR=2 : [M:ZSA6]ZOCC=[S]nolign : Endif
+If [M:ZSA6]ZGRV>0
+  [M:ZSA6]ZCRITICITE=val(right$([M:ZSA6]GRV([M:ZSA6]ZGRV-1),len([M:ZSA6]GRV([M:ZSA6]ZGRV-1))-2))
+Else
+  [M:ZSA6]ZCRITICITE=1
+Endif
+If [M:ZSA6]ZOCC>0
+  [M:ZSA6]ZCRITICITE*=val(right$([M:ZSA6]OCC([M:ZSA6]ZOCC-1),len([M:ZSA6]OCC([M:ZSA6]ZOCC-1))-2))
+Endif
+If [M:ZSA6]ZIMPDMFLG=2
+  [M:ZSA6]ZCRITICITE*=2
+Endif
+Affzo [M:ZSA6]ZCRITICITE
+If [M:ZSA6]ZCRITICITE>=25 : Infbox 'Ouvrir une CAPA ' : Endif
+End
+
+######################################################################################
+Subprog AM_ZIMPDMFLG(VALEUR)
+Variable Integer VALEUR
+If [M:ZSA6]ZGRV>0
+  [M:ZSA6]ZCRITICITE=val(right$([M:ZSA6]GRV([M:ZSA6]ZGRV-1),len([M:ZSA6]GRV([M:ZSA6]ZGRV-1))-2))
+Else
+  [M:ZSA6]ZCRITICITE=1
+Endif
+If [M:ZSA6]ZOCC>0
+  [M:ZSA6]ZCRITICITE*=val(right$([M:ZSA6]OCC([M:ZSA6]ZOCC-1),len([M:ZSA6]OCC([M:ZSA6]ZOCC-1))-2))
+Endif
+If VALEUR=2
+  [M:ZSA6]ZCRITICITE*=2
+Endif
+Affzo [M:ZSA6]ZCRITICITE
+If [M:ZSA6]ZCRITICITE>=25 : Infbox 'Ouvrir une CAPA ' : Endif
+End
+
+######################################################################################
+Subprog AS_CAT2(VALEUR)
+Variable Integer VALEUR
+Discombo 0 From CAT2
+Discombo 1 From CAT2
+End
+
+
+######################################################################################
+Subprog AS_GEN(VALEUR)
+Variable Integer VALEUR
+[M:XSA4]CAT([S]nolign-1)=1
+VALEUR=2
+End
+######################################################################################
+Subprog C_NBCAP
+If status=65
+    If [M:XSA0]XSTATU=2
+    Infbox "La NC est au statut CAPA"
+    mkstat=2
+    Endif
+Endif
+If status=68 | status=83
+    If [M:XSA0]XSTATU=2
+    Infbox "La NC est au statut CAPA"
+    mkstat=2
+    Endif
+Endif
+End
+######################################################################################
+Subprog AS_NUMACT2(VALEUR)
+Variable Char    VALEUR()
+If VALEUR=""
+[S]mkstat=2
+Endif
+End
+
+
+######################################################################################
+Subprog AM_ZAUDIT(VALEUR)
+Variable Integer VALEUR
+If VALEUR=2
+[M:ZSA6]ZCRITICITE=25 : Affzo [M:ZSA6]ZCRITICITE
+If [M:ZSA6]ZCRITICITE>=25 : Infbox 'Ouvrir une CAPA ' : Endif
+Endif
+End
+
+
+######################################################################################
+Subprog AS_XLIB(VALEUR)
+Value Char VALEUR
+If [M:XSA4]XNUMACT(nolign-1)=""
+  [M:XSA4]CAT([S]nolign-1)=1
+  [M:XSA4]GEN(nolign-1)=2
+  Affzo [M:XSA4]GEN(nolign-1)
+Endif
+End
