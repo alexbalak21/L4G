@@ -153,11 +153,7 @@ Endif
 
 #--> Désactivation de la duplication
 Call VIREBOUT(CHAINE,"D") From GOBJET
-Read [F:STL]STL0=[M:XSA1]ITMREF;[M:XSA1]ZLOTNC(0)
-If fstat : Infbox "Read Error" : Endif
-Infbox [M:XSA1]ITMREF
-Infbox [M:XSA1]ZLOTNC(0)
-Infbox "Fournisseur : " - [F:STL]BPSNUM
+
 Return
 
 #-----------------------------------------------------------------------------------
@@ -3152,3 +3148,9 @@ If [M:XSA4]XNUMACT(nolign-1)=""
   Affzo [M:XSA4]GEN(nolign-1)
 Endif
 End
+
+Funprog OBT_BSPNUM(ZXITMREF, ZXLOT)
+Local Char ZXITMREF
+
+
+End BPSNUM

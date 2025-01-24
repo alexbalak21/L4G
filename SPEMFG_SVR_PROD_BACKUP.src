@@ -1,0 +1,255 @@
+#LCA - 27/07/2020 - F6-01202/115 - Info Cartons Complets SkipperOF ss-traitance
+#LCA - 19/11/2019 - 224966 - modification sélection version
+#----------------------------------------------------------------------------------------------------
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+
+Case ACTION
+    When "OUVRE"    :    Gosub OUVRE
+    When "LIENS"    :    Gosub LIENS
+    When 'FIN' : Gosub FIN
+    When 'SETTRANS' : Gosub SETTRANS
+    When 'STYLE'  : Gosub STYLE
+    When 'SETBOUT' : Gosub SETBOUT
+    When Default
+Endcase
+
+Return
+
+#----------------------------------------------------------------------------------------------------
+$OUVRE
+If !clalev([F:ZACB]) : Local File ACLOB [ZACB] : Endif
+
+Return
+
+
+#----------------------------------------------------------------------------------------------------
+$LIENS
+#-- Si présence d'un commentaire, message d'avertissement
+Filter [F:ZACB] Where [F:ZACB]CODBLB="CO_MFG" & [F:ZACB]IDENT1=[F:MFG]MFGNUM
+Look [F:ZACB]ACB0 First
+If !fstat
+    Call MESSAGE("Un commentaire a été saisi pour cet OF") From GESECRAN
+Endif
+
+Return
+#LCA - 19/11/2019- 224966 - modification sélection version
+$FIN
+
+If dim(GSEL)>0
+  GWEBSERV=0
+  Kill GSEL
+Endif
+Return
+
+#LCA - 27/07/2020 - F6-01202/115 - Info Cartons Complets SkipperOF ss-traitance
+$SETTRANS
+Global Integer GZCOL
+Global Integer GZRESPCOL
+If !clalev([F:ZMTS]) Local File MFGTRS [ZMTS] Endif
+Read [ZMTS]MTS0=1;GFLAG
+GZCOL = [F:ZMTS]ZPCUSTUCOE
+GZRESPCOL = [F:ZMTS]ZRESPCOL
+
+Close Local File [ZMTS]
+Return
+
+#LCA - 27/07/2020 - F6-01202/115 - Info Cartons Complets SkipperOF ss-traitance
+$STYLE
+If dim(GZCOL)>0
+  If GZCOL<3
+
+    If !clalev([F:ZITM]) : Local File ITMMASTER [ZITM] : Endif
+    For ZI=0 To [M:MFG2]NBLIG-1
+       Read [F:ZITM]ITM0=[M:MFG2]ITMREF(ZI)
+       [M:MFG2]ZPCUSTUCOE(ZI)=[F:ZITM]PCUSTUCOE(0)
+       Affzo [M:MFG2]ZPCUSTUCOE(ZI)
+       If GZRESPCOL<3
+       If [M:MFG2]ALLQTY(ZI)>0
+        If mod([M:MFG2]ALLQTY(ZI),[M:MFG2]ZPCUSTUCOE(ZI))=0
+          [M:MFG2]ZRESPCOL(ZI)=2
+#          Chgstl [M:MFG2]ALLQTY (ZI) With 'BACKGREEN'
+#          Affzo [M:MFG2]ALLQTY(ZI)
+        Else
+#          Chgstl [M:MFG2]ALLQTY (ZI) With ''
+#          Affzo [M:MFG2]ALLQTY(ZI)
+          [M:MFG2]ZRESPCOL(ZI)=1
+        Endif
+       Else
+        If mod([M:MFG2]RETQTY(ZI),[M:MFG2]ZPCUSTUCOE(ZI))=0
+          [M:MFG2]ZRESPCOL(ZI)=2
+          #Chgstl [M:MFG2]RETQTY (ZI) With 'BACKGREEN'
+          #Affzo [M:MFG2]ALLQTY(ZI)
+        Else
+          [M:MFG2]ZRESPCOL(ZI)=1
+        Endif
+       Endif
+        Affzo [M:MFG2]ZRESPCOL(ZI)
+       Endif
+
+    Next
+    Grizo [M:MFG2]ZPCUSTUCOE
+  Else
+    Effzo [M:MFG2]ZPCUSTUCOE
+    Chgfmt [M:MFG2]ZPCUSTUCOE With "-K:"
+  Endif
+  If GZRESPCOL<3
+    Grizo [M:MFG2]ZRESPCOL
+  Else
+    Effzo [M:MFG2]ZRESPCOL
+    Chgfmt [M:MFG2]ZRESPCOL With "-K:"
+  Endif
+Endif
+
+Return
+
+$SETBOUT
+
+For ZI=0 To [M:MFG2]NBLIG-1
+     If [M:MFG2]ZRESPCOL(ZI)=2 and [M:MFG2]ALLQTY(ZI)>0
+
+     Chgstl [M:MFG2]ALLQTY(ZI) With ''
+      Chgstl [M:MFG2]ALLQTY(ZI) With 'BACKGREEN'
+      Affzo [M:MFG2]ALLQTY(ZI)
+    Endif
+Next
+Return
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran MFG1) 04/05/2018 16:48:21 (ADMIN)
+######################################################################################
+Subprog C_BOMALT(VALEUR)
+Variable Decimal VALEUR
+End
+
+
+######################################################################################
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran MFG1) 05/07/2019 11:58:51 (KDL)
+######################################################################################
+Subprog AM_XVERSIONC(VALEUR)
+Variable Char    VALEUR()
+End
+
+
+######################################################################################
+
+######################################################################################
+#LCA - 19/11/2019 - 224966 modification sélection version
+######################################################################################
+Subprog AP_XVERSIONC(VALEUR)
+Variable Char    VALEUR()
+
+If dim(GSEL)>0
+  GWEBSERV=0
+  Kill GSEL
+Endif
+
+End
+
+
+######################################################################################
+#LCA - 19/11/2019 - modification sélection version
+######################################################################################
+Subprog S_XVERSIONC(VALEUR)
+
+Variable Char    VALEUR()
+
+If GWEBSERV=0
+  GWEBSERV=1
+Endif
+Global Integer GSEL : GSEL=2
+Local Char CRITERE (250)(2) : Raz CRITERE
+Local Date XDATREF
+XDATREF=[M:MFG1]ENDDAT
+If [M:MFG1]ENDDAT<[01/01/1900] : XDATREF=date$ : Endif
+
+#--------------------------------------------------------------------------------
+# afficher les zones XITMREL + XCLIVER + zones calculée(remplissage table tempo)
+#--------------------------------------------------------------------------------
+Call REMPLXITMSEL([M:MFG1]ITMREF(nolign-1),XDATREF,string$([M:MFG1]BPCTYPDEN=2,[M:MFG1]BPCNUM),3) From XKTVERSION
+
+If clalev([F:XXSE]) = 0 : Local File XTMPITMSEL[XXSE] : Endif : Filter [XXSE]
+If clalev([F:XVE]) = 0 : Local File XITMREL[XVE] : Endif : Filter [XVE]
+If !clalev([F:ZX4V]) : Local File XNCACT [ZX4V] : Endif : Filter [ZX4V]
+
+CRITERE(0) = "[XXSE]IDENT=GIDENT"
+If [M:MFG1]ITMREF(nolign-1)<>""
+    CRITERE(0) += " & [XXSE]ITMREF=[M:MFG1]ITMREF(nolign-1)"
+Endif
+
+Filter [XXSE] Where evalue(CRITERE)
+#Filter [F:ZX4V] Where [F:ZX4V]XTYPACT='01' or [F:ZX4V]XTYPACT='02'
+
+If adxlog<>1 : XTRANSAC=1 : Trbegin [F:XXSE] : Endif
+Filter [XXSE] Where evalue(CRITERE)
+For [XXSE]
+  Read [F:XVE]XVE0=[XXSE]ITMREF;[XXSE]XLIGNE
+  [F:XXSE]ZINFO=[F:XVE]ZINFO
+  Rewrite [F:XXSE]
+Next
+Commit
+
+Link [XXSE]  With [F:ZX4V]Z4V1=3;[F:XXSE]ITMREF As [ZLNK]
+& Where right$([F:ZX4V]XTEXTE,10)=[F:XXSE]XVERSION
+& and [F:ZX4V]XNUMACT <> ""
+& and (month([F:ZX4V]XCREDAT)=month([F:XXSE]XDATCRE) and year([F:ZX4V]XCREDAT)=year([F:XXSE]XDATCRE)) or [F:ZX4V]XCREDAT=[F:XXSE]XDATCRE
+& and [F:ZX4V]XTYPACT='01'
+#Infbox num$(rowcount([ZLNK]))
+#and ([F:ZX4V]XCREDAT=[F:XXSE]XDATCRE or month([F:ZX4V]XCREDAT)=month([F:XXSE]XDATCRE))
+#& and [XXSE]ITMREF=[M:MFG1]ITMREF(nolign-1) and [XXSE]IDENT=GIDENT
+Choose [ZLNK]
+& Order By [F:XXSE]XVERSION;[F:ZX4V]XTEXTE Using
+& [F:XXSE]ITMREF Titled mess(7,1110,1),
+& [F:XXSE]XVERSION Titled mess(8,1110,1),
+& [F:XXSE]XDATCRE Titled mess(9,1110,1),
+& mess([F:XXSE]ZINFO,6115,1) Titled "Information",
+& mess([F:XXSE]XSTATFL,1063,1) Titled mess(12,1110,1),
+& [F:ZX4V]ZCOMM Titled "Commentaire version",
+& [F:XXSE]XDATAPP Titled mess(10,1110,1),
+& [F:XXSE]XDATREMP Titled mess(11,1110,1),
+& [F:XXSE]STU Titled mess(20,1110,1)
+& Sized(80,240)
+& Titled mess(11,1046,1)
+
+#& Starting At [F:XXSE]XVERSION>=VALEUR
+
+
+If status=28
+    VALEUR=[F:XXSE]XVERSION
+Endif
+
+
+End
+
+
+######################################################################################
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran MFG0) 22/11/2022 11:56:10 (KDL)
+######################################################################################
+Subprog AM_MFGSTA(VALEUR)
+Variable Integer VALEUR
+Local Integer ZI
+Local File MFGOPE [YMFO]
+For [L]ZI=0 To [M:MFG3]NBLIG-1
+  Read [F:YMFO]MFO0=[M:MFG0]MFGNUM;[M:MFG3]OPENUM([L]ZI);1
+  If [S]fstat=0 and [F:YMFO]OPESTA=7
+    [M:MFG3]OPESTA([L]ZI)=[F:YMFO]OPESTA
+    [M:MFG3]POHNUM([L]ZI)=[F:YMFO]POHNUM
+    [M:MFG3]POPLIN([L]ZI)=[F:YMFO]POPLIN
+    [M:MFG3]POPSEQ([L]ZI)=[F:YMFO]POPSEQ
+  Endif
+  Read [F:YMFO]MFO0=[M:MFG0]MFGNUM;[M:MFG3]OPENUM([L]ZI);0
+  If [S]fstat=0 and [F:YMFO]OPESTA=7
+    [M:MFG3]OPESTA([L]ZI)=[F:YMFO]OPESTA
+    [M:MFG3]POHNUM([L]ZI)=[F:YMFO]POHNUM
+    [M:MFG3]POPLIN([L]ZI)=[F:YMFO]POPLIN
+    [M:MFG3]POPSEQ([L]ZI)=[F:YMFO]POPSEQ
+  Endif
+Next
+Affzo [M:MFG3]
+Close Local File [YMFO]
+End
+
+
+######################################################################################
