@@ -1,0 +1,411 @@
+﻿#<AdxTL>@(#)5.0.0.0 $Revision$  #!!!!DISCLAIMER V12P21 P Base DO NOT COPY OR USE THIS FILE IN ANY X3 FOLDER OR SUB FOLDER!!!!
+####################################################################################
+# Program Name: TRTNTSCTL   Notes display control
+####################################################################################
+$ACTION
+  Case ACTION
+    When "OUVRE"         : Gosub OUVRE
+    When "DEBUT"         : Gosub DEBUT
+  Endcase
+Return
+
+####################################################################################
+$OUVRE
+Local Char NTSCOD(type(PARAM)-10)
+Local Char ZONE(type(PARAM)-10)
+Local Integer NOTETYP
+
+  If !clalev([F:NTS]) : Local File NOTE     [NTS] : Endif
+  If !clalev([F:NTG]) : Local File NOTCATEG [NTG] : Endif
+  If !clalev([F:AUS]) : Local File AUTILIS  [AUS] : Endif
+  If !clalev([F:TXC]) : Local File TEXCLOB  [TXC] : Endif
+  # ----------------------
+  NTSCOD = PARAM(1)
+  ZONE   = PARAM(2)
+
+  # ----------------------
+  Gosub SEL_FONC
+  # check for existence of valid notes
+  If DOCTYP < 1 Then
+    FIN = 1
+    Return
+  Endif
+  Gosub FILTER_NTS
+  #120357.so
+  # Call RAZ_CLOB From ACLOB # 114310.n - Clear arrays, the key used is not unique across items
+  #120357.eo
+  # ----------------------
+  # FGR 02/06/2014 : X3SUIVI99684
+  #Link [NTS] With [NTG]NTG0=[NTS]NTGCOD;[NTS]NTGTYP As [NT1]
+  Link [NTS] With [NTG]NTG0=[NTS]NTGTYP;[NTS]NTGCOD As [NT1]
+&           Where [NTS]CODE=[L]NTSCOD & [NTS]NTGTYP=[L]NOTETYP &
+&                 [NTG]FIE(DOCTYP-1)=2 &  ((date$ >= [NTS]EFFDAT | year([NTS]EFFDAT) = 0) & (date$ <= [NTS]ENDDAT | year([NTS]ENDDAT) = 0))
+&               & (([NTS]AUTODISP=2 & GACTION='NOTE') | GACTION = "NOTE1")
+&        Order By [NTS]PRIORITY Desc; [NTS]NTSCOD Asc; [NTS]NTGTYP
+  # ----------------------
+  Read [NT1] First
+  If fstat Then
+    FIN = 1
+    Return
+  Endif
+Return
+
+########################################################################################
+$DEBUT
+Local Clbfile WCLOB
+Local Integer WRET
+
+  Raz [M:DIA2]
+  # Call INI_CLOB From ACLOB  # 107681.o
+  Gosub FILTER_NTS
+  # Removed NT1 link statement
+  For [NT1]
+
+ #   Call LIENS_TEX([F:NTS]NOTE, [F:NTS]NTSCOD2, WRET)  #120357.so
+ #   If WRET Then
+ #     Break
+ #   Endif                                              #120357.eo
+
+ #   Call LIRE_CLOB(WCLOB, [F:NTS]NTSCOD2, WRET)        #120357.o
+    Call LOAD_CLOB([F:NTS]NOTE, WCLOB, WRET)            #120357.n
+    Append [M:DIA2]NOTE, WCLOB
+  Next
+  Filter [NTS]
+  If instr(1,[M:DIA2]NOTE,'{') > 0 Then
+    Append [M:DIA2]NOTE,'}'
+  Endif
+Return
+######################################################################################
+# 120357.sn  JOBRO
+# There is no need to store these clobs in an array.  They are display only.
+# The subprog below is similar to LIRE_CLOB except we don't get the clob from the
+# GLObal variables.
+######################################################################################
+Subprog LOAD_CLOB(FRCLOB, TOCLOB, STAT)
+Value     Clbfile FRCLOB
+Variable  Clbfile TOCLOB
+Value Integer STAT
+
+Local Integer I , J , K
+Local Integer PTR , NPT , LIG , PLEIN , LONG , CHUNKS
+
+LONG   = len(FRCLOB)
+CHUNKS = int(LONG/GCLOLNG)+1
+
+Local Char    TOTEXTE(GCLOLNG)(1..CHUNKS+1)
+Setlob TOTEXTE With FRCLOB  # put note into character array
+
+Raz TOCLOB
+
+LIG = 1
+While LIG <= CHUNKS & len(TOTEXTE(LIG))>0
+
+  If LIG>=CHUNKS or len(TOTEXTE(LIG+1))=0
+  # find and remove the last '}'. A final '}' will be added after the last note.
+    Repeat
+      J = I
+      I = instr(I+1,TOTEXTE(LIG),'}')
+    Until I = 0
+    If J > 0 Then
+      TOTEXTE(LIG) = left$(TOTEXTE(LIG),J-1)+right$(TOTEXTE(LIG),J+1)
+    Endif
+  Endif
+
+  LIG += 1
+Wend
+
+TOTEXTE(LIG-1) += (chr$(10)+chr$(13))
+Setlob TOCLOB With TOTEXTE(1..LIG-1)
+STAT = 0
+
+End
+# 120357.en  JOBRO
+######################################################################################
+Subprog LIENS_TEX(CLOB, IDENT, STAT)
+Value Clbfile CLOB
+Value Char IDENT
+Value Integer STAT
+
+  If !find(IDENT, GCLOIDE(1..GCLOMAX)) Then
+    Call RANGE_CLOB(CLOB, IDENT, STAT) From ACLOB
+    If STAT = 1 Then
+      Call ERREUR(mess(215,126,1) - "(" + num$(GCLOMEM) - "Ko)") From GESECRAN
+      End # memory size check
+    Endif
+  Endif
+
+End
+######################################################################################
+Subprog LIRE_CLOB(CLOB, IDENT, STAT)
+Variable Clbfile CLOB
+Value    Char    IDENT
+Variable Integer STAT
+
+Local Integer I,J,K
+Local Integer PTR,LIG
+
+  Raz CLOB
+  K = find(left$(IDENT,type(GCLOIDE)-10), GCLOIDE(1..GCLONBR))
+  If K Then
+    PTR = GCLOPTR(K)
+    LIG = 0
+    While PTR > 0
+      LIG += 1
+      PTR = GCLONXT(PTR)
+    Wend
+
+    Local Char TEXTE(GCLOLNG)(1..LIG)
+
+    PTR = GCLOPTR(K)
+    LIG = 0
+    While PTR > 0
+      LIG += 1
+      TEXTE(LIG) = GCLOTXT(PTR)
+      PTR = GCLONXT(PTR)
+      # find and remove the last '}'. A final '}' will be added after the last note.
+      If PTR < 0 Then
+        Repeat
+          J = I
+          I = instr(I+1,TEXTE(LIG),'}')
+        Until I = 0
+        If J > 0 Then
+          TEXTE(LIG) = left$(TEXTE(LIG),J-1)+right$(TEXTE(LIG),J+1)
+        Endif
+      Endif
+    Wend
+  Endif
+  TEXTE(LIG) += (chr$(10)+chr$(13))
+  Setlob CLOB With TEXTE(1..LIG)
+  STAT = 0
+End
+
+##########################################################################################
+$SEL_FONC
+Local Integer NOTETYP
+Local Integer DOCTYP
+
+  Case left$(ZONE,3)
+    When "ITM"
+      NOTETYP = 1
+    When "BPC"
+      NOTETYP = 2
+    When "BPS","BPR"
+      NOTETYP = 3
+    When "CRM"
+      NOTETYP = 2
+  Endcase
+  #
+  Case NOTETYP
+    When 1      # Products
+      Case GFONCTION
+        When "GESSQH" : DOCTYP=1
+        When "GESSOH" : DOCTYP=2
+        When "GESSDH" : DOCTYP=3
+        When "GESSIH" : DOCTYP=4
+        When "GESSOR","GESSOI"  : DOCTYP=5
+        When "GESPSH" : DOCTYP=6
+        When "GESPOH" : DOCTYP=7
+        When "GESPOC" : DOCTYP=8
+        When "GESPTH","GESPTH2" : DOCTYP=9
+        When "GESPIH" : DOCTYP=10
+        When "GESSCO" : DOCTYP=11
+        When "GESPQH" : DOCTYP=12
+        When "GESMFG" : DOCTYP=13
+
+        When "GESBOD","GESBODP","GESBODC","GESBODS","GESBOS" : DOCTYP=14
+        # 95371 added "FUNGBENCHA" and "FUNDBENCHA" to the line below
+        # 117645 added "FUNGBENCH" to the line below
+        When "MULTIWOX","FUNDBENCH", "FUNGBENCH", "FUNGBENCHA","FUNDBENCHA" : DOCTYP=15
+        # 95371.o When "MULTIWOX","FUNDBENCH" : DOCTYP=15
+        When "GESOPP" : DOCTYP=15  # 117386 - For compatibility with MPM
+        When "GESSRE" : DOCTYP=16
+        When "GESMAC" : DOCTYP=17
+        When "GESRQW" : DOCTYP=18
+        When "GESCON" : DOCTYP=19
+        When "GESITN" : DOCTYP=20
+        When Default  : DOCTYP=14  # 0
+      Endcase
+    When 2  # Customers
+      Case GFONCTION
+        When "GESSQH" : DOCTYP=1
+        When "GESSOH" : DOCTYP=2
+        When "GESSDH" : DOCTYP=3
+        When "GESSIH" : DOCTYP=4
+        When "GESSOR" : DOCTYP=5
+        When "GESBIC" : DOCTYP=6
+        When "GESTSK" : DOCTYP=7
+        When "GESCLL" : DOCTYP=8
+        When "GESBAP" : DOCTYP=9
+        When "GESOPP" : DOCTYP=10
+        When "GESSRE" : DOCTYP=11
+        When "GESMAC" : DOCTYP=12
+        When "GESRQW" : DOCTYP=13
+        When "GESCON" : DOCTYP=14
+        When "GESITN" : DOCTYP=15
+        When Default  : DOCTYP=0
+      Endcase
+      If DOCTYP = 1 Then
+        If dim([BPC]BPCTYP) > 0 and [BPC]BPCTYP = 4 Then
+          NOTETYP = 2  # Prospects  4
+        Else
+          Read [BPC]BPC0=[M]BPCORD
+          If !fstat and [BPC]BPCTYP = 4 Then
+            NOTETYP = 2  # 4
+          Endif
+        Endif
+      Endif
+    When 3  # Suppliers
+      Case GFONCTION
+        When "GESBIS" : DOCTYP=1
+        When "GESPSH" : DOCTYP=2
+        When "GESPOH" : DOCTYP=3
+        When "GESPOC" : DOCTYP=4
+        When "GESPTH","GESPTH2" : DOCTYP=5
+        When "GESBIC","GESPIH"  : DOCTYP=6
+        When "GESSCO" : DOCTYP=7
+        When Default : DOCTYP=0
+      Endcase
+    When Default
+      DOCTYP=0
+  Endcase
+Return
+
+######################################################################
+Funprog FCYCHECK(DOCTYP,FZONE)
+Value Integer DOCTYP
+Value Char FZONE
+
+Local Char XFCY(GLONFCY)
+
+  Raz XFCY
+  If FZONE = "CRM"
+    Case DOCTYP
+      When 18: XFCY=[M:TSK0]SALFCY
+      When 19: XFCY=[M:CLL0]SALFCY
+      When 20: XFCY=[M:BAP0]SALFCY
+      When 21: XFCY=[M:OPP0]SALFCY
+      When 22: XFCY=[M:SRE0]SALFCY
+      When 23: XFCY=[M:MAC0]SALFCY
+      When 24: XFCY=[M:RQW]FCY
+      When 25: XFCY=[M:CON0]SALFCY
+      When 26: XFCY=[M:ITN0]SALFCY
+      When Default : XFCY=""
+    Endcase
+  Else
+    Case DOCTYP
+      When 1 : XFCY=[M:SQH2]DSTOFCY(nolign-1)
+      When 2 : XFCY=[M:SOH4]DSTOFCY(nolign-1)
+      When 3 : XFCY=[M:SDH0]STOFCY
+      When 4 : XFCY=[M:SIH4]DSTOFCY(nolign-1)
+      When 5 : If GFONCTION="GESSOI" : XFCY=[M:SOI1]STOFCY : Else : XFCY=[M:SOR1]ORIFCY : Endif
+      When 6 : XFCY=[M:PSH0]PSHFCY
+      When 7 : XFCY=[M:POH2]PRHFCY(nolign-1)
+      When 8 : XFCY=[M:POC2]LINSTOFCY  #[M:POC0]POHFCY
+      When 9 : XFCY=[M:PTH0]PRHFCY
+      When 10: XFCY=[M:PIH3]FCYLIN(nolign-1)
+      When 11: XFCY=[M:SCO0]POHFCY
+      When 12: XFCY=[M:PQH1]PQHFCY
+      When 13: XFCY=[M:MFG0]
+      When 15: XFCY=[M:DIA]MFGFCY
+      When 14: XFCY=[M:BOH0]STOFCY
+      When 18: XFCY=[M:RQW0]FCY
+      When 16: XFCY=[M:SRE0]SALFCY
+      When 17: XFCY=[M:MAC0]SALFCY
+      When 19: XFCY=[M:CON0]SALFCY
+      When 20: XFCY=[M:ITN0]SALFCY
+      When Default : XFCY=""
+    Endcase
+  Endif
+End XFCY
+
+######################################################################
+Subprog IB_NOTECHECK(WNTSCOD,WZONE,NUMBOUT)
+Value Char WNTSCOD
+Value Char WZONE
+Value Integer NUMBOUT
+
+  If GFONCTION = "GESOPP" Then
+    End
+  Endif #Gbn-88464-For compatibility with MPM
+
+  # check for existence of valid notes for right click menu
+  If !clalev([F:NTS]) : Local File NOTE     [NTS] : Endif
+  If !clalev([F:NTG]) : Local File NOTCATEG [NTG] : Endif
+
+#Local Char    NTSCOD(10)     # X3-102567 (LCC - 22/08/18) Product notes for products with more than 10 characters
+Local Char    NTSCOD(GLONVCR) # X3-102567 (LCC - 22/08/18) Product notes for products with more than 10 characters
+Local Char    ZONE(50)
+Local Integer NOTETYP
+
+  NTSCOD = WNTSCOD
+  ZONE   = WZONE
+  Gosub SEL_FONC
+  Gosub FILTER_NTS
+  #
+  # FGR 02/06/2014 : X3SUIVI99684
+  #Link [NTS] With [NTG]NTG0=[NTS]NTGCOD;[NTS]NTGTYP As [NT1]
+  Link [NTS] With [NTG]NTG0=[NTS]NTGTYP;[NTS]NTGCOD As [NT1]
+&           Where [NTS]CODE=[L]NTSCOD & [NTS]NTGTYP=[L]NOTETYP & [NTG]FIE(DOCTYP-1)=2
+&               & ((date$ >= [NTS]EFFDAT | year([NTS]EFFDAT) = 0) & (date$ <= [NTS]ENDDAT | year([NTS]ENDDAT) = 0))
+&        Order By [NTS]PRIORITY Desc; [NTS]NTSCOD Asc; [NTS]NTGTYP
+  Read [NT1] First
+  Filter [NTS]
+  If fstat Then
+    Assign ("[V]GBOUT" + num$([L]NUMBOUT)) With ""
+    End
+  Endif
+End
+
+###################################################################
+Subprog CTLDATVAL(VALFIN,VALDEB)
+Value Date VALDEB
+Value Date VALFIN
+
+  If VALFIN = [0/0/0] Then
+    End
+  Endif
+  If year(VALFIN) < year(VALDEB) Then
+    # To address X3 year formatting to 19XX instead of 20XX
+    VALFIN = gdat$(day(VALFIN),month(VALFIN),year(VALFIN)+100)
+    [M:NTS0]ENDDAT = VALFIN
+    Affzo [M:NTS0]1-99
+  Endif
+  Call CTLDATVAL(VALFIN, VALDEB) From CONTX3
+End
+
+#######################################################################
+Subprog NTSDUP(VALART, VALZONE)
+Value Char VALART
+Value Char VALZONE
+
+Local Char PARMSK(250)(1..20),SAVACT(20)
+Local Char WNTS(GLONVCR)
+
+  # ACTION NOTE
+  SAVACT = GACTION
+  GACTION = "NOTE"
+  PARMSK(1) = VALART
+  PARMSK(2) = VALZONE
+  Call TRAITE_CHAR(WNTS, PARMSK, "NOTE", "TRTNTSCTL", "", 1, "") From GTRAITE
+  GACTION = SAVACT
+End
+
+#######################################################################
+$FILTER_NTS
+
+  If [L]NOTETYP = 1 Then
+    # Product-site note check
+    Local Char WFCY (GLONFCY)
+    WFCY = func FCYCHECK(DOCTYP,ZONE)
+    Filter [NTS] Where [NTS]CODE=[L]NTSCOD & [NTS]NTGTYP=1 & [NTS]STOFCY=WFCY
+    Read [NTS] First
+    If !fstat Then
+      Filter [NTS] Where ([NTS]STOFCY=WFCY | [NTS]STOFCY="") # non-site specific product notes or [M] filtered ones only
+    Else
+      Filter [NTS] Where [NTS]STOFCY=""
+    Endif
+  Endif
+Return
+#######################################################################
+Subprog DISPLAY_NOTES(INTSCOD, ZONE)
+End
