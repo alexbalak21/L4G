@@ -1,0 +1,166 @@
+#ACL le 07/05/24 - 277470 - ajout de case sur le site
+#ACL le 1/10/22 - 6030SPRO002 Alimentation automatique des emplacements de réappro
+$ACTION
+  Case ACTION
+    When "INIT" : Gosub INIT
+    When "EXEC" : Gosub EXEC
+  Endcase
+Return
+###########################################################################
+$INIT
+ TIT="Do you want to launch the workshops processing?"
+Return
+
+###########################################################################
+$EXEC
+Local File MFGHEAD [YMFG]
+Local File MFGMAT  [YMFM]
+Local File MFGOPE  [YMFO]
+Local File TABLOCTYP  [YTLO]
+Local File STOLOC     [YLOC]
+Local File WORKSTATIO [YMWS]
+Local File STOLOCAFF  [YSTF]
+Local File YALIMREAP  [YAR]
+Local File STOCK      [YSTO]
+Local File ITMMASTER  [YITM]
+Local File FACILITY   [YFCY]
+
+#Local Char YMFGFCY(10) : [L]YMFGFCY="CF1" #filtre site
+Local Integer YTRACE
+Local Integer YENSTOCK
+
+If [V]GTRACE=""
+  #Call OUVRE_TRACE("alimentation automatique des emplacements de réappro") From LECFIC
+  Call OUVRE_TRACE("automatic feeding of replenishment locations") From LECFIC
+  [L]YTRACE=1
+Endif
+
+Trbegin [F:YAR],[F:YSTF]
+
+Delete [F:YAR] Where [F:YAR]PID=num$(adxpid)
+
+#supression des lignes d'emplacements
+For [F:YLOC] Where [F:YLOC]YALIMREAP=2
+  For [F:YSTF] Where [F:YSTF]STOFCY=[F:YLOC]STOFCY and [F:YSTF]LOC=[F:YLOC]LOC
+    Call ECR_TRACE("deletion of "-[F:YSTF]STOFCY-[F:YSTF]LOC-[F:YSTF]ITMREF,0) From GESECRAN
+    Delete [F:YSTF]Curr
+  Next
+Next
+
+#OF ferme et non soldé
+#dont la quantité prévue n’est pas totalement produite
+#Filter [F:YMFG] Where [F:YMFG]MFGSTA=1 and [F:YMFG]MFGTRKFLG<5 and [F:YMFG]CPLQTY<[F:YMFG]EXTQTY
+#& and [F:YMFG]MFGFCY=[L]YMFGFCY
+
+Link [F:YMFG] With [F:YFCY]FCY0=[F:YMFG]MFGFCY As [YYY]
+& Where [F:YMFG]MFGSTA=1 and [F:YMFG]MFGTRKFLG<5 and [F:YMFG]CPLQTY<[F:YMFG]EXTQTY
+& and [F:YFCY]ZGESEMPAT=2
+
+For [F:YYY]
+  #composants non soldes et non exclus
+  For [F:YMFM] Where [F:YMFM]MFGNUM=[F:YMFG]MFGNUM and [F:YMFM]MATSTA<3
+    Read [F:YMFO]MFO0=[F:YMFM]MFGNUM;[F:YMFM]BOMOPE;0
+    If [S]fstat=0
+      Read [F:YMWS]WST0=[F:YMFO]EXTWST;[F:YMFO]MFGFCY
+      If [S]fstat=0
+        Read [F:YLOC]STC0=[F:YMFO]MFGFCY;[F:YMWS]STOLOC
+        If [S]fstat=0 and [F:YLOC]YALIMREAP=2
+          Read [F:YTLO]TLO0=[F:YMFO]MFGFCY;[F:YLOC]LOCTYP
+          If [S]fstat=0 and [F:YTLO]REAFLG=2 #type réapprovisionnable
+            Read [F:YAR]YAR0=[F:YMFO]MFGFCY;[F:YLOC]LOC;[F:YMFM]ITMREF;num$(adxpid)
+            If [S]fstat=0
+              [F:YAR]QTYPCU+=[F:YMFM]RETQTY-[F:YMFM]USEQTY
+              Rewrite [F:YAR]
+              If [S]fstat<>0
+                Call ECR_TRACE("Error while writing temporary table.",1) From GESECRAN
+                Break 2
+                Rollback
+              Endif
+            Else
+              Raz [YAR]
+              [F:YAR]PID=num$(adxpid)
+              [F:YAR]STOFCY=[F:YMFO]MFGFCY
+              [F:YAR]LOC=[F:YLOC]LOC
+              [F:YAR]ITMREF=[F:YMFM]ITMREF
+              [F:YAR]PID=num$(adxpid)
+              [F:YAR]QTYPCU=[F:YMFM]RETQTY-[F:YMFM]USEQTY
+              Write [F:YAR]
+              If [S]fstat<>0
+                Call ECR_TRACE("Error while writing temporary table",1) From GESECRAN
+                Break 2
+                Rollback
+              Endif
+            Endif
+          Endif
+        Endif
+      Endif
+    Endif
+  Next
+Next
+
+If adxlog
+  For [F:YAR] Where [F:YAR]PID=num$(adxpid)
+    [L]YENSTOCK=0
+    #on enleve le stock dispo sur l'emp
+    Filter [F:YSTO] Where [F:YSTO]STOFCY=[F:YAR]STOFCY and [F:YSTO]ITMREF=[F:YAR]ITMREF and [F:YSTO]LOC=[F:YAR]LOC and [F:YSTO]STOCOU>0
+    For [F:YSTO]
+      #[F:YAR]QTYPCU-=[F:YSTO]QTYPCU
+      [L]YENSTOCK+=[F:YSTO]QTYPCU
+    Next
+    If [F:YAR]QTYPCU>0
+      #ajout dans STOLOCAFF
+      Call ECR_TRACE("Adding : "-[F:YAR]STOFCY-[F:YAR]LOC-[F:YAR]ITMREF-num$([F:YAR]QTYPCU)-'in stock:'-num$([L]YENSTOCK),0) From GESECRAN
+      Read [F:YSTF]STF0=[F:YAR]STOFCY;[F:YAR]LOC;[F:YAR]ITMREF
+      If [S]fstat=0
+      [F:YSTF]MAXSTO=[F:YAR]QTYPCU
+      [F:YSTF]REOTSD=[L]YENSTOCK
+      #[F:YSTF]REOTSD=0
+       Rewrite [F:YSTF]
+        If [S]fstat<>0
+          Call ECR_TRACE("Error while writing table STOLOCAFF",1) From GESECRAN
+          Break
+          Rollback
+        Endif
+      Else
+        Read [F:YITM]ITM0=[F:YAR]ITMREF
+        Raz [F:YSTF]
+        [F:YSTF]STOFCY=[F:YAR]STOFCY
+        [F:YSTF]LOC=[F:YAR]LOC
+        [F:YSTF]ITMREF=[F:YAR]ITMREF
+        [F:YSTF]CREDAT=date$
+        #[F:YSTF]PCU=[F:YITM]STU
+        [F:YSTF]PCUSTUCOE=1
+        #[F:YSTF]QTYPCU=1
+        [F:YSTF]MAXSTO=[F:YAR]QTYPCU
+        [F:YSTF]REOTSD=[L]YENSTOCK
+#        [F:YSTF]REOTSD=0
+        Write [F:YSTF]
+        If [S]fstat<>0
+          Call ECR_TRACE("Error while writing table STOLOCAFF",1) From GESECRAN
+          Break
+          Rollback
+        Endif
+      Endif
+    Endif
+  Next
+  Delete [F:YAR] Where [F:YAR]PID=num$(adxpid)
+  If adxlog : Commit : Endif
+Endif
+
+If [L]YTRACE=1
+  Call LEC_TRACE From LECFIC
+  Call FERME_TRACE From LECFIC
+Endif
+
+Close Local File [YMWS]
+Close Local File [YMFG]
+Close Local File [YMFM]
+Close Local File [YMFO]
+Close Local File [YTLO]
+Close Local File [YLOC]
+Close Local File [YSTF]
+Close Local File [YAR]
+Close Local File [YSTO]
+Close Local File [YITM]
+Close Local File [YFCY]
+Return
