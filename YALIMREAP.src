@@ -1,5 +1,7 @@
+#BKV - 28/01/25 - 3004448 - Ajout de la selection du site
 #ACL le 07/05/24 - 277470 - ajout de case sur le site
 #ACL le 1/10/22 - 6030SPRO002 Alimentation automatique des emplacements de réappro
+
 $ACTION
   Case ACTION
     When "INIT" : Gosub INIT
@@ -25,9 +27,11 @@ Local File STOCK      [YSTO]
 Local File ITMMASTER  [YITM]
 Local File FACILITY   [YFCY]
 
-#Local Char YMFGFCY(10) : [L]YMFGFCY="CF1" #filtre site
+
 Local Integer YTRACE
 Local Integer YENSTOCK
+#BKV - 28/01/25 - 3004448 - Ajout de la selection du site
+Local Char YMFGFCY(10) : [L]YMFGFCY=[M:ZSF]FCY
 
 If [V]GTRACE=""
   #Call OUVRE_TRACE("alimentation automatique des emplacements de réappro") From LECFIC
@@ -40,7 +44,7 @@ Trbegin [F:YAR],[F:YSTF]
 Delete [F:YAR] Where [F:YAR]PID=num$(adxpid)
 
 #supression des lignes d'emplacements
-For [F:YLOC] Where [F:YLOC]YALIMREAP=2
+For [F:YLOC] Where [F:YLOC]YALIMREAP=2 and ([F:YLOC]STOFCY = [L]YMFGFCY or [L]YMFGFCY='')
   For [F:YSTF] Where [F:YSTF]STOFCY=[F:YLOC]STOFCY and [F:YSTF]LOC=[F:YLOC]LOC
     Call ECR_TRACE("deletion of "-[F:YSTF]STOFCY-[F:YSTF]LOC-[F:YSTF]ITMREF,0) From GESECRAN
     Delete [F:YSTF]Curr
@@ -52,8 +56,10 @@ Next
 #Filter [F:YMFG] Where [F:YMFG]MFGSTA=1 and [F:YMFG]MFGTRKFLG<5 and [F:YMFG]CPLQTY<[F:YMFG]EXTQTY
 #& and [F:YMFG]MFGFCY=[L]YMFGFCY
 
-Link [F:YMFG] With [F:YFCY]FCY0=[F:YMFG]MFGFCY As [YYY]
-& Where [F:YMFG]MFGSTA=1 and [F:YMFG]MFGTRKFLG<5 and [F:YMFG]CPLQTY<[F:YMFG]EXTQTY
+
+#BKV - 28/01/25 - 3004448 - Ajout de la selection du site
+Link [F:YMFG] With [F:YFCY]FCY0=[F:YMFG]MFGFCY As [YYY]                             
+& Where [F:YMFG]MFGSTA=1 and [F:YMFG]MFGTRKFLG<5 and [F:YMFG]CPLQTY<[F:YMFG]EXTQTY and ([F:YMFG]MFGFCY=[L]YMFGFCY or [L]YMFGFCY='')
 & and [F:YFCY]ZGESEMPAT=2
 
 For [F:YYY]
@@ -75,6 +81,8 @@ For [F:YYY]
                 Call ECR_TRACE("Error while writing temporary table.",1) From GESECRAN
                 Break 2
                 Rollback
+                Else
+                Call ECR_TRACE("Reapro ",0) From GESECRAN
               Endif
             Else
               Raz [YAR]
