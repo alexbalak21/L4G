@@ -32,10 +32,12 @@ Local Integer YTRACE
 Local Integer YENSTOCK
 #BKV - 28/01/25 - 3004448 - Ajout de la selection du site
 Local Char YMFGFCY(10) : [L]YMFGFCY=[M:ZSF]FCY
+Local CHar TITRE_TRACE(100) : TITRE_TRACE(100) = "Automatic feeding of replenishment locations"
+If [L]YMFGFCY <> '' : TITRE_TRACE += (' on SITE: ' + [L]YMFGFCY)  : Endif
 
 If [V]GTRACE=""
   #Call OUVRE_TRACE("alimentation automatique des emplacements de réappro") From LECFIC
-  Call OUVRE_TRACE("automatic feeding of replenishment locations") From LECFIC
+  Call OUVRE_TRACE(TITRE_TRACE) From LECFIC
   [L]YTRACE=1
 Endif
 

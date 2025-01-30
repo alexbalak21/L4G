@@ -1,0 +1,28 @@
+#BKV - 24/01/25 - 3005392 - Afficher la note d'article lors d'une création d'OF
+
+$ACTION
+  Case ACTION
+    When "OUVRE"  : Gosub OUVRE
+    When "DEBUT"  : Gosub DEBUT
+  Endcase
+Return
+
+#BKV - 24/01/25 - 3005392 - Afficher la note d'article lors d'une création d'OF
+$OUVRE
+Local Char ART(20) : ART = PARAM(1)
+Local Char SITE(5) : SITE = PARAM(2)
+If !clalev([F:NTS]) : Local File NOTE [F:NTS] : Endif
+    Filter [NTS] Where [NTS]ITMREF = ART & [NTS]NTGCOD = "PROD" & [NTS]AUTODISP = 2 & [NTS]NTGTYP=1 &
+&   ((date$ >= [NTS]EFFDAT | year([NTS]EFFDAT) = 0) & (date$ <= [NTS]ENDDAT | year([NTS]ENDDAT) = 0))
+If rowcount([NTS]) = 0
+FIN = 1
+Endif
+Return
+
+#BKV - 24/01/25 - 3005392 - Afficher la note d'article lors d'une création d'OF
+$DEBUT
+Raz [M:DIA2]
+For [NTS]
+  Append [M:DIA2]NOTE, "Note:" + chr$(10) + [NTS]NOTE + chr$(10) + chr$(10)
+Next
+Return
