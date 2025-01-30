@@ -1,0 +1,1278 @@
+﻿#<AdxTL>@(#)6.0.0.0 $Revision$  #!!!!DISCLAIMER V12_14 P Base DO NOT COPY OR USE THIS FILE IN ANY X3 FOLDER OR SUB FOLDER!!!!
+#########################################################################
+# SUBSTQA             Traitement du contrôles qualité                   #
+# --------------------------------------------------------------------- #
+# Traitement des actions "GOSUB" de l'objet "STQ"                       #
+# Les traitements sur champ "Call" se trouvent dans le SUBSTQ           #
+#########################################################################
+Call OBJET("STQ", GBIDC1, GBIDC2) From GOBJET
+End
+
+#######################################################################
+$SET_NOL
+    Local Integer NOL
+    NOL = nolign-1
+Return
+
+#######################################################################
+# Les etiquettes suivantes sont définies pour la gestion de l'objet   #
+#######################################################################
+$DEFTRANS
+#--------------------------------------------------------#
+# Avant lecture des transactions de saisie disponibles : #
+# Si GFLAG est renseigné la transaction est déja choisie #
+# par le menu. Vérifier si elle est valide               #
+#--------------------------------------------------------#
+Local Shortint OUVFICFLG
+If GFONC1 <> "GESSTQ" Raz GFLAG Endif
+If clalev ([F:SRT])=0 Local File STKTRS [SRT] Endif
+If GFLAG<>""
+  Read [F:SRT]SRT0=8;GFLAG
+  If fstat | [F:SRT]ENAFLG=1 Raz GFLAG : Goto FIN_DEFTRANS : Endif
+  If [F:SRT]ACSCOD<>"" & GPROFIL<>GSUPER
+    If clalev ([F:ACC])=0
+        Local File ACCES  [ACC]
+        OUVFICFLG=1
+    Endif
+    Read [ACC] CODACC=GUSER;[F:SRT]ACSCOD
+    If fstat | [F:ACC]EXEC<>2 Raz GFLAG : Goto FIN_DEFTRANS : Endif
+  Endif
+Endif
+$FIN_DEFTRANS
+If OUVFICFLG=1 Close File [ACC] : Raz OUVFICFLG : Endif
+Return
+
+
+$VARIANTE
+#---------------------------------------#
+# Après lecture de chaque transaction : #
+# La transaction est-elle valide ?      #
+# VARCOD contient le code transaction.  #
+# Mettre OK à zéro si non valide.       #
+#---------------------------------------#
+# La transaction lue est elle utilisable ?
+If clalev ([F:SRT])=0 Local File STKTRS [SRT] Endif
+Read [SRT]SRT0=8;[F:AWI]TRN
+If fstat | [F:SRT]ENAFLG<>2
+   OK = 0
+Endif
+Return
+
+
+$SETTRANS
+Global Integer GTRSCHGEMP
+Local  Char    WTRSCOD(GLONADI)
+Local  Integer WQLYCRDCOD
+#-------------------------------------#
+# Après sélection de la transaction : #
+# GFLAG = code transaction choisie    #
+#-------------------------------------#
+If clalev ([F:SRT])=0 Local File STKTRS [SRT] Endif
+Read [SRT]SRT0=8;GFLAG
+If fstat : Raz [F:SRT] : Endif
+GTRSCHGEMP = [F:SRT]CHGEMPCOD
+WTRSCOD    = [F:SRT]TRSCOD
+WQLYCRDCOD = [F:SRT]QLYCRDCOD
+#MAE, le 29/01/08, GRP_SITE
+GGRPFCY = [F:SRT]GFY
+GSTQNUM = [F:SRT]SRTNUM       # hcb 50197
+Return
+
+$FILTRE
+
+#-----------------------------#
+# Filtre                      #
+#-----------------------------#
+Default File [QLH]
+If currbox="GAU_CHE9" : Return : Endif
+# Si on vient de la traçabilité, il faut regarder la valeur de VALFLG correspondant
+# car si =2, la pièce ne sera pas affichée !
+If dim(A_CONSST2)>0 Then
+  Read [F:QLH]QLH0=[F:QLH]VCRTYP;[F:QLH]VCRNUM
+  If !fstat Then
+    If [F:QLH]VALFLG=2 Then
+      currbox="GAU_CHE1"
+    Endif
+  Endif
+Endif
+# TS le 07.12.04 Bug 27056
+If dim(GBOXSTR)>0 & GFONCTION="GESSTQ"
+    # Limite les enregistrement de la liste gauche
+    # aux contrôles non finis si on est sur le tiroir de gauche (normal)
+    # aux contrôles     finis si on est sur le tiroir des historiques
+    If currbox=GBOXSTR
+        FILTSUP = "VALFLG=2"
+    Else
+        FILTSUP="VALFLG<>2"
+    Endif
+Endif
+# Limite les enregistrement de la liste gauche
+# au filtre site
+If dim([M:STQ1]FILFCY)>0           # hcb 41754
+   If [M:STQ1]FILFCY<>""
+      If FILTSUP=""
+         FILTSUP="STOFCY=[M:STQ1]FILFCY"
+      Else
+         FILTSUP+=" & STOFCY=[M:STQ1]FILFCY"
+      Endif
+   Endif
+Endif                               # hcb 41754
+Return
+
+$AV_IMPRIME
+#-----------------------------------------------#
+# Avant impression : Chargement nom du document #
+#-----------------------------------------------#
+#-- Relecture transaction si nécessaire
+If [F:SRT]SRTTYP<>8 | [F:SRT]SRTNUM<>GSTQNUM                    # hcb 50197
+  Read [SRT]SRT0=8;GSTQNUM : If fstat  Raz [F:SRT] : Endif
+Endif
+#-- Si document renseigné dans la transaction, prendre celui-la -----#
+If [F:SRT]DOCNAM<>"" [L]REPORT1=[F:SRT]DOCNAM
+Else                                               # hcb 83823
+   Read [AOB]ABREV="STQ"
+   If [F:AOB]RPT1<>"" [L]REPORT1=[F:AOB]RPT1
+   Else
+      Gosub COP_ECRAN : OK = 0
+   Endif
+Endif                                              # hcb 83823
+Return
+
+$AP_IMPRIME
+#---------------------------------------------------------------#
+# Après une impression il faut être sur d'être sur le bon enreg #
+#---------------------------------------------------------------#
+Gosub RELIT From GOBJSUB
+Return
+
+$OUVRE
+#-------------------------------------------------#
+# Après ouverture des tables et masque par l'objet#
+#-------------------------------------------------#
+
+#----- Sauvegarde variables globales -----#
+Gosub SAUV_GLOB From TRTX3GLOB
+
+#-- Déclaration des globales
+Global Integer  GBLOSTA         : # Blocage du statut
+Global Integer  GSQT_VERROU     : # Sauvegarde du verrou de l'objet
+Global Integer  GCCECOD         : # Flag saisie des sections analytiques
+
+#-- Déclaration des locales
+Local Integer LRET
+Local Char    CRITSTQ(255), CRITSTQ1(255),CRITSTQ2(255)     # hcb X3-77043
+Local Char    WS_FCY(GLONFCY)
+#-- Ouverture des fichiers
+If !clalev([F:QLA1]) : Local File QLYCRDASW  [QLA1] : Endif
+If !clalev([F:ITFD]) : Local File ITMFACILIT [ITFD] : Endif
+If !clalev([F:ADI])  : Local File ATABDIV    [ADI]  : Endif          # hcb V6CQ
+If !clalev([F:NQA])  : Local File QLYCRDNQA  [NQA]  : Endif          # hcb V6CQ
+If !clalev([F:SMP])  : Local File STOQLYSMP  [SMP]  : Endif          # hcb V6CQ
+If !clalev([F:STO1]) : Local File STOCK      [STO1] : Endif
+If !clalev([F:STO2]) : Local File STOCK      [STO2] : Endif          # hcb unicite
+If !clalev([F:STL1]) : Local File STOLOT     [STL1] : Endif          # hcb unicite
+If !clalev([F:FGR])  : Local File FACGROUP   [FGR]  : Endif          # hcb 73671
+If clalev([F:AOB]) = 0 : Local File AOBJET   [AOB]  : Endif          # hcb 83823
+If clalev([F:Q_LH])=0 : Local File STOQLYH   [Q_LH] : Endif          # hcb 79785
+If clalev([F:IT2])=0 : Local File ITMMASTER  [IT2]  : Endif          # hcb 101370
+
+If GWRHACT = 2
+   If clalev([F:ITW]) = 0 : Local File ITMWRH    [ITW] : Endif
+   If clalev([F:WRH]) = 0 : Local File WAREHOUSE [WRH] : Endif
+Endif
+
+GSRTNUM = GFLAG
+GSTQNUM = [F:SRT]SRTNUM       # hcb 50197
+[M:STQ1]TRSTYP = 8
+
+# Initialisation des tables nécessaires à la gestion d'emplacements
+Gosub STK_INILOC From STKLOC
+#-- Ecran stockage mvt du document
+If clalev([M:SGW])=0
+    Local Mask STOCHGW   [SGW]
+Endif
+Raz [M:SGW]
+#-- Ecran de travail enreg mvt du document
+If clalev([M:STW])=0
+    Local Mask STOWORK   [STW]
+Endif
+Raz [M:STW]
+#-- Ecran de travail valo mvt du document
+If clalev([M:SVW])=0
+    Local Mask STOVALWORK   [SVW]
+Endif
+If clalev([M:SVWD])=0
+    Local Mask STOVALWORK   [SVWD]
+Endif
+Raz [M:SVW], [M:SVWD]
+#-- Ecran paramètres de copie
+If clalev([M:SQC])=0
+    Local Mask STKCOP   [SQC]
+Endif
+Raz [M:SQC]
+Diszo [M:STQ1]VCRTYPORI, VCRNUMORI
+
+GFCY=GFCYDEF(7)                                                # Ana
+Gosub CHARG_PARAM                                              # Ana
+
+Return
+
+# hcb 72859 deb
+$BOITE
+Local Char WTRAIT
+WTRAIT = "WGWOSTQ" + [F:SRT]SRTNUM
+Gosub INIT_BOITE From =WTRAIT
+#MAE, bg 77621
+#& [Q_LH]QLH0 = [F:QLH]VCRTYP;[F:QLH]VCRNUM,
+Link [QLH] With
+& [Q_LH]QLH0 = [F:QLH]VCRTYP;[F:QLH]VCRNUM,
+& [AFF]AFF0~=[F:QLH]STOFCY;GPROFIL;GUSRFCT,
+& [IT2]ITM0=[QLH]ITMREF,
+& [XX1]AXX0="ITMMASTER";"DES1AXX";GLANGUE;ITMREF;"",
+& [FGR]FGR0=GGRPFCY;[F:QLH]STOFCY
+& As [STR_]
+Gosub DEF_BOITE From =WTRAIT
+Gosub AFF_BOITE From =WTRAIT
+OK = 0
+Return
+# hcb 72859 fin
+
+$OUVRE_BOITE
+#-------------------------------#
+# Après ouverture de la fenêtre #
+#-------------------------------#
+# Récupération des noms de currbox des tiroirs
+Global Char     GBOXSTR(10), GBOXSTQ(10)
+GBOXSTR = "GAU_CHE"+num$(find("STR",OBJLIS(1..8)))
+Return
+
+$LIENS
+#-----------------------#
+# Après lecture [F:SQH] #
+#-----------------------#
+Local Integer I,J
+Local Integer LRET
+Local Char LUSCAV
+Local Char LFMT
+Local Integer LMODIF
+Local Decimal LCOE
+Local Decimal LAAAQTY, LRRRQTY
+Local Decimal LQTYSTU
+Local Char    WLOT(GLONLOT) # hcb 67198
+Raz   LAAAQTY, LRRRQTY
+Raz   [M:SGW]
+
+Read [F:ITM]ITM0 = [M:STQ1]ITMREF
+If fstat : Raz [F:ITM] : Endif
+Read [F:ITF]ITF0 = [M:STQ1]ITMREF;[M:STQ1]STOFCY
+If fstat : Raz [F:ITF] : Endif
+Read [F:ITFD]ITF0= [M:STQ1]ITMREF;[M:STQ1]STOFCY
+If fstat : Raz [F:ITFD] : Endif
+[M:STQ1]VCRTYP = 28
+[M:STQ1]TRSTYP = 8
+[M:STQ1]TRSCOD = WTRSCOD
+
+If clalev ([F:SRT])=0 Local File STKTRS [SRT] Endif             # hcb 50197
+If [F:SRT]SRTTYP<>8 | [F:SRT]SRTNUM<>GSTQNUM                    # hcb 50197
+   Read [SRT]SRT0=8;GSTQNUM : If fstat  Raz [F:SRT] : Endif
+Endif
+
+[M:STQ1]SERCOD = [F:SRT]SERCOD      # hcb 50197
+
+Call LECSRU([M:STQ1]STOFCY,[F:ITM]TCLCOD,[M:STQ1]TRSTYP,[M:STQ1]TRSCOD,"",LRET) From STKLIB
+
+[M:STQ1]DEFSTA = [F:SRU]DEFSTA      # hcb 28511
+
+#                                                             # hcb X3-96610 deb
+#[M:STQ1]LOTACT = 1
+[M:STQ1]LOTACT = 0
+#Read [ACV] CODACT = "LOT"
+#If !fstat [M:STQ1]LOTACT=[F:ACV]FLACT Endif
+[M:STQ1]LOTACT     = func AFNC.ACTIV("LOT")    # Is LOT activated ?
+[M:STQ1]LOTACT  +=1
+#                                                             # hcb X3-96610 fin
+
+Gosub LIENSLIG From SUBSTQB
+Actzo [M:STQ1]1-99
+Actzo [M:STQ1]VCRNUM    # Car il y a un diszo en RAZCRE (et RAZDUP)
+Actzo [M:STQ1]FILFCY
+If WS_FCY<>""  [M:STQ1]FILFCY= WS_FCY : Endif
+#-- Chargement des formats (invisibles) des zones écrans
+Gosub FORMAT_INV From STKLIB
+Gosub FORMAT_INV_CHG From STKLIB                               # hcb 110327
+#-- Diszo des champs affichés qui peuvent être rendus invisibles dynamiquement
+#-- Lit les mouvements déjà effectués par le contrôle qualité -----#
+If [F:ITF]SMPTYP < 2
+   For I=0 To [M:STQ1]NBLIG-1
+    #-- On remet à blanc la zone n° série remplie par trans-classe
+       If dim([M:STQ1]SERNUM)>0
+           Effzo [M:STQ1]SERNUM(I)
+       Endif
+       Raz LAAAQTY, LRRRQTY
+       #-- Recherche des différents mouvements déjà effectués pour ce contrôle qualité
+       Call RECSTO_F ("STQ1",[M:STQ1]ITMREF,[M:STQ1]STOFCY,[M:STQ1]VCRTYP,[M:STQ1]VCRNUM,[M:STQ1]VCRLIN(I),I,"",
+&                    LAAAQTY,LRRRQTY) From SUBSTQB
+
+       #-- Zone de critères de recherche à cause des codes activité
+       CRITSTQ="ITMREF=[M:STQ1]ITMREF & STOFCY=[M:STQ1]STOFCY"
+       CRITSTQ-="& PCU=[M:STQ1]PCU(I) & PCUSTUCOE=[M:STQ1]PCUSTUCOE(I)"
+       CRITSTQ-="& QLYCTLDEM=[M:STQ1]VCRNUM"
+       CRITSTQ-="& OWNER=[M:STQ1]OWNER(I)"
+       CRITSTQ1=     "STA=[M:STQ1]STA(I)"
+       If dim([M:STQ1]PALNUM)>0
+          CRITSTQ1+="&PALNUM=[M:STQ1]PALNUM(I)"
+       Endif
+       If dim([M:STQ1]CTRNUM)>0
+          CRITSTQ1+="&CTRNUM=[M:STQ1]CTRNUM(I)"
+       Endif
+       If dim([M:STQ1]LOT)>0
+          CRITSTQ1+="&LOT=[M:STQ1]LOT(I)"
+       Endif
+       If dim([M:STQ1]SLO)>0
+          CRITSTQ1+="&SLO=[M:STQ1]SLO(I)"
+       Endif
+       If dim([M:STQ1]LOC)>0
+          CRITSTQ1+="&LOC=[M:STQ1]LOC(I)"
+       Endif
+       If dim([M:STQ1]SERNUM)>0
+          CRITSTQ1+="&SERNUM>=[M:STQ1]SERNUMDEP(I)&SERNUM<=[M:STQ1]SERNUMFDEP(I)"
+       Endif
+       If dim([M:STQ1]STOFLD1)>0
+          CRITSTQ1+="&STOFLD1=[M:STQ1]STOFLD1(I)"
+       Endif
+       If dim([M:STQ1]STOFLD2)>0
+          CRITSTQ1+="&STOFLD2=[M:STQ1]STOFLD2(I)"
+       Endif
+       If dim([M:STQ1]LPNNUM) > 0                              # hcb X3-77043
+          CRITSTQ2 ="LPNNUM=[M:STQ1]LPNNUM(I)"                 # hcb X3-77043
+       Endif                                                   # hcb X3-77043
+       #-- Recherche de l'enregistrement en statut Q
+       Filter [STO] Where evalue (CRITSTQ) & evalue (CRITSTQ1)
+       Raz LQTYSTU
+       For [STO]
+           LQTYSTU += [F:STO]QTYSTU
+           [M:STQ1]CUMALLQTY(I) += [F:STO]CUMALLQTY
+       Next
+       Filter [STO]
+       #-- Si pièce non validée
+       #-- Si qté totale à contrôler (issue QLD) - la quantité déjà controlé (issue mouvement)
+       #-- > Quantité issue du STO en Q-qté A-qté R
+       If [M:STQ1]VALFLG<>2 & [M:STQ1]QTYSTU(I)-[M:STQ1]QTYSTUDES(I)>LQTYSTU
+          Call ERREUR(mess(17,104,1)-num$(I+1)+chr$(13)+mess(76,184,1)) From GESECRAN
+       Endif
+       [M:STQ1]AAAQTY += LAAAQTY
+       [M:STQ1]RRRQTY += LRRRQTY
+       [M:STQ1]QQQQTY += [M:STQ1]QTYSTU(I)-LAAAQTY-LRRRQTY
+       If [M:STQ1]QTYSTUDES(I)<>0
+          #-- S'il existe déjà des mouvements STJ sur cette ligne,
+          #-- On ne peut rien modifier directement sur la ligne de doc
+          [M:STQ1]MVTFLG(I)=2
+          [M:STQ1]WSTJQTY(I) = [M:STQ1]QTYSTUDES(I)
+          [M:STQ1]WSAIFLG(I) = "2222220000"
+          Diszo [M:STQ1]QTYSTUDES(I)
+       Else
+
+         [M:STQ1]WSAIFLG(I) = "2222220000"
+          Actzo [M:STQ1]QTYSTUDES(I)
+       Endif
+       #-- Activation ou non des zones suivant contexte
+       # Mis en commentaire pour pb de performances : TS le 20/12/04
+       # Call DISZO_CHP_AFF(I) From SUBSTQB
+       If [M:STQ1]QTYSTUDES(I)=0
+          [M:STQ1]PCUDES(I) = [M:STQ1]PCU(I)
+          [M:STQ1]COEDES(I) = [M:STQ1]PCUSTUCOE(I)
+          Call CTLUOM([M:STQ1]ITMREF,3,"", [M:STQ1]PCUDES(I),LCOE, LUSCAV, LFMT, LMODIF) From STKACT
+          If LMODIF=2
+             Actzo [M:STQ1]COEDES(I)
+          Else
+             Diszo [M:STQ1]COEDES(I)
+          Endif
+       Endif
+       [M:STQ1]UPDFLG(I)=9
+       Call MAJSAICOD(I) From SUBSTQB
+   Next I
+#
+Else
+   For I=0 To [M:STQ1]NBLIG-1
+       Raz LAAAQTY, LRRRQTY
+       Raz WLOT                             # hcb 67198
+       If dim([M:STQ1]LOT)>0                # hcb 67198
+          WLOT = [M:STQ1]LOT(I)
+       Endif
+       #-- Recherche des différents mouvements déjà effectués pour ce contrôle qualité
+       Call RECSTJ_STQ_FSM ("STQ1",[M:STQ1]ITMREF,[M:STQ1]STOFCY,[M:STQ1]VCRTYP,[M:STQ1]VCRNUM,WLOT,I,"",
+&                  LAAAQTY,LRRRQTY) From SUBSTQB
+       Call MAJSAICOD(I) From SUBSTQB
+       If [M:STQ1]QTYSTUDES(I)<>0
+          #-- S'il existe déjà des mouvements STJ sur cette ligne,
+          #-- On ne peut rien modifier directement sur la ligne de doc
+          [M:STQ1]MVTFLG(I)=2
+          [M:STQ1]WSTJQTY(I) = [M:STQ1]QTYSTUDES(I)
+       Endif
+       [M:STQ1]AAAQTY += LAAAQTY
+       [M:STQ1]RRRQTY += LRRRQTY
+       [M:STQ1]QQQQTY += [M:STQ1]QTYSTU(I)-LAAAQTY-LRRRQTY
+   Next I
+Endif
+#
+Raz I
+#-- Y a-t-il des lignes non validées ?
+J= sigma(I,[M:STQ1]NBLIG-1,([M:STQ1]SAICOD(indcum)<>"*"))
+#-- Maj du flag validation
+#-- PB si suppression de ligne du document entrée et que ttes lig sont ok
+If J=0 & [M:STQ1]VALFLG<>2 & [M:STQ1]NBLIG<>0
+  Gosub MAJ_ENTETE
+Endif
+
+
+[M:SGW]TRSTYP = [M:STQ1]TRSTYP
+[M:SGW]TRSCOD = [M:STQ1]TRSCOD
+[M:SGW]FCYDES = [M:STQ1]STOFCY
+[M:STQ1]STU   = [F:ITM]STU
+
+[M:STQ1]QTYSTUTOT = [M:STQ1]AAAQTY+[M:STQ1]QQQQTY+[M:STQ1]RRRQTY
+
+Affzo [M:STQ1]1-99
+
+# Initialisation de GOUVLOT (valable pour tout le document)
+GOUVLOT = 30    # Modif des rubriques utilisateur
+#-- Gestion du titre
+If [F:ITF]STOMGTCOD=3
+    GOUVLOT += 32
+Elsif [F:ITF]STOMGTCOD=4
+    GOUVLOT += 64
+Endif
+If [F:ITM]EXYMGTCOD>1
+    GOUVLOT += 128
+Endif
+If [M:STQ1]VALFLG=2
+  Diszo [M:STQ1]TRSFAM
+Else
+  Actzo [M:STQ1]TRSFAM
+Endif
+If [M:STQ1]AAAQTY<>0 | [M:STQ1]RRRQTY<>0
+  Diszo [M:STQ1]ENDCTLDAT
+Else
+  Actzo [M:STQ1]ENDCTLDAT
+Endif
+If [M:STQ1]AAAQTY<>0 | [M:STQ1]RRRQTY<>0
+    Diszo [M:STQ1]TRSFAM
+Else
+    Actzo [M:STQ1]TRSFAM
+Endif
+If [F:SRT]TRSFAMDEF<>"" & [M:STQ1]TRSFAM=""
+    [M:STQ1]TRSFAM=[F:SRT]TRSFAMDEF
+Endif
+If dim([M:STQ1]LOT) > 0
+   Diszo [M:STQ1]LOT
+Endif
+If [F:ITF]SMPTYP > 1
+#  le diszo du bloc est imposible car  la saisie de QLYCRD est necessaire
+   Diszo [M:STQ1]QTYSTUDES
+   Diszo [M:STQ1]PCUDES
+   Diszo [M:STQ1]COEDES
+   If dim([M:STQ1]SERNUM) > 0
+      Diszo [M:STQ1]SERNUM
+   Endif
+   If dim([M:STQ1]WRHDES) > 0
+      Diszo [M:STQ1]WRHDES
+   Endif
+   Diszo [M:STQ1]STADES
+   If dim([M:STQ1]LOCTYPDES) > 0
+      Diszo [M:STQ1]LOCTYPDES
+   Endif
+   If dim([M:STQ1]SERNUM) > 0
+      Diszo [M:STQ1]SERNUM
+   Endif
+   Diszo [M:STQ1]IPTDAT
+   If dim([M:STQ1]LOT) > 0
+      Diszo [M:STQ1]LOT
+   Endif
+   If dim([M:STQ1]SLO) > 0
+      Diszo [M:STQ1]SLO
+   Endif
+   If dim([M:STQ1]SERNUMDEP) > 0
+      Diszo [M:STQ1]SERNUMDEP
+   Endif
+   If dim([M:STQ1]SERNUMFDEP) > 0
+      Diszo [M:STQ1]SERNUMFDEP
+   Endif
+   If dim([M:STQ1]LOCTYP) > 0
+      Diszo [M:STQ1]LOCTYP
+   Endif
+   If dim([M:STQ1]LOC) > 0
+      Diszo [M:STQ1]LOC
+   Endif
+   If dim([M:STQ1]PALNUM) > 0
+      Diszo [M:STQ1]PALNUM
+   Endif
+   If dim([M:STQ1]CTRNUM) > 0
+      Diszo [M:STQ1]CTRNUM
+   Endif
+   If dim([M:STQ1]STOFLD1) > 0
+      Diszo [M:STQ1]STOFLD1
+   Endif
+   If dim([M:STQ1]STOFLD2) > 0
+      Diszo [M:STQ1]STOFLD2
+   Endif
+#                                                                   # hcb 77043 deb
+   If dim([M:STQ1]LPNNUMDES) > 0
+      Diszo [M:STQ1]LPNNUMDES
+   Endif
+#                                                                   # hcb 77043 fin
+
+Endif
+
+If GFCY<>[M:STQ1]STOFCY GFCY=[M:STQ1]STOFCY: Gosub CHARG_PARAM : Endif    # Ana
+#------------------------------------------#
+# Actzo ou Grizo des dépôts selon le site  #
+#------------------------------------------#
+If GWRHACT = 2
+   If [M]STOFCY<>[F:FCY]FCY
+      Read [FCY]FCY0=[M]STOFCY
+   Endif
+   If [F:FCY]WRHGES=2
+      Actzo [M:STQ1]WRHDES
+   Else
+      Grizo [M:STQ1]WRHDES
+   Endif
+Endif
+Return
+
+
+$DEFLIG
+#--------------------------------------------#
+# un seul masque dans cet objet              #
+#--------------------------------------------#
+Return
+
+$LIENS_LIG
+#-----------------------------#
+# N'est pas utilisé           #
+#-----------------------------#
+Return
+
+$SETBOUT
+#-------------------------------------------------------------------------#
+# Activation / désactivation des menus (ToolBar) et boutons (bas d'écran) #
+# ----------------------------------------------------------------------- #
+GSQT_VERROU = VERROU : # Sauvegarde du verrou de l'objet
+
+#Autorisation de modif selon profil gestionnaire
+If CLECUR
+  If [F:QLH]VALFLG=2
+    Call VIREBOUT(CHAINE,"MAHT") From GOBJET
+  Endif
+  Read [ACC]CODACC=GUSER;[F:ITF]QUAACS
+  If fstat | [F:ACC]MODIF = 1
+    #-- Suppression bouton modif, suppression et changement de clé
+    Call VIREBOUT(CHAINE,"MAH") From GOBJET
+  Endif
+  If [M:STQ1]AAAQTY<>0 | [M:STQ1]RRRQTY<>0
+    #-- Suppression suppression si des quantités ont été contrôlées
+    Call VIREBOUT(CHAINE,"A") From GOBJET
+  Endif
+Else
+  Call VIREBOUT(CHAINE,"ab") From GOBJET
+Endif
+Call VIREBOUT(CHAINE,"D") From GOBJET
+# Menu Options / Visu transaction
+CHMEN += "c"
+#----- Activation menus ToolBar a partir des codes contenus dans CHMEN -----#
+Gosub SET_BOUT_SPE From GSAISIE
+Return
+
+$AVANTBOUT
+#-----------------------------------#
+# Avant exécution des boutons       #
+# --------------------------------- #
+# b = Fiche qualité                 #
+#-----------------------------------#
+Case BOUT
+  When "b" : Gosub AV_BOUTB
+Endcase
+Return
+
+$AV_BOUTB
+#----- Vérification s'il y a une fiche -----#
+Local Integer I
+I= sigma(I,[M:STQ1]NBLIG-1,([M:STQ1]QLYCRD(indcum)<>""))
+If I = 0
+  GMESSAGE=mess(893,196,1)
+  GERR=1
+  OK=0
+Endif
+Return
+
+$FILGAUCHE
+#----------------------------------------------#
+# Filtrer les enregistrements listes de gauche #
+#----------------------------------------------#
+# MAE, bg 77554
+#Raz FILGAUSUP
+Raz FILGAUSUP(0)
+If currbox=GBOXSTR
+     FILGAUSUP(0) = "[F:QLH]VALFLG=2"
+   Else
+     FILGAUSUP(0) ="[F:QLH]VALFLG<>2"    # hcb 35803
+Endif
+# Limite les enregistrement de la liste gauche
+# au filtre site
+If [M:STQ1]FILFCY<>""
+  If FILGAUSUP(0)=""
+    FILTSUP="STOFCY=[M:STQ1]FILFCY"
+  Else
+    FILGAUSUP(0)+=" & STOFCY=[M:STQ1]FILFCY"
+  Endif
+Endif
+Return
+
+
+$TIROIR
+#---------------------------------------------------#
+# Click sur un tiroir                               #
+# Désormais entièrement géré par l'objet :          #
+# - le remplissage                                  #
+# - et l'actualisation (boules bleues)              #
+#   par l'appel à la suite de l'action AP_FILGAUCHE #
+# ------------------------------------------------- #
+# Autres appels par l'applicatif dans les cas       #
+# d'abandon, d'après création, d'après modif ...etc #
+#---------------------------------------------------#
+ILIS=val(right$(currbox,8))
+Gosub REMP_LISGAU From GOBJSUB
+Return
+
+$VERIF_MOD
+#------------------------#
+# Vérifications en modif #
+#------------------------#
+Local Integer J, K, L                                            # hcb X3-77043
+Local Decimal WARR, WQTYPCU
+
+#-- Si on a pas le Q dans les boutons, on ne peut pas modifier
+#-- Si on a que le M, l'utilisateur est habilité pour fiche qualité
+Raz GBIDI2
+GFCY=[M:STQ1]STOFCY
+GBIDC2="Q" : Gosub AUTORIS_OPT From CONTX3
+If !GBIDI2  GMESSAGE=mess(2,104,1)  : GERR=1 : OK=0 : Return : Endif
+For I=0 To [M:STQ1]NBLIG-1
+   # Si WSTOSEQ<>0 et WSTOFLG=0, y'a un pb
+   # blocage s'il y a des qtés allouées
+   If  [M:STQ1]WSTOSEQ(I)<>0 & find([M:STQ1]WSTOSEQ(I),[M:SGW]WSTOSEQ(0..[M:SGW]NBLIG-1))
+&    & [M:STQ1]WSTOFLG(I)=0
+       GERR=1  : GMESSAGE=mess(3,40,1)-num$(I+1)-mess(377,199,1)
+       OK=0 : Break
+   Endif
+   # Si article géré en stock et que l'on a modifié le titre
+   # blocage s'il y a des qtés allouées
+#                                                        # hcb x3-40197 deb
+   Read [STO]STO0=[M:STQ1]STOFCY;[M:STQ1]WSTOCOU(I)
+   If fstat : Raz [F:STO] : Endif
+   If [F:ITF]CUNFLG=2 & [F:STO]CUNLOKFLG=2
+      GERR = 1
+      GMESSAGE = [F:STO]STOFCY-[F:STO]ITMREF-":"-mess(185,199,1)
+      OK=0 : Break
+   Endif
+#                                                        # hcb x3-40197 fin
+   If find([F:ITF]STOMGTCOD,3,4) & [M:STQ1]WSTOFLG(I)<>0
+     J=find([M:STQ1]WSTOSEQ(I),[M:SGW]WSTOSEQ(0..[M:SGW]NBLIG-1))
+     If ([M:STQ1]POT(I)<>[M:SGW]POT/100 & [F:ITF]STOMGTCOD=3) | ([M:STQ1]POT(I)<>[M:SGW]ACT & [F:ITF]STOMGTCOD=4)
+#       Read [STO]STO0=[M:STQ1]STOFCY;[M:STQ1]WSTOCOU(I)      # hcb x3-40197
+#       If fstat : Raz [F:STO] : Endif                        # hcb x3-40197
+       If [F:STO]CUMALLQTY<>0
+         GERR=1  : GMESSAGE=mess(3,40,1)-num$(I+1)-mess(552,197,1)
+
+         OK=0 : Break
+       Endif
+     Endif
+   Endif
+#                                                                  # hcb 110327 deb
+
+   If [F:ITM]SERMGTCOD = 4 & [M:STQ1]WSTOFLG(I)<>0
+     J=find([M:STQ1]WSTOSEQ(I),[M:SGW]WSTOSEQ(0..[M:SGW]NBLIG-1))
+     If [M:SGW]WSERNUM(J-1) = "" & [M:SGW]WQTYSTUDES(J-1) <> 0
+        GERR=1  : GMESSAGE=mess(3,40,1)-num$(I+1)-mess(246,199,1)
+        OK=0    : Break
+     Endif
+   Endif
+#                                                                  # hcb 110327 end
+Next
+
+If OK=0 Return Endif
+
+# Contrôle que la qté US correspond à un nombre entier d'UC
+# (fonction du nb de décimales de l'UC)
+If !clalev([F:TUN]) Local File TABUNIT [TUN] Endif
+
+For I=0 To [M:SGW]NBLIG-1
+    If [M:SGW]WSTOSEQ(I)<>0 & !find([M:SGW]WCOEDES(I),0,1)
+        Read [TUN]TUN0=[M:SGW]WPCUDES(I)
+        If !fstat
+            Case [F:TUN]UOMDEC
+             When 1       : WARR=0.1
+             When 2       : WARR=0.01
+             When 3       : WARR=0.001
+             When 4       : WARR=0.0001
+             When 5       : WARR=0.00001
+             When 6       : WARR=0.000001
+             When Default : WARR=1
+            Endcase
+            WQTYPCU = arr([M:SGW]WQTYPCUDES(I),WARR)
+            If WQTYPCU<>[M:SGW]WQTYPCUDES(I)
+                J=find([M:SGW]WSTOSEQ(I),[M:STQ1]WSTOSEQ(0..[M:STQ1]NBLIG-1))
+                If J<>0
+                    GMESSAGE=[M:STQ1]ITMREF-":"-mess(160,184,1)-"("+[M:SGW]WPCUDES(I)+")"
+                Else
+                    GMESSAGE=mess(160,184,1)-"("+[M:SGW]WPCUDES(I)+")"
+                Endif
+                OK=0 : GERR=1
+                Break                                        # hcb X3-77043
+#               Return                                       # hcb X3-77043
+            Endif
+        Endif
+
+
+    Endif
+#                                                             # hcb X3-77043 deb
+# controle meme emplacement pour chaque contenant
+    If [F:ITF]LPNMGTCOD = 2 & [F:SRT]CHGEMPCOD = 2 &  [M:SGW]WSTOSEQ(I)<>0 & [M:SGW]WLPNNUMDES(I) <> ""
+#---contrôle du mono-emplacement par LPN
+        K=sigma(I+1,[M:SGW]NBLIG-1,1*([M:SGW]WLPNNUMDES(indcum)=[M:SGW]WLPNNUMDES(I) & [M:SGW]WSTOSEQ(indcum)<>0))
+        L=sigma(I+1,[M:SGW]NBLIG-1,1*([M:SGW]WLPNNUMDES(indcum)=[M:SGW]WLPNNUMDES(I) & [M:SGW]WSTOSEQ(indcum)<>0
+&                 & [M:SGW]WLOCDES(indcum)=[M:SGW]WLOCDES(I)))
+        If K<>L
+           Call ERREUR(func AFNC.MES2(mess(521,184,1),[M:SGW]WLPNNUMDES(I),[M:SGW]WLOCDES(I))) From GESECRAN
+           OK=0
+           GERR=1
+           Break
+        Endif
+     Endif
+#                                                             # hcb X3-77043 fin
+Next I
+If OK = 0                                                     # hcb X3-77043
+   Return                                                     # hcb X3-77043
+Endif                                                         # hcb X3-77043
+
+# hcb unicite deb
+Local Integer Z
+Local Integer Y
+Local Integer I
+Local Char    WLOT(GLONLOT) ([M:STQ1]NBLIG)
+Local Char    WSLO(GLONSLO) ([M:STQ1]NBLIG)
+Local Integer WWSTOSEQ      ([M:STQ1]NBLIG)
+Raz WLOT
+Raz WSLO
+Raz WWSTOSEQ
+# pour les articles titrés s il y a modif du complement lot il faut que tous les lot/slo de la demande soient identiques
+If dim([M:STQ1]SLO) > 0 & GFEALOTLEV = 2 & [F:ITM]LOTMGTCOD = 4 & [F:ITM]STOMGTCOD > 2
+    For I=0 To [M:STQ1]NBLIG-1
+        If [M:STQ1]WSTOFLG(I)<>0
+           Goto NEXT_STQ1
+        Endif
+        Raz Y
+        Y = sigma(0,[M:STQ1]NBLIG-1,(indcum+1)*([M:STQ1]WSTOFLG(indcum)<>0 & [M:STQ1]LOT(indcum) = [M:STQ1]LOT(I) &
+&                 Y=0 & sigma(Y=1,1,1)))
+        If Y <> 0
+           If !find([M:STQ1]LOT(Y-1),WLOT(0..Z-1))
+              WLOT    (Z) = [M:STQ1]LOT    (Y-1)
+              WSLO    (Z) = [M:STQ1]SLO    (Y-1)
+              WWSTOSEQ(Z) = [M:STQ1]WSTOSEQ(Y-1)
+              Z+=1
+           Endif
+        Endif
+$NEXT_STQ1
+    Next
+    If Z > 0
+       For Z=0 To Z-1
+           Read [STL]STL0=[F:ITM]ITMREF;WLOT(Z);WSLO(Z)
+           If fstat
+              Raz [F:STL]
+           Endif
+           Raz Y
+           Y = find(WWSTOSEQ(Z), [M:SGW]WSTOSEQ(0..[M:SGW]NBLIG-1))-1
+           If Y >=0
+              Y=[M:SGW]NUMLIGLOT(Y)
+                If ([F:STL]POT       <> [M:SGW]POT       (Y) | [F:STL]REFPER    <> [M:SGW]REFPER    (Y) |
+&                   [F:STL]SHL       <> [M:SGW]SHL       (Y) | [F:STL]SHLDAT    <> [M:SGW]SHLDAT    (Y) |
+&                   [F:STL]SHLUOM    <> [M:SGW]SHLUOM    (Y) | [F:STL]DLU       <> [M:SGW]DLU       (Y) |
+&                   [F:STL]DLUDAT    <> [M:SGW]DLUDAT    (Y) | [F:STL]SHLLTI    <> [M:SGW]SHLLTI    (Y) |
+&                   [F:STL]SHLLTIUOM <> [M:SGW]SHLLTIUOM (Y) | [F:STL]NEWLTIDAT <> [M:SGW]NEWLTIDAT (Y) |
+&                   [F:STL]USRFLD1   <> [M:SGW]USRFLD1   (Y) | [F:STL]USRFLD2   <> [M:SGW]USRFLD2   (Y) |
+&                   [F:STL]USRFLD3   <> [M:SGW]USRFLD3   (Y) | [F:STL]USRFLD4   <> [M:SGW]USRFLD4   (Y)  )
+                    GERR=1
+                    GMESSAGE=mess(345,184,1)-WLOT(Z)
+                    OK=0
+                    Break
+                Endif
+           Endif
+       Next
+    Endif
+
+Endif
+#                                                         # hcb X3-43207 deb
+# pour les articles titrés si modification du titre il faute que si toutes les lignes du lot soient controlées
+
+If OK & ([F:ITF]STOMGTCOD=3 | [F:ITF]STOMGTCOD=4)
+   For I=0 To [M:STQ1]NBLIG-1
+# si WSTOFLG = 0 la ligne n a pas ete qualifiée
+       If [M:STQ1]WSTOFLG(I)=0
+          Goto NEXT_STQ2
+       Endif
+# si ligne est qualifiée il faut detecter si il y a eu une mofif du titre du lot
+
+       Raz Y
+       Y = find([M:STQ1]WSTOSEQ(I), [M:SGW]WSTOSEQ(0..[M:SGW]NBLIG-1))-1
+       If Y >=0
+          Y=[M:SGW]NUMLIGLOT(Y)
+           If [M:STQ1]POT(I)       <> ([M:SGW]POT(Y)/100)
+              Y = sigma(0,[M:STQ1]NBLIG-1,(indcum+1)*([M:STQ1]WSTOFLG(indcum) = 0 & ([M:STQ1]LOT(indcum) = [M:STQ1]LOT(I) & [M:STQ1]SLO(indcum) = [M:STQ1]SLO(I))) &
+&             Y=0 & sigma(Y=1,1,1))
+              If Y <> 0
+                  GERR=1
+                  GMESSAGE=mess(345,184,1)-[M:STQ1]LOT(I)-" "-[M:STQ1]SLO(I)
+                  OK=0
+                  Break
+               Endif
+           Endif
+       Endif
+$NEXT_STQ2
+   Next
+Endif
+#                                                         # hcb X3-43207 end
+# hcb unicite fin
+
+# Issue X3-106909 - 2018-09-21 by MAE : Ajout du GSTOTRACE
+If OK & GSTOTRACE>1
+    Call OUVRE_TRACE(mess(177,198,1)) From LECFIC
+    If func SUBSCSB.VERALL( "STQ1" )
+        Call AVERTIR(mess(81,184,1),OK) From GESECRAN
+        OK -= 1
+        If OK
+            Call FERME_TRACE From LECFIC
+            If GBROWS = 0                         # hcb 68879
+               Call LEC_TRACE From LECFIC
+            Endif
+            Call OUVRE_TRACE(mess(177,198,1)) From LECFIC
+        Else
+#            Call FERME_TRACE From LECFIC : Call SUPP_TRACE From LECFIC     # hcb 86427
+        Endif
+    Endif
+Endif
+
+Return
+
+$MODIF
+#---------------#
+# Modification  #
+#---------------#
+
+Local Integer LQTYSTUCTL
+Local Decimal  LQTYSTU           # hcb 46221
+Global Decimal LQTYSTUDES        # hcb 46221
+Local Integer LWSTOSEQ
+Local Integer I,J
+Local Char    LLOT(GLONLOT)                          # hcb V6CQ
+Local Integer LEXI                                   # hcb V6CQ
+Local Char    WLOT(GLONLOT) ([M:STQ1]NBLIG)   # hcb unicite
+Local Char    WSLO(GLONSLO) ([M:STQ1]NBLIG)   # hcb unicite
+Local Integer WWSTOSEQ      ([M:STQ1]NBLIG)   # hcb unicite
+Local Integer Z                                 # hcb unicite
+Local Integer Y                                 # hcb unicite
+Raz   Z                                         # hcb unicite
+Raz   Y                                         # hcb unicite
+Raz WLOT                                        # hcb unicite
+Raz WSLO                                        # hcb unicite
+Raz WWSTOSEQ                                    # hcb unicite
+
+Raz LQTYSTUCTL, LQTYSTU, LQTYSTUDES, LWSTOSEQ
+Raz I,J
+# Ruse de sioux pour pouvoir donner le bon n° de ligne de doc
+# pour les lignes agrégés avec n° de série
+# La ruse consiste à mettre TEMPORAIREMENT le n° de ligne du contrôle qualité dans WSTOSEQ
+For I=0 To [M:SGW]NBLIG-1
+    If [M:SGW]WSTOSEQ(I)>0
+        #--- Sauvegarde de WSTOSEQ
+        [M:SGW]SAVWSTOSEQ(I) = [M:SGW]WSTOSEQ(I)
+        If LWSTOSEQ<>[M:SGW]WSTOSEQ(I)
+           #--- Recherche (optimisée) de la ligne dans STQ1 correspondant au WSTOSEQ en cours
+            LWSTOSEQ = [M:SGW]WSTOSEQ(I)
+            J = find([M:SGW]WSTOSEQ(I),[M:STQ1]WSTOSEQ)-1
+        Endif
+        #--- Si c'est une agrégation de n° de série on va chercher VCRLIN dans le fichier STOQLYD
+        If dim([M:STQ1]SERNUM)>0 & [M:STQ1]SERNUMDEP(J)<>[M:STQ1]SERNUMFDEP(J) & [F:ITF]SMPTYP < 2
+            Filter [QLD] Where VCRTYP    = 28
+&                            & VCRNUM    = [M:STQ1]VCRNUM
+&                            & VCRLINORI = [M:STQ1]VCRLINORI(J)
+&                            & SERNUM    = [M:SGW]WSERNUM(I)
+            For [QLD]QLD3
+                [M:SGW]WSTOSEQ(I) = [F:QLD]VCRLIN
+            Next
+        #--- sinon on récupère directement VCRLIN dans STQ1
+        Else
+            If [F:ITF]SMPTYP > 1                        # hcb V6CQ
+               [M:SGW]WSTOSEQ(I) = [M:SGW]VCRLIN(I)     # hcb V6CQ
+            Else                                        # hcb V6CQ
+               [M:SGW]WSTOSEQ(I) = [M:STQ1]VCRLIN(J)
+            Endif                                       # hcb V6CQ
+        Endif
+    Endif
+Next
+Filter [QLD]
+
+For I=0 To [M:STQ1]NBLIG-1
+    LQTYSTU    += [M:STQ1]QTYSTU(I)
+    If [M:STQ1]WSTOFLG(I) = 0                     # hcb 46221
+       If left$([M:STQ1]STADES,1) <> "Q"          # hcb 46221
+          LQTYSTUDES += [M:STQ1]QTYSTUDES(I)
+       Endif                                      # hcb 46221
+    Endif                                         # hcb 46221
+    If [M:STQ1]WSTOFLG(I)<>0
+
+# hcb unicite deb
+
+       Call ALISTW (I) From SUBSTQB
+       If !GOK
+          Call DELSTOCHGW("STQ1",[M:STQ1]STOFCY,-1,-1,1,LRET) From SUBSCSB                 # hcb 110327
+          Break
+       Endif
+#                                                                    hcb V6CQ deb
+       If [F:ITF]SMPTYP > 1
+          If [F:ITF]SMPMOD = 2
+             If dim([M:STQ1]LOT) > 0
+                LLOT = [M:STQ1]LOT       (I)
+             Else
+                Raz LLOT
+             Endif
+          Else
+             Raz LLOT
+          Endif
+          # lecture STOQLYSMP (resultat echantillonnage)
+          Readlock [SMP]SMP0=[M:STQ1]VCRTYP;[M:STQ1]VCRNUM;[M:STQ1]ITMREF;LLOT
+          If fstat
+             Raz [F:SMP]
+             Raz LEXI
+          Else
+             LEXI = 1
+          Endif
+          [F:SMP]VCRTYP      = [M:STQ1]VCRTYP
+          [F:SMP]VCRNUM      = [M:STQ1]VCRNUM
+          [F:SMP]ITMREF      = [M:STQ1]ITMREF
+          [F:SMP]LOT         = LLOT
+          [F:SMP]STU         = [M:STQ1]STU
+          [F:SMP]QTYINISTU   = [M:STQ1]QTYSTU    (I)
+          [F:SMP]QTYSMPACP   = [M:STQ1]QTYSMPACP (I)
+          [F:SMP]QTYSMPREF   = [M:STQ1]QTYSMPREF (I)
+          [F:SMP]STASMP      = [M:STQ1]STASMP    (I)
+          [F:SMP]STASMPCAL   = [M:STQ1]STASMPCAL (I)
+          [F:SMP]RENSMP      = [M:STQ1]RENSMP    (I)
+          [F:SMP]QTYACP      = [M:STQ1]QTYACP    (I)
+          [F:SMP]CODSMP      = [M:STQ1]CODSMP    (I)
+          [F:SMP]QTYSMP      = [M:STQ1]QTYSMP    (I)
+          If LEXI
+             Call REWSMP From STKLIB
+             If fstat
+                Call FSTA("SMP") From GLOCK
+                GOK = 0
+                Break
+             Endif
+          Else
+             Call ECRSMP From STKLIB
+             If fstat
+                Call FSTA("SMP") From GLOCK
+                GOK = 0
+                Break
+             Endif
+          Endif
+       Endif
+#                                                                    hcb V6CQ fin
+# hcb unicite deb
+       If dim([M:STQ1]SLO) > 0 & GFEALOTLEV = 2 & [F:ITM]LOTMGTCOD = 4
+          If !find([M:STQ1]LOT(I),WLOT(0..Z-1))
+             WLOT    (Z) = [M:STQ1]LOT    (I)
+             WSLO    (Z) = [M:STQ1]SLO    (I)
+             WWSTOSEQ(Z) = [M:STQ1]WSTOSEQ(I)
+             Z+=1
+          Endif
+       Endif
+# hcb unicite fin
+    Endif
+
+Next
+
+For I=0 To [M:SGW]NBLIG-1                                  # hcb 88013
+    If [M:SGW]WSTOSEQ(I)>0
+        [M:SGW]WSTOSEQ(I) = [M:SGW]SAVWSTOSEQ(I)
+    Endif
+Next
+
+# update de tous les lot non titre non mis à jour
+If GOK & dim([M:STQ1]SLO) > 0 & GFEALOTLEV = 2 & [F:ITM]LOTMGTCOD = 4 & Z <> 0
+   For Z=0 To Z-1
+       Raz Y
+       Y = find(WWSTOSEQ(Z), [M:SGW]WSTOSEQ(0..[M:SGW]NBLIG-1))-1
+       If Y >=0
+          Y=[M:SGW]NUMLIGLOT(Y)
+          Update [STL] Where ITMREF = [M:STQ1]ITMREF & LOT = WLOT(Z)  &
+&         (POT      <> [M:SGW]POT      (Y) | REFPER  <> [M:SGW]REFPER  (Y) | SHL       <> [M:SGW]SHL      (Y) |
+&         SHLDAT    <> [M:SGW]SHLDAT   (Y) | SHLUOM  <> [M:SGW]SHLUOM  (Y) | DLU       <> [M:SGW]DLU      (Y) |
+&         DLUDAT    <> [M:SGW]DLUDAT   (Y) | SHLLTI  <> [M:SGW]SHLLTI  (Y) | SHLLTIUOM <> [M:SGW]SHLLTIUOM(Y) |
+&         NEWLTIDAT <> [M:SGW]NEWLTIDAT(Y) | USRFLD1 <> [M:SGW]USRFLD1 (Y) | USRFLD2   <> [M:SGW]USRFLD2  (Y) |
+&         USRFLD3   <> [M:SGW]USRFLD3  (Y) | USRFLD4 <> [M:SGW]USRFLD4 (Y))
+&  With   USRFLD1   =  [M:SGW]USRFLD1  (Y), USRFLD2 = [M:SGW]USRFLD2(Y), USRFLD3 = [M:SGW]USRFLD3(Y), USRFLD4   = [M:SGW]USRFLD4  (Y),
+&         REFPER    =  [M:SGW]REFPER   (Y), SHL     = [M:SGW]SHL    (Y), SHLDAT  = [M:SGW]SHLDAT (Y), SHLUOM    = [M:SGW]SHLUOM   (Y),
+&         DLU       =  [M:SGW]DLU      (Y), DLUDAT  = [M:SGW]DLUDAT (Y), SHLLTI  = [M:SGW]SHLLTI (Y), SHLLTIUOM = [M:SGW]SHLLTIUOM(Y),
+&         NEWLTIDAT =  [M:SGW]NEWLTIDAT(Y), POT     = [M:SGW]POT    (Y)
+          If fstat
+             GMESSAGE-=mess(50,176,1)
+             GOK = 0
+             Break
+          Endif
+       Endif
+   Next
+Endif
+# hcb unicite fin
+
+#---- Si la quantité à qualifier est toute qualifiée => contrôle qualité terminé ----#
+If LQTYSTU = LQTYSTUDES
+    Readlock [QLH]QLH0=[M:STQ1]VCRTYP;[M:STQ1]VCRNUM
+    [F:QLH]VALFLG = 2 : [M:STQ1]VALFLG=2
+    [F:QLH]ENDCTLDAT = date$
+    Rewrite [QLH]
+Endif
+
+#For I=0 To [M:SGW]NBLIG-1                       # hcb 88013
+#    If [M:SGW]WSTOSEQ(I)>0
+#        [M:SGW]WSTOSEQ(I) = [M:SGW]SAVWSTOSEQ(I)
+#    Endif
+#Next
+
+
+
+Return
+
+#--- Bug 89742
+$VERF_ANU
+OK=2 : Call AVERTIR(mess(413,184,1)-":"-mess(205,100,1), OK) From GESECRAN
+If OK=1 : OK=0 : Endif
+Return
+#---
+
+$ANNULE
+#----------------------------------------#
+# Suppression des réponses et agrégation #
+#----------------------------------------#
+Gosub MAJ_QLD
+If GOK <1 : Return : Endif
+Gosub MAJ_QLA
+If GOK <1 : Return : Endif
+Gosub MAJ_STOCK
+If GOK<1  : Return : Endif
+Return
+
+$INICRE_LIG
+Return
+
+$VALLIG
+Return
+
+$MAJ_QLD
+#-------------------------#
+# Suppression des détails #
+#-------------------------#
+For [QLD]QLD0 Where VCRTYP=[F:QLH]VCRTYP & VCRNUM=[F:QLH]VCRNUM
+  Readlock [QLD]QLD0 Curr
+  If fstat   GOK=-1 : GLOCK="$STOQLYD"-[F:QLH]VCRNUM-num$([F:QLD]VCRLIN) : Break : Endif
+  Delete   [QLD] Curr
+  If fstat=1  GOK=-1 : GLOCK="$QLYCRDASW"-[F:QLD]VCRNUM-num$([F:QLD]VCRLIN) : Break : Endif
+Next
+Return
+
+$MAJ_QLA
+#---------------------------------#
+# Mise à jour du fichier Réponses #
+#---------------------------------#
+For [QLA]QLA0 Where QLYCTLDEM=[F:QLH]VCRNUM
+  Readlock [QLA] Curr
+  If fstat   GOK=-1 : GLOCK="$QLYCRDASW"-[F:QLA]QLYCTLDEM-num$([F:QLA]VCRLIN) : Break : Endif
+  Delete   [QLA] Curr
+  If fstat=1  GOK=-1 : GLOCK="$QLYCRDASW"-[F:QLA]QLYCTLDEM-num$([F:QLA]VCRLIN) : Break : Endif
+Next
+Return
+
+$MAJ_STOCK
+#------------------------------------------------------------#
+# Mise à jour du fichier STOCK avec agrégation si nécessaire #
+#------------------------------------------------------------#
+For [STO]STO3 Where ITMREF=[F:QLH]ITMREF & STOFCY=[F:QLH]STOFCY
+&                 & QLYCTLDEM=[F:QLH]VCRNUM
+  If [F:STO]SERNUM=""
+    Gosub AGREG_STO From FUNSTOR
+  Else
+    Readlock [STO] Curr
+    [STO]QLYCTLDEM=""
+    Rewrite [STO]
+  Endif
+Next
+Return
+
+$APRES_MOD
+#--------------------------------------------------------------------------#
+# Après modification : affichage indicateurs entête et rechargement lignes #
+#--------------------------------------------------------------------------#
+Local Integer LRET
+Call STKDELRES(0,[M:STQ1]STOFCY,"",LRET) From STKLOC
+If clalev ([F:SRT])=0 Local File STKTRS [SRT] Endif             # hcb 50197
+If [F:SRT]SRTTYP<>8 | [F:SRT]SRTNUM<>GSTQNUM                    # hcb 50197
+   Read [SRT]SRT0=8;GSTQNUM : If fstat  Raz [F:SRT] : Endif
+Endif
+#---- Impression automatique du document ----------#
+If [F:SRT]DOCFLG=2 & !GIMPORT & [F:SRT]DOCNAM<>""
+    Local Char TBPAR(10)(1..50), TBVAL(30)(1..50)
+    Call ETAT([F:SRT]DOCNAM,"GESSTQ",TBPAR,TBVAL) From ETAT
+Endif
+#---- Impression des etiquettes de mouvements ----------#
+If [F:SRT]PRNCOD1 > 1
+    Local Char WPARAM(GLONVCR)(1..4) , WVALEUR(10)
+    WPARAM(1) = [M:STQ1]STOFCY
+    WPARAM(2) = num$([M:STQ1]VCRTYP)
+    WPARAM(3) = [M:STQ1]VCRNUM
+    WPARAM(4) = [M:STQ1]VCRNUM
+    Call TRAITE_CHAR(WVALEUR,WPARAM,"ISTOLBE","SUBSLP","",4,"SPESLP") From GTRAITE
+Endif
+#---- Régularisation des mouvements et alloc -----#
+If !clalev([F:STJ2]) : Local File STOJOU    [STJ2] : Endif
+Call REGFROMENT(1,"STJ2","VCRTYP=28&VCRNUM='"+[M:STQ1]VCRNUM+"'&ACTQTY>0","ITMREF",
+&               [M:STQ1]STOFCY) From TRTSHTCOM
+If GTRACE<>""
+    Call FERME_TRACE From LECFIC
+    If GBROWS = 0                         # hcb 68879
+       Call LEC_TRACE From LECFIC
+    Endif
+Endif
+
+Gosub RELIT From GOBJSUB
+Return
+
+$AB_MODIF
+#-----------------------------------------------#
+# Abandon de la modification suite à une erreur #
+#-----------------------------------------------#
+If GTRACE<>""
+    Call FERME_TRACE From LECFIC
+    If GBROWS = 0                         # hcb 68879
+       Call LEC_TRACE From LECFIC
+    Endif
+Endif
+Return
+
+$APRES_MODIF
+#------------------------------------#
+# Après modification de chaque champ #
+#------------------------------------#
+Case COUZON
+  When "FILFCY"
+   WS_FCY=CZ
+   [M:STQ1]FILFCY=WS_FCY
+   If !GIMPORT                           # hcb 85809
+      Gosub REMPLIT      From GOBJSUB
+   Endif
+   [M:STQ1]FILFCY=WS_FCY
+   Affzo [M:STQ1]FILFCY
+   OK=-1 : # pour ne pas entrer en modif
+Endcase
+Return
+
+$ABANDON
+#----------------------------------------------------#
+# Abandon création et modification par l'utilisateur #
+#----------------------------------------------------#
+Local Integer LRET
+Actzo [M:STQ1]VCRNUM
+Call DELSTOCHGW("STQ1",[M:STQ1]STOFCY,-1,-1,1,LRET) From SUBSCSB
+Return
+
+$FERME
+#-----------#
+# Fermeture #
+#-----------#
+
+#----- Restitution variables globales -----#
+Gosub REST_GLOB From TRTX3GLOB
+#-----
+Call DELSTOCHGW("STQ1",[M:STQ1]STOFCY,-1,-1,1,LRET) From SUBSCSB
+If dim(GBLOSTA)>0
+    Kill GBLOSTA
+Endif
+If dim(GSQT_VERROU)>0
+    Kill GSQT_VERROU
+Endif
+Call IMPSCR      From ATRTX3
+Return
+
+#-------------------------------------------#
+# Copie d'écran                             #
+#-------------------------------------------#
+$COP_ECRAN
+Local Char WINT(20)(2)
+Local Char WTIT(200)
+Local Char WMSK(GLONAMK)(4)
+Local Char WABR(4)(4)
+
+Call TEXTFIC("STOQLYH","VCRNUM",2,WINT(0)) From OBJDIV
+Call TEXTFIC("STOQLYH","VCRTYP",2,WINT(1)) From OBJDIV
+WTIT = mess(9,728,1)-WINT(0)+" : "+[M:STQ1]VCRNUM+" ("+[M:STQ1]STOFCY+")"
+WMSK(0) = "STQ1"
+Call PRTSCR(WMSK,WABR,WTIT,0,0) From ATRTX3
+Return
+
+$MAJ_ENTETE
+Call DEBTRANS From GLOCK
+$TR_STQFLG
+GOK=1
+# hcb 49466
+Trbegin [QLH]
+  Update [QLH] Where VCRTYP=28 & VCRNUM=[M:STQ1]VCRNUM With VALFLG=2,
+&                                                           ENDCTLDAT = date$
+
+  If fstat
+    GOK=0  : Call RSTA("QLH",[M:STQ1]VCRNUM) From GLOCK : Goto AB_STQFLG
+  Endif
+  [F:QLH]VALFLG=2
+  [M:STQ1]VALFLG=2
+Commit
+   If !GIMPORT                           # hcb 85809
+      Gosub REMPLIT      From GOBJSUB
+   Endif
+Return
+
+$AB_STQFLG
+Rollback
+Return
+###############################                         # Ana   deb
+$CHARG_PARAM
+#----- Chargement des globales référenciels, comptes et sections de la société -----#
+Call GETCPY(GFCY,"",0,"") From TRTX3CPT
+# Compteur module stock, fichier ouvert dans l'objet
+Local Integer LRET
+Call LECTCA(7,LRET) From SUBTCA
+If !LRET
+   GMESSAGE=mess(58,105,1)-mess(7,14,1)-mess(250,199,1)
+   GERR=1
+   Return
+Endif
+#-- Controle compteur chrono stock
+GSTKCPTMAN(0) = [F:TCA]MANCOU(0) # Cpt du chrno stock
+GSTKCPT   (0) = [F:TCA]CODNUM(0)
+Call CTRCPT(GSTKCPT(0),type([F:STO]STOCOU), LRET) From STKLIB
+If LRET<>0
+    GMESSAGE = mess(87,199,1)
+    GERR = 1
+    OK  = 0
+    Return
+Endif
+GSTKCPTMAN(2) = [F:TCA]MANCOU(2)
+GSTKCPT   (2) = [F:TCA]CODNUM(2)
+
+Return
+

@@ -1,0 +1,1004 @@
+########################################################################
+#               GESTION DU CONTROLE QUALITE                            #
+# -------------------------------------------------------------------- #
+# Traitements sur champ "Call" de l'objet "STQ"                        #
+# Le traitement des actions "Gosub" se trouvent dans le SUBSTQA        #
+# Les autres traitements se trouvent dans le            SUBSTQB        #
+# Copie                                                 SUBSQC         #
+# -------------------------------------------------------------------- #
+# Ecran           : STQ1                                               #
+# Détail          : STOQUA                                             #
+# Echantillonnage : STOSMP                                             #
+########################################################################
+Call OBJET("STQ", GBIDC1, GBIDC2) From GOBJET
+End
+
+
+$ACTION
+Case ACTION
+ When "DEFTRANS"     : Gosub DEFTRANS     From SUBSTQA
+ When "VARIANTE"     : Gosub VARIANTE     From SUBSTQA
+ When "SETTRANS"     : Gosub SETTRANS     From SUBSTQA
+ When "FILTRE"       : Gosub FILTRE       From SUBSTQA
+ When "AV_IMPRIME"   : Gosub AV_IMPRIME   From SUBSTQA
+ When "AP_IMPRIME"   : Gosub AP_IMPRIME   From SUBSTQA
+ When "OUVRE_BOITE"  : Gosub OUVRE_BOITE  From SUBSTQA
+ When "BOITE"        : Gosub BOITE        From SUBSTQA      # hcb 72859
+ When "OUVRE"        : Gosub OUVRE        From SUBSTQA
+ When "LIENS"        : Gosub LIENS        From SUBSTQA
+ When "DEFLIG"       : Gosub DEFLIG       From SUBSTQA
+ When "SETBOUT"      : Gosub SETBOUT      From SUBSTQA
+ When "AVANTBOUT"    : Gosub AVANTBOUT    From SUBSTQA
+ When "VERIF_MOD"    : Gosub VERIF_MOD    From SUBSTQA
+ When "VALLIG"       : Gosub VALLIG       From SUBSTQA
+ When "MODIF"        : Gosub MODIF        From SUBSTQA
+ When "APRES_MOD"    : Gosub APRES_MOD    From SUBSTQA
+ When "AB_MODIF"     : Gosub AB_MODIF     From SUBSTQA
+ When "VERF_ANU"     : Gosub VERF_ANU     From SUBSTQA  : #--- Bug 89742
+ When "ANNULE"       : Gosub ANNULE       From SUBSTQA
+ When "ABANDON"      : Gosub ABANDON      From SUBSTQA
+ When "FIN"          : Gosub ABANDON      From SUBSTQA
+ When "FERME"        : Gosub FERME        From SUBSTQA
+ When "APRES_MODIF"  : Gosub APRES_MODIF  From SUBSTQA
+ When "TIROIR"       : Gosub TIROIR       From SUBSTQA
+ When "FILGAUCHE"    : Gosub FILGAUCHE    From SUBSTQA
+ When "AAPRES_NBLIG" : Gosub AAPRES_NBLIG From SUBSTQ
+ When "BAPRES_NBLIG" : Gosub BAPRES_NBLIG From SUBSTQ
+ When "AB1_NBLIG"    : Gosub AB1_NBLIG    From SUBSTQ
+ When "BB1_NBLIG"    : Gosub BB1_NBLIG    From SUBSTQ
+ When "AB2_NBLIG"    : Gosub AB2_NBLIG    From SUBSTQ
+ When "BB2_NBLIG"    : Gosub BB2_NBLIG    From SUBSTQ
+ When "BB4_NBLIG"    : Gosub BB4_NBLIG    From SUBSTQ
+ When "AB6_NBLIG"    : Gosub AB6_NBLIG    From SUBSTQ
+ When "AB7_NBLIG"    : Gosub AB7_NBLIG    From SUBSTQ
+ When "BB6_NBLIG"    : Gosub BB6_NBLIG    From SUBSTQ
+ When "BB7_NBLIG"    : Gosub BB6_NBLIG    From SUBSTQ
+ When "AB8_NBLIG"    : Gosub AB8_NBLIG    From SUBSTQ
+ When "BB8_NBLIG"    : Gosub BB8_NBLIG    From SUBSTQ
+ ##Issue X3-276778 06-05-2022 by ogh  : put in comment label AB9_NBLIG
+ ##When "AB9_NBLIG"    : Gosub AB9_NBLIG    From SUBSTQ            # hcb 110327
+
+ When Default        :
+Endcase
+Return
+
+$SET_NOL
+    Local Integer NOL
+    NOL = nolign-1
+Return
+
+#---------------------------------------------------------------------------#
+#                                                                           #
+#                                Ecran STQ1                                 #
+#                                                                           #
+#---------------------------------------------------------------------------#
+Subprog C_VCRNUM(VALEUR)
+#--------------------#
+# Controle du numéro #
+#--------------------#
+Variable Char    VALEUR()
+#-- Si dernier lu non chargé, on vérifie l'existence du n° saisi
+Look [F:QLH]QLH0=28;VALEUR
+If fstat
+  GMESSAGE=mess(178,199,1)
+  mkstat=2
+  End
+Endif
+End
+
+
+Subprog C_NBLIG
+#-------------------------------------------------#
+# Il y a généralement des contrôles pour vérifier #
+# qu'on peut annuler ou modifier une ligne        #
+#-------------------------------------------------#
+Local Integer NOL
+NOL = nolign-1
+If nolign>[M:STQ1]NBLIG
+   End
+Endif
+
+If find(status,75) & nolign<=[M:STQ1]NBLIG
+   Actzo [M:STQ1]QLYCRD(nolign-1)
+
+   If ([M:STQ1]QLYCRD(nolign-1)<>"" & [M:STQ1]CRDFLG(nolign-1)<>2) | [M:STQ1]SAICOD(nolign-1)="F"   # hcb 31841
+       #iszo [M:STQ1]NBLIG     (nolign-1)                                       # hcb V6CQ
+       Gosub DISZO_LIG From SUBSTQB
+   Else
+       # si pas echantillonnage gestion des diszo
+       If [F:ITF]SMPTYP = 1               # hcb V6CQ
+          Gosub DISZO_COL_AFF From SUBSTQB   #Diszo champs affichés qui peuvent être rendus invisibles dynamiquement
+          Call DISZO_CHP_AFF(nolign-1) From SUBSTQB    # Diszo des champs ne pouvant plus être saisis
+       Else                                                                        # hcb 60887
+          Gosub DISZO_LIG From SUBSTQB
+       Endif                              # hcb V6CQ
+   Endif
+Endif
+End
+
+Subprog AVANT_NBLIG
+#-------------#
+# Avant nblig #
+#-------------#
+Local Integer LRET
+    If dim([M:STQ1]SERNUM(nolign-1))>0 & [M:STQ1]SERNUM(nolign-1)=""
+        [M:STQ1]SERNUM(nolign-1)=[M:STQ1]SERNUMDEP(nolign-1)
+    Endif
+    [M:STQ1]IPTDAT(nolign-1) = date$
+    If [F:ITF]LOCMGTCOD=2
+      Call STKWLOCSEQ("STQ1", nolign-1, LRET) From STKECR
+    Endif
+End
+
+$AAPRES_NBLIG
+#-------------------------------------------------#
+# Appelé avant l'action SAISTOENT                 #
+# Permet de vérifier s'il faut la lancer ou non   #
+#-------------------------------------------------#
+    Raz GOUVENT
+    # Si une quantié a déjà été qualifiée, rien n'est saisissable sur la ligne (sauf la qté contrôlée)
+    # => on n'a pas besoin de faire OUVCHG
+    If [M:STQ1]WSTJQTY(nolign-1)=0
+        Call OUVCHG("STQ1",nolign-1, [M:STQ1]STOFCY) From SUBSCSB
+    Endif
+Return
+
+$BAPRES_NBLIG
+#-------------------------------------------------#
+# Appelé apres l'action SAISTOENT                 #
+# Permet de vérifier s'il faut la lancer ou non   #
+#-------------------------------------------------#
+#--- Raffraichissement de l'indicateur de saise
+Call MAJSAICOD(nolign-1) From SUBSTQB
+#-- Raffraichissement des boutons possibles
+If mkstat<>4 : mkstat=99 : Endif
+Return
+
+
+Subprog IB_NBLIG
+#----------------------------------------------#
+# Initialisation des boutons                   #
+# -------------------------------------------- #
+# Btn 1 = Détail                               #
+# Btn 2 = Fiche qualité                        #
+# Btn 3 = Complément lot                       #
+# Btn 4 = Copies                               #
+# Btn 5 = Echantillonnage   V6CQ               #
+# Btn 6 = Consultation fiche historique V6CQ   #
+# Btn 8 = Infos echantillon             V6CQ   #
+# Btn 9 = saisie serie globales         110327 #
+# ---------------------------------------------#
+Local Integer LRET, J
+Local Decimal W_QTY
+If nolign>[M:STQ1]NBLIG : End : Endif
+#-- Positionnement des boutons pour parer le problème de maj
+#-- Apres la saisie du bouton fiche qualité
+Call TEXTE(22894,GBOUT1) From OBJDIV
+Call TEXTE(2360,GBOUT2) From OBJDIV
+Call TEXTE(19169,GBOUT3) From OBJDIV
+Call TEXTE(20775,GBOUT4) From OBJDIV
+# No séries concernés                                               # hcb 110327
+GBOUT9 = mess(655,199,1)                                            # hcb 110327
+GBOUT5  = mess(83,187,1)                           # hcb V6CQ
+Raz GBOUT8                                         # hcb V6CQ
+# si échantillonnage pas "Détail" ni  Copies"      # hcb V6CQ
+If [F:ITF]SMPTYP > 1                               # hcb V6CQ
+    Raz GBOUT1, GBOUT4                             # hcb V6CQ
+Else                                               # hcb V6CQ
+    Raz GBOUT5                                     # hcb V6CQ
+Endif                                              # hcb V6cq
+#-- Si code accès sur l'article
+
+If [F:ITF]QUAACS <> ""                             # hcb V6CQ
+   Read [ACC]CODACC=GUSER;[F:ITF]QUAACS            # hcb V6CQ
+   If fstat
+      Raz GBOUT1, GBOUT2, GBOUT3, GBOUT4, GBOUT5   # hcb V6CQ
+   Elsif [F:ACC]MODIF <> 2 | [F:ACC]CONSUL<>2
+      Raz GBOUT2
+      Raz GBOUT3
+      Raz GBOUT4
+      If [F:ACC]CONSUL<>2
+         Raz GBOUT1, GBOUT5                         # hcb V6CQ
+      Endif
+   Endif
+Endif                                               # hcb V6CQ
+#-- Si on a une fiche et que celle-ci n'est pas renseignée
+#-- On ne peut pas saisir la qté
+If ([M:STQ1]QLYCRD(nolign-1)<>"" & [M:STQ1]CRDFLG(nolign-1)<>2) | [M:STQ1]SAICOD(nolign-1)="F"
+    Raz GBOUT1, GBOUT4, GBOUT5                     # hcb V6CQ
+#-- Si echantillonnage on peut avoir la visu de l echantillon  "Infos échantillon"
+Else                                                               # hcb 110327   bug
+    If [F:ITF]SMPTYP > 1                           # hcb V6CQ
+       GBOUT8  = mess(87,187,1)                    # hcb V6CQ
+    Endif                                          # hcb V6CQ
+Endif
+#--- Si la fiche est verrouillée
+If !GSQT_VERROU : Raz GBOUT1, GBOUT2, GBOUT3, GBOUT4, GBOUT5 : Endif  # hcb V6CQ
+If [M:STQ1]ITMREF<>""
+    Call LECITM2( [M:STQ1]STOFCY, [M:STQ1]ITMREF, "", LRET ) From STKLIB
+    GOUVENT = 1
+Endif
+#-- Si fiche validée ou quantité contrôlée >= quantité à contrôler
+If [M:STQ1]VALFLG=2 | [M:STQ1]WSTJQTY(nolign-1)>=[M:STQ1]QTYSTU(nolign-1)
+   Raz GBOUT2, GBOUT3
+   If [F:ITF]SMPTYP > 1                                         # hcb V6CQ
+      GBOUT5 = mess(463,198,1)  # visualisation des mouvements  # hcb V6CQ
+      Raz GBOUT1                                                # hcb V6CQ
+   Else                                                         # hcb V6CQ
+      GBOUT1 = mess(463,198,1)  # visualisation des mouvements
+   Endif                                                        # hcb V6cq
+Endif
+#-- Si pas de fiche technique
+If [M:STQ1]QLYCRD(nolign-1) = ""
+    Raz GBOUT2
+Endif
+# Si pas de lot ou pas de nouveau mouvement ou echantillonnage => PAS de complément lot possible
+If dim([M:STQ1]LOT(nolign-1))<=0 | [M:STQ1]LOT(nolign-1)="" | !find([M:STQ1]WSTOSEQ(nolign-1),[M:SGW]WSTOSEQ) | [F:ITF]SMPTYP > 1
+    Raz GBOUT3
+Endif
+
+# hcb unicite deb
+If dim([M:STQ1]SLO)>0
+   If GFEALOTLEV = 2 & [F:ITM]LOTMGTCOD = 4
+#      Call CTR_UNICITE_LOT([M:STQ1]ITMREF,[M:STQ1]LOT(nolign-1),[M:STQ1]VCRTYPORI,[M:STQ1]VCRNUMORI,"",LRET) From SUBSTQB
+#      If LRET <> 0     # hcb 81503
+#         Raz GBOUT3    # hcb 81503
+#      Else             # hcb 81503
+# controle qu'une ligne n a pas deja ete qualifiée
+         LRET = sigma(0,[M:STQ1]NBLIG-1,(indcum+1)*([M:STQ1]LOT(indcum) = [M:STQ1]LOT(nolign-1) & [M:STQ1]WSTJQTY(indcum) <> 0 &
+&                       LRET=0 & sigma(LRET=1,1,1)))
+         If LRET <> 0
+            Raz GBOUT3
+         Else
+            If [F:ITM]STOMGTCOD > 2
+# controle qu'il n existe pour les article titré qu il ni ai pas une ligne de stock en "A" ou "R"
+#  ca d un meme entrée de stock avec des lignes sur le meme lot par un controle qualité !!!!
+               Filter [STO1] Where  ITMREF    = [M:STQ1]ITMREF  &
+&                                   LOT       = [M:STQ1]LOT(nolign-1)  &
+&                                   left$(STA,1)<> "Q"
+&                            Order By Key STO3
+               Read [STO1] First
+               If fstat = 0
+                  Raz GBOUT3
+               Endif
+               Filter [STO1]
+            Endif
+         Endif
+#     Endif    # hcb 81503
+    Endif
+Endif
+#                           hcb unicite fin
+
+# Si au moins l'unité est renseignée et qu'il y a plus d'une ligne on peut copier ou que tout valider
+If [M:STQ1]PCUDES(nolign-1)="" | [M:STQ1]NBLIG<2 | [M:STQ1]VALFLG=2
+    Raz GBOUT4
+Endif
+
+#-- si pas de fiche qualite pas de consultation historique   hcb V6CQ
+If [M:STQ1]QLYCRD(nolign-1)= ""
+    Raz GBOUT6
+Endif
+#                                                           # hcb 110327 deb
+# pas de saisie des series concernés si :
+# saisie détail impossible
+# l article ne gère pas les series globales
+# pas de STOCOU
+# pas de quantité qualifiée
+If GBOUT1 = "" | [F:ITM]SERMGTCOD <> 4 | [M:STQ1]WSTOCOU (nolign-1)= 0 | [M:STQ1]QTYSTUDES (nolign-1)= 0
+   Raz GBOUT9
+Endif
+
+#                                                           # hcb 110327 end
+
+# Initialisation de GOUVLOT (valable pour tout le document)
+GOUVLOT = 30    # Modif des rubriques utilisateur
+#-- Si article titré
+If [F:ITF]STOMGTCOD=3 | [F:ITF]STOMGTCOD=4
+#                                                         # hcb X3-43207 deb
+# Modification du titre  du lot uniquement si toutes les lignes du lot sont dans ce controle qualité
+
+   Filter [STO] Where ITMREF     =  [M:STQ1]ITMREF
+&                    & LOT       =  [M:STQ1]LOT(nolign-1)
+&                    & SLO       =  [M:STQ1]SLO(nolign-1)
+&                    & QLYCTLDEM <> [M:STQ1]VCRNUM
+   Look [STO]STO3 First
+   Filter [STO]
+   If fstat
+#                                                         # hcb X3-43207 end
+  Read [STO]STO0=[M:STQ1]STOFCY;[M:STQ1]WSTOCOU(nolign-1)
+  If fstat : Raz [F:STO] Endif
+  W_QTE=sigma(J=0,[M:SGW]NBLIG-1,[M:SGW]WWIPQTY(J)*([M:SGW]WSTOSEQ(J)=[M:STQ1]WSTOSEQ(nolign-1)))
+  If W_QTE>=[F:STO]CUMWIPQTY
+    #-- Gestion du titre
+    If [F:ITF]STOMGTCOD=3
+      GOUVLOT += 32
+    Elsif [F:ITF]STOMGTCOD=4
+      GOUVLOT += 64
+    Endif
+  Endif
+ Endif                                                  # hcb X3-43207
+
+Endif
+If [F:ITM]EXYMGTCOD>1
+  GOUVLOT += 128
+Endif
+#-- Fin modif
+End
+
+$AB1_NBLIG
+#----------------------#
+# Avant bouton1 Détail #
+#----------------------#
+    GOUVENT=1
+Return
+
+$BB1_NBLIG
+#----------------------#
+# Après bouton1 Détail #
+#----------------------#
+Local Shortint MK    # sauvegarde mkstat, car il est modifié par l'Affzo de MAJSAICOD
+MK = mkstat          # Le mkstat peut valoir 4 en retour de l'action SAISTOQUA
+#-- Mise à jour de l'indicateur sur ligne
+Call MAJSAICOD(nolign-1) From SUBSTQB
+mkstat=MK
+Return
+
+$AB2_NBLIG
+#-----------------------------#
+# Avant bouton2 Fiche qualité #
+#-----------------------------#
+Local Integer LB2SEQ
+Local Integer LB2OK
+LB2SEQ = [M:STQ1]CRDSEQ(nolign-1)
+#---- Recherche si une réponse nécessite une nouvelle fiche qualité -----#
+#     dans ce cas les reponses sont conservées
+If LB2SEQ<>0
+    If func SUBSTQB.SEARCHOSDASW4([M:STQ1]QLYCRD(nolign-1),[M:STQ1]VCRNUM,[M:STQ1]VCRLIN(nolign-1),[M:STQ1]CRDSEQ(nolign-1))
+        LOK = 1
+        Call AVERTIR(mess(65,196,1),LB2OK) From GESECRAN
+        If LB2OK=2
+            [M:STQ1]CRDSEQ(nolign-1) = 0
+        Else
+            GCONSULT=1
+        Endif
+    Endif
+Endif
+GOK = 1
+Return
+
+$BB2_NBLIG
+#-----------------------------#
+# Après bouton2 Fiche qualité #
+#-----------------------------#
+Local Integer J, LLIGW, SVGOK
+SVGOK=GOK
+#--- En retour de l'action SAIQLYCRD, il faut mettre à jour le lien
+#--- avec les lignes de document QC
+Raz GCONSULT
+If [M:STQ1]CRDSEQ(nolign-1) = 0          # Lors d'une nouvelle fiche on a cliqué sur "Fin"
+    [M:STQ1]CRDSEQ(nolign-1) = LB2SEQ    # On remet donc le n° de séquence précédent
+    Return
+Endif
+If !clalev([QLC]) : Local File QLYCRD    [QLC]  : Endif
+If !clalev([QLA]) : Local File QLYCRDASW [QLA]  : Endif
+If !clalev([QLA1]): Local File QLYCRDASW [QLA1] : Endif
+Call DEBTRANS From GLOCK
+GOK=1
+Trbegin [QLD],[QLA1]
+
+    If  dim([M:STQ1]SERNUMDEP(nolign-1))>0 & [M:STQ1]SERNUMDEP(nolign-1)<>""
+        Read [QLD]QLD0 = [M:STQ1]VCRTYP;[M:STQ1]VCRNUM;[M:STQ1]VCRLIN(nolign-1)
+        Filter [QLD] Where VCRTYP = [M:STQ1]VCRTYP
+&                                & VCRNUM = [M:STQ1]VCRNUM
+&                                & SERNUM >= [M:STQ1]SERNUMDEP(nolign-1)
+&                                & SERNUM <= [M:STQ1]SERNUMFDEP(nolign-1)
+&                                & len(SERNUM) = len([M:STQ1]SERNUMDEP(nolign-1))
+        For [QLD]
+            For  [QLA]QLA0 Where QLYCTLDEM=[F:QLD]VCRNUM & VCRLIN=[M:STQ1]VCRLIN(nolign-1) & CRDSEQ=[M:STQ1]CRDSEQ(nolign-1)
+              Look [QLA1]QLA0=[M:STQ1]VCRNUM;[F:QLD]VCRLIN;[F:QLA]CRDSEQ;[F:QLA]QSTNUM
+              If fstat
+                [F:QLA1]      =[F:QLA]
+                [F:QLA1]VCRLIN=[F:QLD]VCRLIN
+                # hcb 65694
+                GPOINT = "PEWRIQLA1"
+                Gosub  ENTREE From EXEFNC
+                Write [QLA1]
+                If fstat GOK=0 : Call FSTA("QLA1") From GLOCK : Goto FIN_B2NBLIG : Endif
+              Else
+                [F:QLA1]      =[F:QLA]
+                [F:QLA1]VCRLIN=[F:QLD]VCRLIN
+                # hcb 65694
+                GPOINT = "PEREWQLA1"
+                Gosub  ENTREE From EXEFNC
+                Rewrite [QLA1]
+                If fstat GOK=0 : Call FSTA("QLA1") From GLOCK : Goto FIN_B2NBLIG : Endif
+              Endif
+            Next
+        Next
+        Filter [QLD]
+    Else
+        Read [QLD]QLD0 = [M:STQ1]VCRTYP;[M:STQ1]VCRNUM;[M:STQ1]VCRLIN(nolign-1)
+    Endif
+    # Issue X3-181606 - 2020-05-28 by MAE : en cas de controle qualité partiel, la fiche qualité n'est pas suivie
+    #--- Issue X3-235111 by TS
+    #If [M:STQ1]QTYSTU(nolign-1)= [M:STQ1]QTYSTUDES(nolign-1) & [M:STQ1]QTYSTUDES(nolign-1)<>0
+    If ([M:STQ1]QTYSTU(nolign-1)=[M:STQ1]QTYSTUDES(nolign-1) & [M:STQ1]QTYSTUDES(nolign-1)<>0)
+&      | [M:STQ1]QTYSTUDES(nolign-1)=0
+    #--- End issue X3-235111
+      #-- Il faut tester QSTNUM car il peut être vide (pour les textes)
+      For [QLC] Where QLYCRD = [M:STQ1]QLYCRD(nolign-1) & QSTNUM<>""
+        Look [QLA]QLA0=[M:STQ1]VCRNUM;[M:STQ1]VCRLIN(nolign-1);[M:STQ1]CRDSEQ(nolign-1);[F:QLC]QSTNUM
+        If fstat
+          [M:STQ1]CRDFLG(nolign-1) = 1    # La fiche qualité n'est pas complète
+          Break
+        Endif
+      Next
+    Endif # End issue X3-181606
+    #------ Mise à jour du fichier STOQLYD si :
+    #------  * L'enregistrement de la fiche s'est bien passé et que le n° de séquence a changé
+    #------  * ou la fiche est devenue incomplète
+    #------  * ou la fiche est devenue complète
+    If (SVGOK  & LB2SEQ <> [M:STQ1]CRDSEQ(nolign-1))
+&    | (!fstat & [M:STQ1]CRDFLG(nolign-1)<>2)
+&    | (fstat  & [F:QLD]CRDFLG=2)
+        If !fstat
+          [M:STQ1]CRDFLG(nolign-1)=2
+        Endif
+        Gosub MAJ_CRDQLD From SUBSTQB
+    Endif
+$FIN_B2NBLIG
+If GOK
+  Commit
+Else
+  Rollback
+Endif
+#--- Raffraichissement de l'indicateur de saise
+Call MAJSAICOD(nolign-1) From SUBSTQB
+#-- Raffraichissement des boutons possibles
+mkstat=99
+Return
+
+$BB4_NBLIG
+#-- Positionner mkstat si la copie mis quelque chose dans le masque de travail
+Local Integer J
+Raz J
+J=sigma(0,[M:STQ1]NBLIG-1,1*(find([M:STQ1]WSTOSEQ(indcum),[M:SGW]WSTOSEQ(0..[M:SGW]NBLIG-1))))
+If J<>0
+  mkstat=4
+Endif
+Return
+
+Subprog AS_QTYSTUDES(VALEUR)
+#--------------------------------------#
+# Avant saisie quantité destination US #
+#--------------------------------------#
+Variable Decimal VALEUR
+    If [M:STQ1]WSTJQTY(nolign-1)>0
+        mkstat=2
+    Endif
+End
+
+Subprog AM_QTYSTUDES(VALEUR)
+#-------------------------------------------#
+# Après modif quantité en US de destination #
+#-------------------------------------------#
+Variable Decimal VALEUR
+
+Local Char    WWRH(GLONWRH)
+Local Decimal WQTYARR
+Gosub SET_NOL
+
+If VALEUR>[M:STQ1]QTYSTU(nolign-1)
+    mkstat=2
+    GMESSAGE = mess(70,194,1)
+    End
+Endif
+If [M:STQ1]COEDES(nolign-1)<>0
+    [M:STQ1]QTYPCUDES(nolign-1) = VALEUR / [M:STQ1]COEDES(nolign-1)
+Else
+    [M:STQ1]QTYPCUDES(nolign-1) = 0
+Endif
+Call CALCSAIZON( VALEUR<>0, "QTYSTUDES") From SUBSCSB
+#--- Contrôle cohérence Qté US, UC et coeff UC/US
+If [M:STQ1]PCUDES(NOL)<>[M:STQ1]STU
+   Call CTRQTYPCU([M:STQ1]PCUDES(NOL),[M:STQ1]COEDES(NOL),VALEUR,WQTYARR) From STKLIB
+   If WQTYARR<>VALEUR
+      Call MESSAGE(mess(160,184,1)-"("+[M:STQ1]PCUDES(NOL)+")\"+mess(161,184,1)-":"-num$(WQTYARR)) From GESECRAN
+   Endif
+Endif
+If [M:STQ1]STADES(nolign-1) = ""                           # hcb 28511
+   [M:STQ1]STADES(nolign-1) =      [M:STQ1]DEFSTA          # hcb 28511
+Endif                                                      # hcb 28511
+
+If [M:STQ1]STADES(nolign-1)<>""
+  Call CALCSAIZON( [M:STQ1]STADES(NOL)<>"", "STADES") From SUBSCSB
+  If [F:ITF]ITMREF<>[M:STQ1]ITMREF | [F:ITF]STOFCY<>[M:STQ1]STOFCY
+    Read [ITF]ITF0 = [M:STQ1]ITMREF; [M:STQ1]STOFCY
+    If fstat : Raz [F:ITF] : Endif
+  Endif
+  If [F:ITF]LOCMGTCOD=2
+    If dim([M:STQ1]WRH) > 0
+      WWRH=[M:STQ1]WRH(NOL)
+    Else
+      WWRH=""
+    Endif
+
+    Call STKCTRTLO([M:STQ1]WLOCSEQ(NOL),[M:STQ1]TRSTYP,[M:STQ1]TRSCOD,[M:STQ1]STOFCY,[M:STQ1]ITMREF
+&                 ,[M:STQ1]PCUDES(NOL),[M:STQ1]QTYPCUDES(NOL),[M:STQ1]STADES(NOL)
+&                 ,0,[M:STQ1]LOCTYP(NOL),mkstat,"QU","",WWRH) From STKLOC
+    If mkstat
+      Raz mkstat : Raz GMESSAGE
+    Else
+      [M:STQ1]LOCTYPDES(NOL)=[M:STQ1]LOCTYP(NOL)
+      If [M:STQ1]LOC(NOL)<>""
+        Call STKCTREMP([M:STQ1]WLOCSEQ(NOL),[M:STQ1]TRSTYP,[M:STQ1]TRSCOD,[M:STQ1]STOFCY
+&                     ,[M:STQ1]ITMREF,[M:STQ1]PCUDES(NOL),[M:STQ1]QTYPCUDES(NOL),[M:STQ1]STADES(NOL)
+&                     ,[M:STQ1]LOCTYPDES(NOL),[M:STQ1]LOC(NOL),"",0,mkstat,GBIDD1,"QU",""
+&                     ,WWRH) From STKLOC
+        If !mkstat
+          [M:STQ1]LOCDES(NOL)=[M:STQ1]LOC(NOL)
+          If dim([M:STQ1]WRHDES) > 0
+            [M:STQ1]WRHDES(NOL)=[M:STQ1]WRH(NOL)
+          Endif
+          If dim([M:STQ1]LPNNUMDES) > 0                             # hcb X3-77043
+            [M:STQ1]LPNNUMDES(NOL)=[M:STQ1]LPNNUM(NOL)              # hcb X3-77043
+          Endif                                                     # hcb X3-77043
+        Else
+          Raz [M:STQ1]LOCTYPDES(NOL),LOCDES(NOL)
+          If dim([M:STQ1]WRHDES) > 0
+             Raz [M:STQ1]WRHDES(NOL)
+          Endif
+          If dim([M:STQ1]LPNNUMDES) > 0                             # hcb X3-77043
+             Raz [M:STQ1]LPNNUMDES(NOL)                             # hcb X3-77043
+          Endif                                                     # hcb X3-77043
+          Raz mkstat
+        Endif
+      Endif
+    Endif
+  Endif
+Endif
+
+End
+
+Subprog C_PCUDES(VALEUR)
+#---------------------------------#
+# Contrôle unité de destinatation #
+#---------------------------------#
+Variable Char    VALEUR()
+Gosub SET_NOL
+Call CALCSAIZON( VALEUR<>"", "PCUDES") From SUBSCSB
+End
+
+Subprog AM_PCUDES(VALEUR)
+#-------------------------------------------#
+# Après modif unité de destination          #
+#-------------------------------------------#
+Variable Char    VALEUR()
+Local Char    LUSCAV
+Local Char    LFMT
+Local Integer LMODIF
+Local Decimal LCOE
+Local Decimal WQTYARR
+Gosub SET_NOL
+
+If VALEUR<>""
+    Call CTLUOM([M:STQ1]ITMREF,3,"", VALEUR,LCOE, LUSCAV, LFMT, LMODIF) From STKACT
+    If LUSCAV <> "S"
+        If LUSCAV <> "C"
+            mkstat = 2
+            End
+        Endif
+    Endif
+    If LMODIF=2
+        Actzo [M:STQ1]COEDES(NOL)
+    Else
+        Diszo [M:STQ1]COEDES(NOL)
+    Endif
+Endif
+[M:STQ1]COEDES(NOL) = LCOE
+If LCOE<>0
+    [M:STQ1]QTYPCUDES(NOL) = [M:STQ1]QTYSTUDES(NOL) / [M:STQ1]COEDES(NOL)
+    Call QTEARR([M:STQ1]QTYPCUDES(NOL),VALEUR) From TRTDIV
+Else
+    [M:STQ1]QTYPCUDES(NOL) = 0
+Endif
+Affzo [M:STQ1]COEDES(NOL),QTYPCUDES(NOL)
+
+#--- Contrôle cohérence Qté US, UC et coeff UC/US
+If VALEUR<>[M:STQ1]STU
+   Call CTRQTYPCU(VALEUR,[M:STQ1]COEDES(NOL),[M:STQ1]QTYSTUDES(NOL),WQTYARR) From STKLIB
+   If WQTYARR<>[M:STQ1]QTYSTUDES(NOL)
+      Call MESSAGE(mess(160,184,1)-"("+VALEUR+")\"+mess(161,184,1)-":"-num$(WQTYARR)) From GESECRAN
+   Endif
+Endif
+
+End
+
+Subprog C_COEDES(VALEUR)
+#-------------------------------#
+# Controle du coeff destination #
+#-------------------------------#
+Variable Decimal VALEUR
+    Gosub SET_NOL
+    If VALEUR>0
+        [M:STQ1]QTYPCUDES(NOL) = [M:STQ1]QTYSTUDES(NOL) / VALEUR
+    Else
+        [M:STQ1]QTYPCUDES(NOL) = 0
+    Endif
+    Affzo QTYPCUDES(NOL)
+
+    Call CALCSAIZON( VALEUR<>0, "COEDES") From SUBSCSB
+End
+
+Subprog AM_COEDES(VALEUR)
+#-------------------------------------------#
+# Après modif coefficient destination       #
+#-------------------------------------------#
+Variable Decimal VALEUR
+
+Local    Decimal WQTYARR
+Gosub SET_NOL
+
+#--- Contrôle cohérence Qté US, UC et coeff UC/US
+If [M:STQ1]PCUDES(NOL)<>[M:STQ1]STU
+   Call CTRQTYPCU([M:STQ1]PCUDES(NOL),VALEUR,[M:STQ1]QTYSTUDES(NOL),WQTYARR) From STKLIB
+   If WQTYARR<>[M:STQ1]QTYSTUDES(NOL)
+      Call MESSAGE(mess(160,184,1)-"("+[M:STQ1]PCUDES(NOL)+")\"+mess(161,184,1)-":"-num$(WQTYARR)) From GESECRAN
+   Endif
+Endif
+
+End
+
+Subprog AM_STADES(VALEUR)
+#--------------------------------#
+# Après modif statut destination #
+#--------------------------------#
+Variable Char    VALEUR()
+Local Shortint NOL : NOL=nolign-1
+Local Char     WWRH(GLONWRH)
+Call CALCSAIZON( VALEUR<>"", "STADES") From SUBSCSB
+#-- Si article géré en emplacement , on essaie
+#-- d'initialiser avec l'emplacement d'origine, on fait les contrôles
+#-- Si contrôle non ok on raz
+If [F:ITF]ITMREF<>[M:STQ1]ITMREF | [F:ITF]STOFCY<>[M:STQ1]STOFCY
+  Read [ITF]ITF0 = [M:STQ1]ITMREF; [M:STQ1]STOFCY
+  If fstat : Raz [F:ITF] : Endif
+Endif
+If [F:ITF]LOCMGTCOD=2
+  If dim([M:STQ1]WRH) > 0
+    WWRH=[M:STQ1]WRH(NOL)
+  Else
+    WWRH=""
+  Endif
+
+  Call STKCTRTLO([M:STQ1]WLOCSEQ(NOL),[M:STQ1]TRSTYP,[M:STQ1]TRSCOD,[M:STQ1]STOFCY,[M:STQ1]ITMREF
+&               ,[M:STQ1]PCUDES(NOL),[M:STQ1]QTYPCUDES(NOL),VALEUR
+&               ,0,[M:STQ1]LOCTYP(NOL),mkstat,"QU","",WWRH) From STKLOC
+  If mkstat
+    If GTRSCHGEMP<>2
+      GMESSAGE =VALEUR-":"-mess(213,184,1)-[M:STQ1]LOCTYP(NOL)-[M:STQ1]LOC(NOL)
+#      GMESSAGE+="\"+mess(214,184,1)
+    Else
+      Raz mkstat : Raz GMESSAGE
+    Endif
+  Else
+    [M:STQ1]LOCTYPDES(NOL)=[M:STQ1]LOCTYP(NOL)
+    If [M:STQ1]LOC(NOL)<>""
+      Call STKCTREMP([M:STQ1]WLOCSEQ(NOL),[M:STQ1]TRSTYP,[M:STQ1]TRSCOD,[M:STQ1]STOFCY
+&                   ,[M:STQ1]ITMREF,[M:STQ1]PCUDES(NOL),[M:STQ1]QTYPCUDES(NOL),VALEUR
+&                   ,[M:STQ1]LOCTYPDES(NOL),[M:STQ1]LOC(NOL),"",0,mkstat,GBIDD1,"QU",""
+&                   ,WWRH) From STKLOC
+      If !mkstat
+        [M:STQ1]LOCDES(NOL)=[M:STQ1]LOC(NOL)
+        If dim([M:STQ1]WRHDES) > 0
+           [M:STQ1]WRHDES(NOL)=[M:STQ1]WRH(NOL)
+        Endif
+        If dim([M:STQ1]LPNNUMDES) > 0                             # hcb X3-77043
+           [M:STQ1]LPNNUMDES(NOL)=[M:STQ1]LPNNUM(NOL)              # hcb X3-77043
+        Endif                                                     # hcb X3-77043
+      Else
+        If GTRSCHGEMP<>2
+          GMESSAGE =VALEUR-":"-mess(213,184,1)-[M:STQ1]LOCTYP(NOL)-[M:STQ1]LOC(NOL)
+#          GMESSAGE+="\"+mess(214,184,1)
+        Else
+          Raz [M:STQ1]LOCTYPDES(NOL),LOCDES(NOL)
+          If dim([M:STQ1]WRHDES) > 0
+             Raz [M:STQ1]WRHDES(NOL)
+          Endif
+          If dim([M:STQ1]LPNNUMDES) > 0                             # hcb X3-77043
+             Raz [M:STQ1]LPNNUMDES(NOL)                             # hcb X3-77043
+          Endif                                                     # hcb X3-77043
+          Raz mkstat
+        Endif
+      Endif
+    Endif
+  Endif
+Endif
+End
+
+Subprog AM_LOCTYPDES(VALEUR)
+#------------------------------------#
+# Après modif de type emp detination #
+#------------------------------------#
+Variable Char    VALEUR()
+Call CALCSAIZON( VALEUR<>"", "LOCTYPDES") From SUBSCSB
+Local Integer LRET                                                      # hcb 54892
+Raz [M:STQ1]LOCDES(nolign-1)
+Call STKDELRES([M:STQ1]WLOCSEQ(nolign-1), "", "", LRET) From STKLOC
+
+End
+
+Subprog C_SERNUM(VALEUR)
+#-----------------------#
+# Contrôle numéro serie #
+#-----------------------#
+Variable Char    VALEUR()
+Local Integer I, LRET
+    If !( len(VALEUR)=len([M:STQ1]SERNUMDEP(nolign-1))
+&       & [M:STQ1]SERNUMDEP(nolign-1) <= VALEUR
+&       & [M:STQ1]SERNUMFDEP(nolign-1) >= VALEUR )
+        mkstat = 2
+        GMESSAGE = mess(131,196,1)
+        End
+    Endif
+    [M:STQ1]SERNUMF(nolign-1) = VALEUR
+    For I=2 To [M:STQ1]QTYSTUDES(nolign-1)
+        Call PLUS_UN([M:STQ1]SERNUMF(nolign-1), [M:STQ1]SERNUMF(nolign-1), LRET) From STKLIB
+        If LRET | [M:STQ1]SERNUMF(nolign-1)>[M:STQ1]SERNUMFDEP(nolign-1)
+            mkstat = 2
+            Break
+        Endif
+    Next
+    If mkstat
+        End
+    Endif
+    Affzo [M:STQ1]SERNUMF(nolign-1)
+End
+
+Subprog B3_NBLIG
+If [M:STQ1]UPDFLG(nolign-1)<>0
+    #-- Mise à jour des zones concernant la péremption
+    If dim([M:STQ1]REFPER)>0
+       Affzo [M]REFPER(nolign-1)
+    Endif
+    If dim([M:STQ1]SHL)>0
+       Affzo [M]SHL(nolign-1)
+    Endif
+    If dim([M:STQ1]SHLDAT)>0
+       Affzo [M]SHLDAT(nolign-1)
+    Endif
+Endif
+End
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran STQ1) 25/01/2008 14:06:53 (HCB)
+######################################################################################
+Subprog IB_QLYCRD
+
+If [M:STQ1]NBLIG >  1
+# MAJ colonne
+   GBOUT1 = mess(01,108,1)
+Else
+   Raz GBOUT1
+Endif
+
+If [M:STQ1]SAICOD(nolign-1) <> "F"  |  [M:STQ1]WSTJQTY(nolign-1) <>0
+   Raz GBOUT1
+Endif
+
+End
+
+Subprog B1_QLYCRD(VALEUR)
+Variable Char    VALEUR()
+Local Integer NOL
+Local Integer NOL1
+Local Integer I
+Local Integer WOK
+Local Char    WQLYCRD(GLONQLC)  : #--- Issue X3-171924
+NOL1 = nolign
+
+Call OUINON(mess(305,184,1),WOK) From GESECRAN
+If WOK <> 2
+   mkstat = 2
+Else
+
+   For I = NOL1 To [M:STQ1]NBLIG-1
+       If [M:STQ1]WSTJQTY(I) = 0 & [M:STQ1]QLYCRD(I) <> [M:STQ1]QLYCRD(nolign-1)
+          Filter [QLA] Where QLYCTLDEM = [M:STQ1]VCRNUM
+&                          & VCRLIN    = [M:STQ1]VCRLIN(I)
+&                          & QLYCRD    = [M:STQ1]QLYCRD(I)
+          Look [QLA]QLA0 First
+          Filter [QLA]
+          If !fstat
+             WOK=1
+             Call OUINON(mess(17,109,1)-" : "-num$(I)-" "-mess(894,196,1)-"/"-mess(641,196,1),WOK) From GESECRAN
+             If WOK <> 2
+                mkstat = 2
+                End
+             Endif
+          Endif
+          NOL     = I
+          WQLYCRD = [M:STQ1]QLYCRD(nolign-1)
+          Gosub NEW_QLYCRD From SUBSTQB
+       Endif
+   Next
+Endif
+End
+
+Subprog AS_QLYCRD(VALEUR)
+#-------------------------------#
+# Avant saisie  fiche technique #
+#-------------------------------#
+Variable Char    VALEUR()
+
+If [M:STQ1]WSTJQTY(nolign-1) <>0
+    mkstat=2
+    End
+Endif
+End
+
+Subprog AM_QLYCRD(VALEUR)
+Variable Char    VALEUR()
+Local Integer WOK
+Local Integer NOL
+Local Char    WQLYCRD(GLONQLC)  : #--- Issue X3-171924
+Local Integer OK
+NOL     = nolign-1
+If VALEUR <> [M:STQ1]QLYCRD(nolign-1)
+   Call OUINON(mess(304,184,1),WOK) From GESECRAN
+   If WOK <> 2
+      mkstat = 2
+      End
+   Else
+      Filter [QLA] Where QLYCTLDEM = [M:STQ1]VCRNUM
+&                      & VCRLIN    = [M:STQ1]VCRLIN(NOL)
+&                      & QLYCRD    = [M:STQ1]QLYCRD(NOL)
+      Look [QLA]QLA0 First
+      Filter [QLA]
+      If !fstat
+         WOK=1
+         Call OUINON(mess(17,109,1)-" : "-num$(nolign)-" "-mess(894,196,1)-"/"-mess(641,196,1),WOK) From GESECRAN
+         If WOK <> 2
+            mkstat = 2
+            End
+         Endif
+      Endif
+      NOL     = nolign-1
+      WQLYCRD = VALEUR
+      Gosub NEW_QLYCRD From SUBSTQB
+   Endif
+Endif
+
+End
+
+Subprog C_QLYCRD(VALEUR)
+Variable Char    VALEUR()
+If clalev([F:QLC]) = 0 : Local File QLYCRD [QLC] : Endif
+If VALEUR <> "" & VALEUR <> [M]QLYCRD
+   Read [QLC]QLC0=VALEUR
+   If fstat
+      GMESSAGE=mess(23,100,1)
+      mkstat=2
+   Endif
+Endif
+End
+
+$AB6_NBLIG
+# historique fiche qualite
+If dim(GCONSSHQ) < 1
+   Global Integer GCONSSHQ
+Endif
+GCONSSHQ = 1
+Return
+
+$AB7_NBLIG
+# historique qualite
+If dim(GCONSSHQ) < 1
+   Global Integer GCONSSHQ
+Endif
+GCONSSHQ = 2
+Return
+$BB6_NBLIG
+# historique fiche qualite
+If dim(GCONSSHQ) > 0
+   Raz GCONSSHQ
+Endif
+
+Return
+$AB8_NBLIG
+Global Integer GSAV_GCONSULT
+GSAV_GCONSULT = GCONSULT
+GCONSULT = 2
+Return
+$BB8_NBLIG
+GCONSULT = GSAV_GCONSULT
+
+Return
+
+Subprog AS_WRHDES(VALEUR)
+Variable Char    VALEUR()
+If [M:STQ1]WSTJQTY(nolign-1)>0
+    mkstat=2
+    End
+Endif
+
+If [M:STQ1]QTYSTUDES(nolign-1) = 0
+    mkstat = 2
+    End
+Endif
+End
+
+Subprog C_WRHDES(VALEUR)
+Variable Char    VALEUR()
+If VALEUR<>""
+  Read [ITW]ITW0=[M]ITMREF;VALEUR
+  If fstat
+     GMESSAGE=[M]ITMREF-":"-mess(343,184,1) : mkstat=2
+  Endif
+Endif
+End
+
+#--- Bug 60513
+Subprog AM_WRHDES(VALEUR)
+Variable Char    VALEUR()
+If [M:STQ1]WRHDES(nolign-1)<>""
+   Raz [M:STQ1]LOCDES(nolign-1)
+Endif
+End
+
+#                                                                 # hcb 110327 deb
+Subprog B9_NBLIG
+GOUVCHGS = 2
+If [M:STQ1]WSTJQTY(nolign-1)>0 | [M:STQ1]VALFLG = 2 | GCONSULT
+   GOUVCHGS = 9
+Endif
+
+End
+
+Subprog APRES_NBLIG
+Local Integer LRET
+Local Integer LSEQIND
+If [F:ITM]SERMGTCOD = 4
+   Call WSTOSEQIND ("",nolign-1+1, LSEQIND, LRET) From SUBSCSB
+   If LRET
+      End
+   Endif
+   [M:STQ1]WSTOSEQIND(nolign-1) = LSEQIND
+Endif
+
+#                                                                 # hcb 110327 end
+
+End
+#                                                                                         # hcb X3-77043 deb
+
+Subprog C_LPNNUMDES(VALEUR)
+Variable Char    VALEUR()
+#If  [M:STQ1]LPNNUM(nolign-1) <> "" & VALEUR = ""
+#    GMESSAGE=mess(513,184,1)
+#    mkstat=2
+#Endif
+End
+
+Subprog C_LOCTYPDES(VALEUR)
+Variable Char    VALEUR()
+
+If [F:ITF]LPNMGTCOD = 2 &  dim([M:STQ1]LPNNUMDES) > 0 & [M:STQ1]LPNNUMDES(nolign-1) <> ""
+   If find([F:TLO]LOCCAT,3,4)
+      GMESSAGE = mess(241,184,1)  # Emplacement non autorise
+      mkstat = 2
+      End
+   Endif
+Endif
+
+End
+
+Subprog C_LOCDES(VALEUR)
+Variable Char    VALEUR()
+If [F:ITF]LPNMGTCOD = 2 & dim([M:STQ1]LPNNUMDES) > 0 & [M:STQ1]LPNNUMDES(nolign-1) <> ""
+   If find([F:STC]LOCCAT,3,4)
+      GMESSAGE = mess(241,184,1)  # Emplacement non autorise
+      mkstat = 2
+      End
+   Endif
+Endif
+End
+#                                                                                         # hcb X3-77043 fin
