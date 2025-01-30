@@ -1,0 +1,198 @@
+#<AdxTL>@(#)0.0.0.0 $Revision$ 
+# OPR 30/01/25 : essai de correction à la demande de ACH
+# RDE le 02/05/23 : Pré validation des BAP
+
+$ACTION
+  Case ACTION
+    When "OUVRE" : Gosub OUVRE
+    When "FILGAUCHE" : Gosub FILGAUCHE
+    When "DEBUT" : Gosub DEBUT
+    When "GAU" : Gosub GAU
+    When "FIN" : Gosub FIN
+    When "BOUTON" : Gosub BOUTON
+  Endcase
+Return
+
+######################################################################
+$OUVRE
+# DEMANDE MOT DE PASSE
+          Local Char XPARAM(50)(1..10)
+          Local Char XVAL(10)
+          Local Char SAVACT(10)
+          SAVACT=GACTION : GACTION="X4CHKPWD"
+          XPARAM(1)=""
+          Call SAISIE_CHAR(XVAL, XPARAM, "X4CHKPWD", "X4CHKPWD", "XWX4CHKPWD") From GSAISIE
+          GACTION=SAVACT
+If mkstat : FIN = 1 : Return : Endif
+Local File BPSUPPLIER [YBPS]
+
+Return
+######################################################################
+$FIN
+If clalev ([F:YBPS]) <> 0 Then
+Close Local File [F:YBPS]
+Raz GCLBURL
+Endif
+
+Return
+######################################################################
+$FILGAUCHE
+  CRITERE = "[F:POH]CLEFLG<2 & [F:POH]YPREVAL <> 2 & [F:POH]YVAL <> 2 & [F:POH]PRNFLG=2 & [F:POH]ZPREVALAUS='"+GACTX.USER+"'"
+Return
+
+######################################################################
+$DEBUT
+Raz [M:YPVB0]
+Return
+
+######################################################################
+$GAU
+
+Raz [M:YPVB0]
+[M:YPVB0] = [F:POH]
+
+Read [F:YBPS]BPS0=[F:POH]BPSNUM
+[M:YPVB0]BPRNAM = [F:YBPS]BPSNAM
+
+# SSW le 17/10/19 : ADEQUATION V12 : bloc browser pour affichage du PDF
+#GCLBURL=[V]GYBONCDEPDF+"\"+[F:POH]POHNUM+".pdf"
+GCLBURL=""
+GCLBURL=func PREVIEW_ARCHIVE_DOC([F:POH]POHNUM)
+Call INITURL([M:YPVB0]URL,"ARCVISU","","") From INTRUTILA
+
+If (dim([M:YPVB0]ZPREVALAUS)>=0) and ([M:YPVB0]ZPREVALAUS<>'') Then
+    If !clalev([F:ZAXX]) : Local File ATEXTRA[ZAXX] : Endif
+    Read [F:ZAXX]AXX0="AUTILIS";"INTUSR";GLANGUE;[M:YPVB0]ZPREVALAUS;""
+    If fstat=0 Then
+        [M:YPVB0]ZINTUSR=[F:ZAXX]TEXTE
+        Affzo [M:YPVB0]ZINTUSR
+    Endif
+Endif
+
+
+Affzo [M:YPVB0]
+
+Return
+
+######################################################################
+$BOUTON
+  Case BOUT
+    When "E" : Gosub E
+    When "A" : Gosub A
+    When "R" : Gosub R
+  Endcase
+Return
+
+    #########
+    $E
+If [M:YPVB0]POHNUM <> "" Then
+    Trbegin[F:POH]
+    Read [F:POH]POH0=[M:YPVB0]POHNUM
+
+    [F:POH]YPREVAL = [M:YPVB0]YPREVAL
+    [F:POH]ZPREVALAUSF = [V]GUSER
+
+    Rewrite[F:POH]
+    If fstat<>0 Then
+      Call ERREUR("Erreur lors l'écriture dans la table PORDER") From GESECRAN
+      Rollback
+    Else
+      Commit
+      CRITERE = "[F:POH]CLEFLG<2 & [F:POH]YPREVAL <> 2 & [F:POH]YVAL <> 2 & [F:POH]PRNFLG=2 & [F:POH]ZPREVALAUS='"+GACTX.USER+"'"
+      Gosub $REMPLIT_1 From WGYPVALBAP
+      Effzo [M:YPVB0]
+    Endif
+Endif
+
+    Return
+
+    #########
+    $A
+
+    Raz [M:YPVB0]
+    [M:YPVB0] = [F:POH]
+
+    Read [F:YBPS]BPS0=[F:POH]BPSNUM
+    [M:YPVB0]BPRNAM = [F:YBPS]BPSNAM
+
+    GCLBURL=""
+    GCLBURL=func PREVIEW_ARCHIVE_DOC([F:POH]POHNUM)
+    Call INITURL([M:YPVB0]URL,"ARCVISU","","") From INTRUTILA
+
+If (dim([M:YPVB0]ZPREVALAUS)>=0) and ([M:YPVB0]ZPREVALAUS<>'') Then
+    If !clalev([F:ZAXX]) : Local File ATEXTRA[ZAXX] : Endif
+    Read [F:ZAXX]AXX0="AUTILIS";"INTUSR";GLANGUE;[M:YPVB0]ZPREVALAUS;""
+    If fstat=0 Then
+        [M:YPVB0]ZINTUSR=[F:ZAXX]TEXTE
+        Affzo [M:YPVB0]ZINTUSR
+    Endif
+Endif
+
+    CRITERE = "[F:POH]CLEFLG<2 & [F:POH]YPREVAL <> 2 & [F:POH]YVAL <> 2 & [F:POH]PRNFLG=2 & [F:POH]ZPREVALAUS='"+GACTX.USER+"'"
+    Affzo [M:YPVB0]
+
+    Return
+
+    #########
+    $R
+
+      CRITERE = "[F:POH]CLEFLG<2 & [F:POH]YPREVAL <> 2 & [F:POH]YVAL <> 2 & [F:POH]PRNFLG=2 & [F:POH]ZPREVALAUS='"+GACTX.USER+"'"
+      Gosub $REMPLIT_1 From WGYPVALBAP
+      Raz [M:YPVB0]YPREVAL
+      Affzo [M:YPVB0]
+	  # OPR 30/01/25 : essai de correction à la demande de ACH
+	  gosub $GAU
+	  affzo [M:YPVB0]URL
+	  # fin OPR 30/01/25
+    Return
+
+#####################################################
+# SSW le 17/10/19 : ADEQUATION V12 : bloc browser pour affichage du PDF
+#####################################################
+Funprog PREVIEW_ARCHIVE_DOC(XNUMREQ)
+Value Char XNUMREQ
+
+Local Char URL(250)
+Local Char MACHINE(50)
+Local Char SOLUTION(20)
+Local Char NOMFICORI(250), NOMFICDEST(250)
+Local Char REPORI(250), REPDEST(250)
+Local Integer STAT
+
+MACHINE =adxmac(0)
+If MACHINE="" : MACHINE=adxmac(-1) : Endif
+# pour le test
+#MACHINE="10.252.8.30"
+MACHINE=tolower(MACHINE)
+SOLUTION=GACTX.ASOLUTION
+
+NOMFICDEST=XNUMREQ+"_"+num$(adxuid(1))+".pdf"
+REPDEST=filpath("!","","","","A",adxmac(0))+"\X3_PUB\"+nomap+"\TMP\"
+NOMFICORI=XNUMREQ+".pdf"
+#REPORI=filpath("","","","","",adxmac(0))+'\EXPORT\YBONCDEPDF\'
+If right$([V]GYBONCDEPDF,len([V]GYBONCDEPDF))="\"
+  REPORI=[V]GYBONCDEPDF
+Else
+  REPORI=[V]GYBONCDEPDF+"\"
+Endif
+
+If filinfo(REPDEST+NOMFICDEST,7)>0
+  Call EFFACE(REPDEST+NOMFICDEST,STAT) From ORDSYS
+If GUSER = 'ADMIN' : Call MESSAGE ("Efface :"-num$(STAT)) From GESECRAN : Endif
+Endif
+If XNUMREQ<>""
+  If filinfo(REPORI+NOMFICORI,7)>0
+    Call COPIE(REPORI+NOMFICORI,REPDEST+NOMFICDEST,STAT) From ORDSYS
+    If STAT=0
+      URL="http://"+MACHINE+"/Adonix_"+SOLUTION+"/"+nomap+"/TMP/"+NOMFICDEST
+	  # OPR 30/01/25 : essai de correction à la demande de ACH
+	  if guser='ADMIN' : infbox 'URL'-URL : endif
+    Else
+      URL=""
+    Endif
+  Endif
+Else
+  URL=""
+Endif
+
+End URL
