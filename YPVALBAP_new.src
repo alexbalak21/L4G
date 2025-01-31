@@ -1,0 +1,274 @@
+#<AdxTL>@(#)0.0.0.0 $Revision$
+# Superviseur
+# Gestion de la fenêtre YPVALBAP
+
+$HORODAT
+Local Date    A_DATE
+Local Char    A_HEURE(10) , A_USER(10)
+Local Char    A_STAMP(14)
+Local Integer A_RESULT
+A_DATE  = [21/06/2024]
+A_HEURE = "12:15:31"
+A_USER  = "ADMIN"
+Call ISWINVALID(nomap,GLANGUE,"YPVALBAP",0,A_STAMP,A_RESULT,1) From INTRUTILB
+Return
+
+$NAVIGMSK
+Local Char NAVMSK(200)
+NAVMSK="YPVB0;"
+Return
+
+$OUVRE_BOITE
+Gosub INIT_BOITE
+Gosub DEF_BOITE
+Gosub AFF_BOITE
+Return
+
+$INIT_BOITE
+Local Char    OBJLIS(GLONAOB)(0..10), DESLIS(80)(0..10), BOX1(10)
+Local Integer CHGLIS(0..10), BROLIS(0..10), TRELIS(0..10)
+Local Char    SAIRAP(50)(1..16)
+Local Integer DERLU , AFOLDEF
+Local Char    ABRENA(GLONABR)
+DERLU = 0
+AFOLDEF = 1
+ABRENA = ""
+BOX1 = "GAU_CHE1"
+OBJLIS(1) = "YVB"
+CHGLIS(1) = 2
+BROLIS(1) = 2
+TRELIS(1) = 1
+DESLIS(1) = "POHNUM"
+If clalev([M:YPVB0])=0 : Local Mask YPVALBAP [YPVB0] : Endif
+Gosub TIT
+nolign = 1
+If clalev([F:POH])=0 : Local file PORDER [POH] : Endif
+If clalev([F:YBS])=0 : Local file BPSUPPLIER [YBS] : Endif
+Link [POH] With
+& [YBS]BPS0=[F:POH]BPSNUM
+& As [POH_]
+Return
+
+$DEF_BOITE
+Gosub HORODAT From WGYPVALBAP
+If dim(A_WINDPREV)<=0 : Local Char A_WINDPREV(30) : Endif
+Local Inpbox "YPVALBAP" From GFONCTION At A_STAMP With A_WINDPREV Mask [YPVB0]
+&  Listbox [POH_] GAU_CHE1
+&   [L]SAIRAP(1) = [F:POH]POHNUM Using "K:20X" Titled TITSEL1(1) ,
+&   [L]SAIRAP(2) = [F:POH]ORDDAT Using "" Titled TITSEL1(2) ,
+&   [L]SAIRAP(3) = [F:POH]BPSNUM Using "K:15c" Titled TITSEL1(3) ,
+&   [L]SAIRAP(4) = [F:YBS]BPSNAM Using "K:35X" Titled TITSEL1(4)
+& As [YPVB0]
+Titled [YPVB0] TIT
+Return
+
+$VISU_BOITE
+Gosub INIT_BOITE
+Gosub HORODAT From WGYPVALBAP
+If dim(A_WINDPREV)<=0 : Local Char A_WINDPREV(30) : Endif
+Local Inpbox "YPVALBAP" From GFONCTION At A_STAMP With A_WINDPREV Mask [YPVB0]
+& As [YPVB0]
+Titled [YPVB0] TIT
+Gosub AFF_BOITE
+Return
+
+$AFF_BOITE
+Boxact [YPVB0] 
+Return
+
+$SAISIE_BOITE
+Boxinp [YPVB0] Using REPONSE
+Return
+
+$FERME_BOITE
+Onerrgo RIEN
+Close Local Inpbox [YPVB0]
+Onerrgo
+Return
+
+$RIEN
+Resume
+
+$TIT
+Local Char TITLIS1(30)
+Call TEXTE(114339,TITLIS1) From OBJDIV
+Local Char TITSEL1(30)(1..4)
+Call TEXTE(3312,TITSEL1(1)) From OBJDIV
+Call TEXTE(212,TITSEL1(2)) From OBJDIV
+Call TEXTE(3680,TITSEL1(3)) From OBJDIV
+Call TEXTE(1583,TITSEL1(4)) From OBJDIV
+Local Char TIT(60) , TITTRN(60)
+Call TEXTE(116842,TIT) From OBJDIV
+If GPROGRAMME<>""
+ If dim([L]ACTION)<0 : Local Char ACTION(20) : Endif
+ [L]ACTION = "TITRE" : Gosub ACTION From =GPROGRAMME
+Endif
+Return
+
+$REMPLIT_
+Return
+
+$REMPLIT_1
+Gosub SETCLE_1
+If dim(FILTREG)<=0 or FILTREG
+ If CRITERE=""   : CRITERE   = "1=1" : Endif
+ If FILGAUSUP="" : FILGAUSUP = "1=1" : Endif
+ If FILSUITE=""  : FILSUITE  = "1=1" : Endif
+ Filter [POH_] Where evalue(CRITERE) & evalue(FILGAUSUP) & evalue(FILSUITE)
+&       Order With CLELISTE
+Endif
+GPOINT = "AV_FILLBOX" : Gosub ENTREE From EXEFNC
+ACTION = "HINT" : Gosub ACTION From =GPROGRAMME
+If HINTLIS(1)<>'' or NOHLIS(1)<>0
+ Fillbox [YPVB0] GAU_CHE1 Hint Key =HINTLIS(1)
+Else
+ Fillbox [YPVB0] GAU_CHE1
+Endif
+GPOINT = "AP_FILLBOX" : Gosub ENTREE From EXEFNC
+Filter [POH_]
+Return
+
+$SETCLE_1
+Local Char    CLELISTE(250)
+Local Integer INDLIS , SNSLIS , LENLIS, GAUTRELIS
+INDLIS = 1
+SNSLIS = 1
+LENLIS = 1
+GAUTRELIS = 1
+CLELISTE = "POHNUM"
+ACTION = "CLE_GAUCHE" : Gosub ACTION From =GPROGRAMME
+Return
+
+$DEFAUT_BRO
+Case ILIS
+ When 1 : Default file [POH_]
+Endcase
+Return
+
+$SETBOX
+Case currbox
+ When "GAU_CHE1"
+  Gosub SETCLE_1
+  Filter [POH_] Order With CLELISTE
+  Setlbox [YPVB0] GAU_CHE1
+  Filter [POH_]
+Endcase
+Return
+
+$SETORDER
+Case currbox
+ When "GAU_CHE1"
+  Gosub SETCLE_1
+  Filter [POH_] Order With CLELISTE
+Endcase
+Return
+
+$ENDORDER
+Case currbox
+ When "GAU_CHE1"
+  Gosub SETCLE_1
+  Filter [POH_]
+Endcase
+Return
+
+$PICKING
+Return
+
+$DEPICK
+Return
+
+$REPICK
+Return
+
+$SETCUR
+Return
+
+$DEFVAR
+Local Char    ABMSK(GLONABR)(0..15) , NOMMSK(GLONAMK)(0..15)
+Local Integer NBMASK , AMA(0..15) , NBMSKCMP
+NOMMSK(1) = "YPVALBAP"     : ABMSK(1)  = "YPVB0"    : AMA(1) = 1
+NBMASK = 1
+NBMSKCMP = 0
+Return
+
+$SETMASK
+Case MA
+ When 1 : If clalev([M:YPVB0])>0 : Default Mask [YPVB0] : Endif
+Endcase
+Return
+
+$TITMASK
+Case MA
+ When 1 : If clalev([M:YPVB0])>0 : Gosub TITRES From W1YPVALBAP : Endif
+Endcase
+Return
+
+$FERME_MASK
+If clalev([M:YPVB0])>0 : Close Local Mask [YPVB0] : Endif
+Return
+
+$RAZMASK
+Case MA
+ When 1 : If clalev([M:YPVB0])>0 : Raz [M:YPVB0] : Endif
+Endcase
+Return
+
+$AFFMASK
+Case MA
+ When 1 : If clalev([M:YPVB0])>0 : Affzo [M:YPVB0] : Endif
+Endcase
+Return
+
+$OUVMSKCMP
+Return
+
+$FERMSKCMP
+Return
+
+$RAZMSKCMP
+Return
+
+$AFF_ENAFLG
+Return
+
+$CHARGEFIC
+Return
+
+$CHARGEMSK
+Return
+
+$GRISE_CLE
+Return
+
+$DEGRISE_CLE
+Return
+
+$BOUTON
+STDBOUT = ""
+NBTEX  = 0
+NBTEX += 1
+CBOUT(NBTEX) = "E" : LBOUT(NBTEX) = 1101 : Call TEXTE(12413,TEXTE(NBTEX)) From OBJDIV
+NBTEX += 1
+CBOUT(NBTEX) = "A" : LBOUT(NBTEX) = 1102 : Call TEXTE(12409,TEXTE(NBTEX)) From OBJDIV
+NBTEX += 1
+CBOUT(NBTEX) = "R" : LBOUT(NBTEX) = 1803 : Call TEXTE(15488,TEXTE(NBTEX)) From OBJDIV
+Raz NBMEN, CMEN, TMEN, NMEN, LMEN
+Return
+
+$EXEBOUT
+Local Char    SAVACT(GLONACT)
+Local Integer FLGEXE
+SAVACT = GACTION
+Case BOUT
+Endcase
+GACTION = SAVACT
+Return
+
+$EXEACT
+Local Char    SAVACT(GLONACT)
+Local Integer FLGEXE
+SAVACT = GACTION
+Case BOUT
+Endcase
+GACTION = SAVACT
+Return

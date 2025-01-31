@@ -55,6 +55,7 @@ Case ACTION
  When "BB7_NBLIG"    : Gosub BB6_NBLIG    From SUBSTQ
  When "AB8_NBLIG"    : Gosub AB8_NBLIG    From SUBSTQ
  When "BB8_NBLIG"    : Gosub BB8_NBLIG    From SUBSTQ
+ When "INIMOD"       : Gosub MODZDEROG   
  ##Issue X3-276778 06-05-2022 by ogh  : put in comment label AB9_NBLIG
  ##When "AB9_NBLIG"    : Gosub AB9_NBLIG    From SUBSTQ            # hcb 110327
 
@@ -1002,3 +1003,16 @@ If [F:ITF]LPNMGTCOD = 2 & dim([M:STQ1]LPNNUMDES) > 0 & [M:STQ1]LPNNUMDES(nolign-
 Endif
 End
 #                                                                                         # hcb X3-77043 fin
+
+
+#BKV - TEST
+$MODZDEROG
+If GUSER <> "ABAL" : Return : Endif
+Read [QLD]QLD0 = [M:STQ1]VCRTYP;[M:STQ1]VCRNUM;[M:STQ1]VCRLIN(nolign-1)
+If !fstat
+  [QLD]ZDEROG = [M:STQ1]ZDEROG
+  Rewrite [QLD]
+  If fstat Infbox "Erreur ecriture de la table:" + chr$(10) + "Détail contrôle qualité"  
+  Endif
+Endif
+Return
