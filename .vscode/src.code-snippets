@@ -1,0 +1,18 @@
+{
+	"Access a table": {
+		"prefix": "cla",
+		"body": [
+			"If !clalev ([F:${1:ITM}]) : Local File ${2:ITMMASTER} [${1:ITM}] :  Endif"
+		],
+		"description": "Open a table in local variable"
+	},
+	"If Endif":{
+		"prefix": "if",
+		"body": [
+			"If $1",
+			"	$2",
+			"Endif"
+		],
+		"description": "If Autocompletion"
+	}
+}

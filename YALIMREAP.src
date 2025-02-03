@@ -25,7 +25,8 @@ Local File STOLOCAFF  [YSTF]
 Local File YALIMREAP  [YAR]
 Local File STOCK      [YSTO]
 Local File ITMMASTER  [YITM]
-Local File FACILITY   [YFCY]
+#Declartion   Nom Table     Nom Variable Locale      
+Local File    FACILITY      [YFCY]
 
 
 Local Integer YTRACE
@@ -172,5 +173,6 @@ Close Local File [YSTF]
 Close Local File [YAR]
 Close Local File [YSTO]
 Close Local File [YITM]
+#Ferme la Table
 Close Local File [YFCY]
 Return

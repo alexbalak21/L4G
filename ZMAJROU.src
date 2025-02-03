@@ -20,10 +20,10 @@ LOT_ECO = [F:ZITF]REOMINQTY
 Filter [F:ZPPL] Where [F:ZPPL]PLI = "1002" and [F:ZPPL]PLICRI1 = [F:ZROO]BPRNUM and [F:ZPPL]PLICRI3 = [F:ZROO]ITMREF and [F:ZPPL]PLICRI2 = [F:ZROO]SCOITMREF
 & and LOT_ECO >= [F:ZPPL]MINQTY and LOT_ECO <= [F:ZPPL]MAXQTY and date$ >= [F:ZPPL]PLISTRDAT and date$ <= [F:ZPPL]PLIENDDAT
 For [F:ZPPL]
-[F:ZROO]REFPRI = ([F:ZPPL]PRI / [F:ZPPL]PRIDIV)
 #ECRITURE MAJ OPE GAMME DANS LA TRACE
 Call ECR_TRACE ('Article Ss-trait:' - [F:ZROO]SCOITMREF - " Fiche Tarif:" - [F:ZPPL]PLICRD - 'Ancien Prix:' - num$([F:ZROO]REFPRI) - "Nouveau Prix:" - num$(([F:ZPPL]PRI / [F:ZPPL]PRIDIV)),0) From
 & GESECRAN
+[F:ZROO]REFPRI = ([F:ZPPL]PRI / [F:ZPPL]PRIDIV) #MAJ DU PRIX DE L'OPERATION DE GAMME
 Rewrite [F:ZROO]
 If fstat Infbox "Erreur d'ecriture de la table ROUOPE." : Endif
 Next

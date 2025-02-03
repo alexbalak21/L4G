@@ -12,5 +12,9 @@ If [F:ZITM]ITMSTA = 2
 [M:ITF1]QUAFLG = 2
 Affzo [M:ITF1]QUAFLG 
 Endif
+If 
+    
+Endif
+
 End
 ######################################################################################

@@ -2230,6 +2230,7 @@ If find([F:ORD1]WIPSTA,1,2)
     If [F:MFG]ITMLINNBR > 1
         WNBITM = 0
         For [MFI]MFI0 Where MFGNUM = [F:ORD1]VCRNUM
+        
             If [F:MFI]ITMTYP = 1 : WNBITM += 1 : Endif
         Next
     Endif
