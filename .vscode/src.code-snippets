@@ -10,7 +10,7 @@
 		"prefix": "if",
 		"body": [
 			"If $1",
-			"	$2",
+			"   $2",
 			"Endif"
 		],
 		"description": "If Autocompletion"
