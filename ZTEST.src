@@ -1,5 +1,3 @@
-If 1
-  If
-    Infbox 'Hello World'
-  Endif
-Endif
+For 10
+    Infbox "Indent"
+  Next

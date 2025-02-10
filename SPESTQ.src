@@ -1,14 +1,54 @@
+#########################################################################################
+#BKV - 30/01/25 - 3005586 : Sauvgarde du champ ZDEROG (Derogation) dans la table STOQLYD
+#########################################################################################
+
 $ACTION
+Case ACTION
+When "INIMOD" : Gosub $INIMOD
+Endcase
 Gosub KARDOL_DEV From SPEUTIL
 Return
-
 ######################################################################################
-## Etiquette ajoutée par le superviseur (écran STQ1) 12/04/2011 10:52:23 (VP)
+## Etiquette ajoutée par le superviseur (écran STQ1) 13/10/2016 08:57:56 (ADMIN)
 ######################################################################################
-Subprog S_QLYCRD(VALEUR)
+Subprog AV_ITMDES2(VALEUR)
 Variable Char    VALEUR()
+VALEUR = [F:ITM]ITMDES2
 End
 
 
 ######################################################################################
 
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran STQ1) 13/10/2016 09:05:26 (ADMIN)
+######################################################################################
+Subprog AV_BPSNUM(VALEUR)
+Variable Char    VALEUR()
+If [F:QLH]VCRTYPORI = 6 Then
+   If clalev ([F:ZPTH]) = 0 : Local File PRECEIPT [ZPTH]:ENDIF
+   Read [F:ZPTH]PTH0=[F:QLH]VCRNUMORI
+   VALEUR = [F:ZPTH]BPSNUM
+Endif
+End
+
+
+
+################################################################################################
+#BKV - 30/01/25 - 3005586 : Sauvgarde du champ ZDEROG (Derogation) dans la table STOQLYD
+######################################################################################
+
+$INIMOD
+Local Integer ZI
+For ZI=0 To [M:STQ1]NBLIG-1
+                # (Type de Piece) (Demande d'analyse) 
+Read [QLD]QLD0 = [M:STQ1]VCRTYP;[M:STQ1]VCRNUM;[M:STQ1]VCRLIN(ZI)
+If !fstat
+  [QLD]ZDEROG = [M:STQ1]ZDEROG(ZI)
+  Rewrite [QLD]
+  If fstat Infbox "Erreur ecriture de la table:" + chr$(10) + "Détail contrôle qualité" :Endif
+Endif
+Next
+Return
+
+#FIN BKV
+################################################################################################
