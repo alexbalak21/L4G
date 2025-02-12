@@ -33,20 +33,27 @@ End
 
 
 
-################################################################################################
+#########################################################################################
 #BKV - 30/01/25 - 3005586 : Sauvgarde du champ ZDEROG (Derogation) dans la table STOQLYD
-######################################################################################
-
+#########################################################################################
+#QUA-23ECA01000165
 $INIMOD
+If GUSER <> "KARD" : Return : Endif
 Local Integer ZI
+Local Integer START_VCRLIN
+Local Integer END_VCRLIN
+Local Integer ZVCRLIN
 For ZI=0 To [M:STQ1]NBLIG-1
-                # (Type de Piece) (Demande d'analyse) 
-Read [QLD]QLD0 = [M:STQ1]VCRTYP;[M:STQ1]VCRNUM;[M:STQ1]VCRLIN(ZI)
-If !fstat
-  [QLD]ZDEROG = [M:STQ1]ZDEROG(ZI)
-  Rewrite [QLD]
-  If fstat Infbox "Erreur ecriture de la table:" + chr$(10) + "Détail contrôle qualité" :Endif
-Endif
+    START_VCRLIN = [M:STQ1]VCRLIN(ZI)
+    END_VCRLIN = START_VCRLIN + [M:STQ1]QTYPCU - 1
+    For ZVCRLIN = START_VCRLIN To END_VCRLIN
+        Read [QLD]QLD0 = [M:STQ1]VCRTYP; [M:STQ1]VCRNUM; ZVCRLIN
+        If !fstat
+            [QLD]ZDEROG = [M:STQ1]ZDEROG(ZI)
+            Rewrite [QLD]
+            If fstat Infbox "Erreur ecriture de la table:" + chr$(10) + "Détail contrôle qualité" :Endif
+        Endif
+    Next
 Next
 Return
 

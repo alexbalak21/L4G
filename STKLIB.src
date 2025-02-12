@@ -1,0 +1,6041 @@
+#<AdxTL>@(#)1.0.0.0 $Revision$
+Local Char LPC
+Call REC_PRECOD("GAL","ZZZ","","FA","FA2","","","","","","","","","","",LPC)
+#Infbox LPC
+End
+
+########################################################################
+# Traitement STKLIB - Librairie de composants stock               V140 #
+########################################################################
+# Sous-programmes
+#-----------------------------------------------------------------------
+# CLESTO        Recherche de la ligne stock correspondantes aux
+#               caractéristiques du mouvement de stock
+#               Sous-programme utilisant [F:STO]
+# CLESTOFUN     Recherche de la ligne de stock correspondant aux
+#               caractéristiques passées en paramètres
+#               Fonction utilisant [F:STO] ou [F:STO1]
+# LECITM        Lecture des tables articles
+# LECITM2       Lecture des tables articles :
+#                  Article, Catégorie, Article-site, Cumuls article
+# LECITV        Lecture cumuls articles-sites (avec création si nécessaire)
+#
+# LECSRU        Lecture règle de gestion d'E/S
+#
+# LECSER        Lecture      numeros série
+#
+# RECSLO_F      Recherche dernier SLO d un LOT enregistré dans le fichier STOLOT
+# RECSLO_M      Recherche dernier SLO d un LOT dans l'écran passé en paramètre
+#
+# ECRSTL        Création lot
+# REWSTL        Réécriture lot
+# ECRSLF        Création lot-site
+# REWSLF        Réécriture lot-site
+# ECRQLH        Création contrôle qualité (entête)
+# REWQLH        Réécriture contrôle qualité (entête)
+# ECRQLD        Création contrôle qualité (ligne)
+# REWQLD        Réécriture contrôle qualité (ligne)
+# ECRSTO        Création ligne stock
+# REWSTO        Réécriture ligne stock
+# REWSTOA       Réécriture ligne stock pour allocations
+# DELSTO        Effacement ligne stock
+# ECRSRG        Création ligne de rangement
+# REWSRG        Réécriture ligne de rangement
+# ECRSTP        Création couts stocks FIFO
+# REWSTP        Réécriture couts stocks FIFO
+# REWSMC        Re-write STOMVTCOST records
+# ECRSTS        Création numéro de série
+# REWSTS        Réécriture numéro de série
+# ECRSTJ        Création mouvement de stock
+# ECRSTA        Création ligne allocation
+# REWSTA        Réécriture ligne allocation
+# ECRITV        Création cumul article-site
+# REWITV        Réécriture cumul article-site
+# REWITW        Réécriture cumul article-dépot
+# ECRITH        Création historique cumul article-site
+# REWITH        Réécriture historique cumul article-site
+# ECRSMP        Création échantillonnage controle qualité    # hcb V6CQ
+# REWSMP        Réécriture échantillonnage controle qualité  # hcb V6CQ
+# GETITH        Renvoie (et crée si nécessaire) l'enregistrement ITH
+#
+# CRE_STOWIPW   Création enregistrement quantité en cours de traitement
+# DEL_STOWIPW   Suppression enregistrement quantité en cours de traitement
+# DIM_STOWIPW   Diminution enregistrement quantité en cours de traitement
+# ADD_STOWIPW   Augmentation enregistrement quantité en cours de traitement
+#
+#--- Issue 110327
+# CRE_STOSERW   Création enregistrement série en cours de traitement
+# DEL_STOSERW   Suppression enregistrement série en cours de traitement
+# REC_STOSERW   Recherche enregistrement série en cours de traitement
+# REC_STOSERW_UID Recherche enr série en cours de trt sauf pour process en cours
+#---
+#
+# STODISMOD     Stock disponible d'un article en modif d'entrée
+#               exploite le statut de la ligne à modifier
+# STOPRETOT     Stock disponible prévisionnel d'un article
+# STODISTOT     Stock disponible d'un article
+# STODISPO      Stock disponible d'un article filtré par lot,emp,statut,dépôt
+# STODIS        Stock disponible d'une ligne de stock
+# STODISSOR     Stock disponible d'une ligne de stock pour sortie
+# STODISFIFO    Stock disponible fifo
+# STOECCVAL     Stock article site d'une version
+#
+# CTRLOTPER     Contrôle lot périmé
+#
+# CTRQTYPCU     Détermination de la qté US exploitable en unité complète d'UC
+#
+# STKCTRIPT     Controle date d'imputation
+# CTRCPT        Controle des compteurs
+#
+# PLUS_UN       Ajoute 1 à un numéro de série ou de lot spécifié en paramètre
+# MOINS_UN      Soustrait 1 à un numéro de série ou de lot spécifié en paramètre
+# PLUS_NB       Ajoute n à un numéro de série ou de lot spécifié en paramètre
+# NB_SERIE      Calcule le nombre de numéro compris deux no début et fin
+#
+# CALREF        Calcul reference peremption
+# CALPER        Calcul date de peremption
+# CALDLU        Calcul limite utilisation
+# CALLTI        Calcul date de recontrole
+#
+# RESEMP        Sous programme de réservation/déréservation emplacement
+#
+# MAJTRK        Mise à jour de la traçabilité
+#
+# REC_PRECOD    Recherche du code préparation
+#
+# SHORTCUT      Définition d'un raccourci clavier vers le détail stock
+#
+# CONTITF       Contrôle existence d'un article pour un site
+#
+# FUNSTKACC     Déclenche, si nécessaire, l'interface compta
+#
+# CTLRUP        Recherche date premier mouvement en attente d'un article
+# CALNBDAYCLI   Calcul du nombre de jours à rajouter à la DLU article pour prendre en compte
+#               la DLU client
+########################################################################
+# Etiquettes
+#-----------------------------------------------------------------------
+# FORMAT_INV    Chargement des formats (invisibles) des zones écrans
+# OPEN_FILES    Ouverture des tables nécessaire à la màj des stocks
+#
+########################################################################
+# Issue X3-255665 - 2021-09-10 by BAKHA : If stock available then FDMA include QC Lead time
+
+########################################################################
+# CLESTO        Recherche de la ligne stock correspondantes aux
+#               caractéristiques du mouvement de stock
+########################################################################
+# Paramètres E : LFCY    = Site
+#                LITM    = Article
+#                LLOT    = Lot
+#                LSLO    = Sous-Lot
+#                LBPS    = Lot fournisseur (n'est pas exploité)
+#                LPAL    = Identifiant 1
+#                LCTR    = Identifiant 1
+#                LSTA    = Statut
+#                LLOC    = Emplacement
+#                LPCU    = UC
+#                LCOE    = Coef UC/US
+#                LSER    = No série
+#                LQLY    = No demande analyse
+#                LOWN    = Propriétaire
+#                LFLD1   = Zone utilisateur 1
+#                LFLD2   = Zone utilisateur 2
+#                LLPN    = No contenant       : #--- Issue X3-53322 : ajout LLPN et exploitation
+#            S : LSTOCOU = Chrono stock (si 0, rien trouvé)
+#
+# Prérequis    : Ces tables doivent être ouvertes   STOCK  [STO]
+#
+########################################################################
+Subprog CLESTO(LFCY,LITM,LLOT,LSLO,LBPS,LPAL,LCTR,LSTA,LLOC,LPCU,LCOE,LSER,LQLY,LOWN,LFLD1,LFLD2,LLPN,LSTOCOU)
+Value    Char    LFCY
+Value    Char    LITM
+Value    Char    LLOT
+Value    Char    LSLO
+Value    Char    LBPS
+Value    Char    LPAL
+Value    Char    LCTR
+Value    Char    LSTA
+Value    Char    LLOC
+Value    Char    LPCU
+Value    Decimal LCOE
+Value    Char    LSER
+Value    Char    LQLY
+Value    Char    LOWN
+Value    Char    LFLD1
+Value    Char    LFLD2
+Value    Char    LLPN
+Variable Decimal LSTOCOU
+
+Columns [STO] (STOCOU)
+
+#--- Bug 77336
+# Suppression du filtre sur le statut (s'il est passé à 'blanc')
+# à cause du changement de statut possible sur emplacement tiers
+If LSTA=""
+  Filter [STO] Where ITMREF    = LITM
+&                  & STOFCY    = LFCY
+&                  & LOT       = LLOT
+&                  & SLO       = LSLO
+&                  & LOC       = LLOC
+&                  & PALNUM    = LPAL
+&                  & CTRNUM    = LCTR
+&                  & PCU       = LPCU
+&                  & PCUSTUCOE = LCOE
+&                  & SERNUM    = LSER
+&                  & QLYCTLDEM = LQLY
+&                  & OWNER     = LOWN
+&                  & STOFLD1   = LFLD1
+&                  & STOFLD2   = LFLD2
+&                  & LPNNUM    = LLPN
+Else
+#---
+  Filter [STO] Where ITMREF    = LITM
+&                  & STOFCY    = LFCY
+&                  & LOT       = LLOT
+&                  & SLO       = LSLO
+&                  & LOC       = LLOC
+&                  & PALNUM    = LPAL
+&                  & CTRNUM    = LCTR
+&                  & STA       = LSTA
+&                  & PCU       = LPCU
+&                  & PCUSTUCOE = LCOE
+&                  & SERNUM    = LSER
+&                  & QLYCTLDEM = LQLY
+&                  & OWNER     = LOWN
+&                  & STOFLD1   = LFLD1
+&                  & STOFLD2   = LFLD2
+&                  & LPNNUM    = LLPN
+#--- Bug 77336
+Endif
+#---
+
+If LSER<>""
+  Read [STO] STO5 First
+Elsif LLOT="" & LPAL<>""
+  Read [STO] STO1 First
+Else
+  Read [STO] STO3 First
+Endif
+If !fstat
+  LSTOCOU = [F:STO]STOCOU
+Else
+  Raz LSTOCOU
+Endif
+Filter [STO]
+Columns [STO]
+
+End
+
+########################################################################
+# CLESTOFUN     Recherche de la ligne stock correspondantes aux
+#               caractéristiques du mouvement de stock
+########################################################################
+# Paramètres E : PFCY    = Site
+#                PITM    = Article
+#                PLOT    = Lot
+#                ... (BPSLOT n'est pas considéré comme une caractéristique
+#                     puisque fonction du lot/s-lot
+#                PABR    = Abréviation "STO" ou "" --> [STO]
+#                                      "STO1"      --> [STO1]
+#
+#                PLPN    = No contenant       : #--- Issue X3-53322 : ajout PLPN et exploitation
+#
+# Prérequis    : La table STOCK doit être ouverte avec l'abréviation
+#                [STO] ou [STO1] selon le paramètre PABR
+#
+########################################################################
+Funprog CLESTOFUN(PFCY,PITM,PLOT,PSLO,PPAL,PCTR,PSTA,PLOC,PPCU,PCOE,PSER,PQLY,POWN,PFLD1,PFLD2,PABR,PLPN)
+Value Char PFCY
+Value Char PITM
+Value Char PLOT
+Value Char PSLO
+Value Char PPAL
+Value Char PCTR
+Value Char PSTA
+Value Char PLOC
+Value Char PPCU
+Value Decimal PCOE
+Value Char PSER
+Value Char PQLY
+Value Char POWN
+Value Char PFLD1
+Value Char PFLD2
+Value Char PABR
+Value Char PLPN
+
+Local Decimal LSTOCOU
+
+Raz LSTOCOU
+If PABR="STO1"
+    # Cunlisnum rajoutée pour les besoins de l'import inventaire
+    Columns [STO1] (STOCOU, CUNLISNUM)
+    Filter [STO1] Where ITMREF    = PITM
+&                     & STOFCY    = PFCY
+&                     & LOT       = PLOT
+&                     & SLO       = PSLO
+&                     & LOC       = PLOC
+&                     & PALNUM    = PPAL
+&                     & CTRNUM    = PCTR
+&                     & STA       = PSTA
+&                     & PCU       = PPCU
+&                     & PCUSTUCOE = PCOE
+&                     & SERNUM    = PSER
+&                     & QLYCTLDEM = PQLY
+&                     & OWNER     = POWN
+&                     & STOFLD1   = PFLD1
+&                     & STOFLD2   = PFLD2
+&                     & LPNNUM    = PLPN
+    If PSER<>""
+      For [STO1]STO5
+        LSTOCOU = [F:STO1]STOCOU
+        Break
+      Next
+    Elsif PLOT="" & PPAL<>""
+      For [STO1]STO1
+        LSTOCOU = [F:STO1]STOCOU
+        Break
+      Next
+    Else
+      For [STO1]STO3
+        LSTOCOU = [F:STO1]STOCOU
+        Break
+      Next
+    Endif
+    Filter [STO1]
+    Columns [STO1]
+Else
+    # Cunlisnum rajoutée pour les besoins de l'import inventaire
+    Columns [STO] (STOCOU, CUNLISNUM)
+    Filter [STO] Where ITMREF    = PITM
+&                    & STOFCY    = PFCY
+&                    & LOT       = PLOT
+&                    & SLO       = PSLO
+&                    & LOC       = PLOC
+&                    & PALNUM    = PPAL
+&                    & CTRNUM    = PCTR
+&                    & STA       = PSTA
+&                    & PCU       = PPCU
+&                    & PCUSTUCOE = PCOE
+&                    & SERNUM    = PSER
+&                    & QLYCTLDEM = PQLY
+&                    & OWNER     = POWN
+&                    & STOFLD1   = PFLD1
+&                    & STOFLD2   = PFLD2
+&                    & LPNNUM    = PLPN
+    If PSER<>""
+      For [STO]STO5
+        LSTOCOU = [F:STO]STOCOU
+        Break
+      Next
+    Elsif PLOT="" & PPAL<>""
+      For [STO]STO1
+        LSTOCOU = [F:STO]STOCOU
+        Break
+      Next
+    Else
+      For [STO]STO3
+        LSTOCOU = [F:STO]STOCOU
+        Break
+      Next
+    Endif
+    Filter [STO]
+    Columns [STO]
+Endif
+
+End LSTOCOU
+
+########################################################################
+# LECITM        Lecture des tables articles :
+#                   Article, Catégorie, Article-site, Cumuls article
+#                   Article vente, Article client, Article fournisseur
+#                   Article dépôt
+########################################################################
+# Paramètres E : LFCY = Site
+#                LITM = Article
+#                LBPR = Tiers
+#                LCUN = Message d'avertissement
+#                          Si appel dans une transaction, mettre 0
+#                          Si allocation mettre 0 ou 2
+#                       0=non
+#                       1=oui si article bloqué pour inventaire
+#                       2=oui si article inutilisable
+#                       3=oui si article bloqué pour inventaire ou inutilisable
+#                LWRH = Dépôt
+#            S : LRET = Code retour : (0=OK / 1=Erreur)
+#
+# Prérequis    : Ces tables doivent être ouvertes   ITMMASTER
+#                                                   ITMCATEG
+#                                                   ITMFACILIT
+#                                                   ITMMVT
+#                                                   ITMWRH
+#                                                   WAREHOUSE
+#
+########################################################################
+Subprog LECITM(LFCY,LITM,LBPR,LCUN,LWRH,LRET)
+Value    Char     LFCY
+Value    Char     LITM
+Value    Char     LBPR
+Value    Shortint LCUN
+Value    Char     LWRH
+Variable Integer  LRET
+
+Local    Integer VS
+
+LRET = 0
+#--- Lecture article
+If [F:ITM]ITMREF<>LITM
+   Read [ITM]ITM0=LITM
+   If fstat | LITM = ""
+      GMESSAGE = LITM-":"-mess(134,100,1)
+      Goto LECITM_ERR
+   Endif
+Endif
+# Article non géré en stock
+If [F:ITM]STOMGTCOD = 1
+   GMESSAGE = LITM-":"-mess(2,196,1)-LFCY
+   Goto LECITM_ERR
+Endif
+# Article non utilisable
+Case [F:ITM]ITMSTA
+ When 2,3,4,5 : If LCUN>1
+                   VS = 2       # hcb 43713
+                   Call AVERTIR(LITM-":"-mess(3,196,1)-"("+
+&                               mess([F:ITM]ITMSTA,246,1)+")",VS) From GESECRAN
+                   If VS=1 Raz GMESSAGE : Goto LECITM_ERR Endif
+                Endif
+ When 6       : If find(LCUN,2,3)
+                    GMESSAGE=LITM-":"-mess(3,196,1)-"("+mess([F:ITM]ITMSTA,246,1)+")"
+                    Goto LECITM_ERR
+                Endif
+Endcase
+
+If [F:ITM]STOMGTCOD=3 & [F:ITM]DEFPOT=0
+   [F:ITM]DEFPOT = 100
+Endif
+# le cas STOMGTCOD 4 (UI) n'est pas géré
+
+#--- Lecture catégorie article/site
+Read [ITG]ITG1=[F:ITM]TCLCOD;LFCY
+If fstat
+   If LFCY=""
+      GMESSAGE = [F:ITM]TCLCOD-":"-mess(338,199,1)
+      Goto LECITM_ERR
+   Else
+      Read [ITG]ITG1=[F:ITM]TCLCOD;""
+      If fstat
+         GMESSAGE = [F:ITM]TCLCOD-":"-mess(338,199,1)
+         Goto LECITM_ERR
+      Endif
+   Endif
+Endif
+
+#--- Lecture article site
+If LFCY<>"" & ([F:ITF]ITMREF<>LITM | [F:ITF]STOFCY<>LFCY)
+   Read [ITF]ITF0=[F:ITM]ITMREF;LFCY
+   If fstat
+      GMESSAGE = LITM-":"-mess(2,196,1)-":"-LFCY
+      Goto LECITM_ERR
+   Endif
+Endif                 # hcb 65025
+
+# Article non géré en stock
+   If [F:ITF]STOMGTCOD = 1
+      GMESSAGE = LITM-":"-mess(2,196,1)-LFCY
+      Goto LECITM_ERR
+   Endif
+
+
+# Article bloqué pour inventaire
+If [F:ITF]CUNFLG = 2
+   If find(LCUN,1,3)
+
+#                          # hcb 108237 deb
+      Raz GPE
+      GPOINT = "CTR_CUNFLG" : Gosub ENTREE From EXEFNC
+      If GPE <> 0
+         GMESSAGE = LITM-":"-mess(185,199,1)
+         Goto LECITM_ERR
+      Else
+#                          # hcb 108237 fin
+         VS = 1
+         Call AVERTIR(mess(185,199,1),VS) From GESECRAN
+         If VS = 1
+            Goto LECITM_ERR
+         Endif
+      Endif                # hcb 108237
+   Endif
+Endif
+
+
+#Endif                 # hcb 65025
+
+
+# Si gestion de dépôt et dépôt renseigné, lecture dépôt et article-dépôt
+If GWRHACT=2 & LWRH<>""
+   If [F:WRH]WRH<>LWRH
+      Read [WRH]WRH0=LWRH
+      If fstat | [F:WRH]STOFCY<>LFCY
+         GMESSAGE = LWRH-":"-mess(338,184,1)-LFCY
+         Raz LWRH
+         Raz [F:ITW]
+         Goto LECITM_ERR
+      Endif
+   Endif
+   Read [ITW]ITW0=LITM;LWRH
+   If fstat Raz [F:ITW] Endif
+Endif
+
+#--- Lecture cumuls article
+If LFCY<>"" & ([F:ITV]ITMREF<>LITM | [F:ITV]STOFCY<>LFCY)  #hcb
+   Read [ITV]ITV0=[F:ITM]ITMREF;LFCY
+   If fstat Raz [F:ITV] Endif
+Endif
+
+# Article livrable
+If [F:ITG]DLVFLG=2
+   #--- Lecture article vente si ouvert
+   If clalev ([F:ITS])<>0
+      If [F:ITS]ITMREF<>LITM
+         Read [ITS]ITS0=LITM
+         If fstat
+            GMESSAGE = LITM-":"-mess(5,192,1)
+            Goto LECITM_ERR
+         Endif
+      Endif
+   Endif
+   # Article vendu
+   If [F:ITG]SALFLG=2
+      #--- Lecture article client si ouvert
+      If clalev([F:ITU])<>0
+         Raz [F:ITU]
+         If LBPR<>"" & ([F:ITU]ITMREF<>LITM | [F:ITU]BPCNUM<>LBPR)
+            Read [ITU]ITU0=[F:ITM]ITMREF;LBPR
+         Endif
+      Endif
+   Endif
+Endif
+
+#--- Lecture article fournisseur si ouvert
+If clalev([F:ITP]) <> 0
+   Raz [F:ITP]
+   If LBPR<>"" & ([F:ITP]ITMREF<>LITM | [F:ITP]BPSNUM<>LBPR)
+      Read [ITP]ITP0=[F:ITM]ITMREF;LBPR
+      If fstat Raz [F:ITP] Endif
+   Endif
+Endif
+
+End
+
+#--- Traitement des erreurs
+$LECITM_ERR
+If GMESSAGE<>""
+   Call ERREUR(GMESSAGE) From GESECRAN
+   Raz GMESSAGE
+Endif
+LRET = 1
+Raz [F:ITM]
+Raz [F:ITF]
+Raz [F:ITV]
+End
+
+########################################################################
+# LECITM2 : Lecture des tables articles :
+#              Article, Catégorie, Article-site, Cumuls article
+#              Article dépôt
+########################################################################
+# Paramètres E : LFCY = Site
+#                LITM = Article
+#                LWRH = Dépôt
+#            S : LRET = Code retour : (0=OK / 1=Erreur)
+# Remarques:
+#    Cette fonction diffère de LECITM, par le fait qu'il n'y a pas
+#    de notion de tiers, qu'en cas d'erreur, GMESSAGE est chargé, mais pas affiché,
+#    seule l'inexistance dans ITM, ITG ou ITF peut générer une erreur
+#
+# Prérequis    : Ces tables doivent être ouvertes   ITMMASTER
+#                                                   ITMCATEG
+#                                                   ITMFACILIT
+#                                                   ITMMVT
+#                                                   ITMWRH
+#                                                   WAREHOUSE
+#
+########################################################################
+Subprog LECITM2(LFCY,LITM,LWRH,LRET)
+Value    Char     LFCY
+Value    Char     LITM
+Value    Char     LWRH
+Variable Integer  LRET
+
+LRET = 0
+#--- Lecture article
+If [F:ITM]ITMREF<>LITM
+   Read [ITM]ITM0=LITM
+   If fstat | LITM = ""
+      GMESSAGE = LITM-":"-mess(134,100,1)
+      Goto LECITM2_ERR
+   Endif
+Endif
+# Article non géré en stock
+If [F:ITM]STOMGTCOD = 1
+   GMESSAGE = LITM-":"-mess(2,196,1)-LFCY
+   Goto LECITM2_ERR
+Endif
+
+If [F:ITM]STOMGTCOD=3 & [F:ITM]DEFPOT=0
+   [F:ITM]DEFPOT = 100
+Endif
+
+#--- Lecture catégorie article/site
+Read [ITG]ITG1=[F:ITM]TCLCOD;LFCY
+If fstat
+   If LFCY=""
+      GMESSAGE = [F:ITM]TCLCOD-":"-mess(338,199,1)
+      Goto LECITM2_ERR
+   Else
+      Read [ITG]ITG1=[F:ITM]TCLCOD;""
+      If fstat
+         GMESSAGE = [F:ITM]TCLCOD-":"-mess(338,199,1)
+         Goto LECITM2_ERR
+      Endif
+   Endif
+Endif
+
+#--- Lecture article site
+If LFCY<>"" & ([F:ITF]ITMREF<>LITM | [F:ITF]STOFCY<>LFCY)  # hcb
+   Read [ITF]ITF0=[F:ITM]ITMREF;LFCY
+   If fstat
+      GMESSAGE = LITM-":"-mess(2,196,1)-":"-LFCY
+      Goto LECITM2_ERR
+   Endif
+ # Article non géré en stock
+   If [F:ITF]STOMGTCOD = 1
+      GMESSAGE = LITM-":"-mess(2,196,1)-LFCY
+      Goto LECITM2_ERR
+   Endif
+
+Endif
+
+# Si gestion de dépôt et dépôt renseigné, lecture dépôt et article-dépôt
+If GWRHACT=2 & LWRH<>""
+   If [F:WRH]WRH<>LWRH
+      Read [WRH]WRH0=LWRH
+      If fstat | [F:WRH]STOFCY<>LFCY
+         GMESSAGE = LWRH-":"-mess(338,184,1)-LFCY
+         Raz LWRH
+         Raz [F:ITW]
+         Goto LECITM2_ERR
+      Endif
+   Endif
+   Read [ITW]ITW0=LITM;LWRH
+   If fstat Raz [F:ITW] Endif
+Endif
+
+#--- Lecture cumuls article
+If LFCY<>"" &  ([F:ITV]ITMREF<>LITM | [F:ITV]STOFCY<>LFCY)  #hcb
+   Read [ITV]ITV0=[F:ITM]ITMREF;LFCY
+   If fstat
+      Raz [F:ITV]
+   Endif
+Endif
+
+End
+
+#--- Traitement des erreurs
+$LECITM2_ERR
+LRET = 1
+Raz [F:ITM]
+Raz [F:ITF]
+Raz [F:ITV]
+End
+
+########################################################################
+# LECTITV        Lecture avec blocage cumuls articles-sites
+########################################################################
+# Paramètres E : LFCY = Site
+#                LITM = Article
+#                LSUP = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LRET = Code retour : 0 si enregistrement existe
+#                                     1 si enregistrement créé
+#                                     2 si locké
+#                                     3 si site non défini
+#                                     4 si article non défini
+#                                     5 si enregistrement non créé
+#
+# Prérequis    : On doit être dans une transaction de mise à jour
+#
+########################################################################
+Subprog LECITV(LFCY,LITM,LSUP,LRET)
+Value    Char    LFCY
+Value    Char    LITM
+Value    Char    LSUP
+Variable Integer LRET
+LRET = 0
+If LFCY = "" : LRET = 3 : End : Endif
+If LITM = "" : LRET = 4 : End : Endif
+
+$LECITV0
+Readlock [ITV]ITV0=LITM;LFCY
+Case fstat
+  When 0   : [F:ITV]UPDDAT = date$
+             [F:ITV]UPDUSR = GUSER
+             [F:ITV]EXPNUM = [C]EXPORT
+  When 1   : GOK  =-1
+             LRET = 2
+  When 4,5 : Raz [F:ITV]
+             [F:ITV]ITMREF = LITM
+             [F:ITV]STOFCY = LFCY
+             Call ECRITV              : # Dem 62073 (remplacement du write)
+             If fstat
+                GOK  = 0 : Call FSTA("ITV") From GLOCK
+                LRET = 5 : End
+             Endif
+             LRET = 1
+             Goto LECITV0
+Endcase
+End
+
+########################################################################
+# LECSRU         Lecture de la règle de gestion d'E/S
+########################################################################
+# Paramètres E : LFCY    = Site
+#                LTCLCOD = Catégorie
+#                LTRSTYP = Type mouvement (M.704)
+#                LTRSCOD = Code mouvement
+#                LSUP    = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LRET    = Code retour : 0 OK
+#                                        1 si pas de règle de gestion
+#
+# Prérequis    : Ces tables doivent être ouvertes   TABSTORUL
+#
+########################################################################
+Subprog LECSRU(LFCY,LTCLCOD,LTRSTYP,LTRSCOD,LSUP,LRET)
+Value    Char    LFCY
+Value    Char    LTCLCOD
+Value    Integer LTRSTYP
+Value    Char    LTRSCOD
+Value    Char    LSUP
+Variable Integer LRET
+
+If clalev([F:ITG]) =0  Local File ITMCATEG   [ITG]   Endif
+Raz LRET
+If LTCLCOD<>""
+   If LTCLCOD<>[F:ITG]TCLCOD | LFCY<>[F:ITG]STOFCY
+      #--- Lecture catégorie article/site
+      Read [ITG]ITG1=LTCLCOD;LFCY
+      If fstat
+         If LFCY=""
+            Goto LEC_SRU_GLO
+         Else
+            #--- Lecture catégorie article
+            Read [ITG]ITG1=LTCLCOD;""
+            If fstat Goto LEC_SRU_GLO Endif
+         Endif
+      Endif
+   Endif
+Else
+   Goto LEC_SRU_GLO
+Endif
+
+# les mouvements d'inventaires n'ont pas de regle de gestion
+If LTRSTYP = 13
+   Raz [F:SRU]
+   [F:SRU]AUZSST = "A*,Q*,R*"
+   Goto LEC_SRU_FIN
+Endif
+
+# Lecture règle de gestion de la catégorie/site pour le code mvt
+If LTRSCOD<>""
+   Read [SRU]SRU0=LTCLCOD;[F:ITG]STOFCY;LTRSTYP;LTRSCOD
+   If !fstat Goto LEC_SRU_FIN Endif
+   Raz LTRSCOD
+Endif
+# Lecture règle de gestion de la catégorie/site
+Read [SRU]SRU0=LTCLCOD;[F:ITG]STOFCY;LTRSTYP;""
+If !fstat Goto LEC_SRU_FIN Endif
+
+# Si la catégorie site existe et qu'on n'a pas trouvé de règle de gestion
+If [F:ITG]STOFCY<>""
+   # Lecture règle de gestion de la catégorie pour le code mvt
+   If LTRSCOD<>""
+      Read [SRU]SRU0=LTCLCOD;"";LTRSTYP;LTRSCOD
+      If !fstat Goto LEC_SRU_FIN Endif
+      Raz LTRSCOD
+   Endif
+   # Lecture règle de gestion de la catégorie
+   Read [SRU]SRU0=LTCLCOD;"";LTRSTYP;""
+   If !fstat Goto LEC_SRU_FIN Endif
+Endif
+
+$LEC_SRU_GLO
+#--- Dem 63677
+GPE=0
+GPOINT="SRU_GLO"
+Gosub ENTREE From EXEFNC
+If GPE=0
+#---
+  # Lecture règle de gestion de stock globale
+  Read [SRU]SRU0="";"";LTRSTYP;""
+  If !fstat Goto LEC_SRU_FIN Endif
+#--- Dem 63677
+Else
+  Raz GPE
+Endif
+#---
+# Il n'existe pas de règle de gestion de stock pour ce type de mvt
+GOK=0  : Call ERREUR (mess(362,199,1)-mess(LTRSTYP,704,1)) From GESECRAN
+LRET=1 : End
+
+$LEC_SRU_FIN
+
+End
+
+
+########################################################################
+# LECSER            Lecture table numéros séie
+########################################################################
+# Paramètres E : LITM = Article
+#                LSER = Numero série
+#                LSUP = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LRET = Code retour : 0 enregistrement n existe pas
+#                                     1 enregistrement existe
+#
+# Prérequis    : Ces tables doivent être ouvertes   STOSER
+########################################################################
+Subprog LECSER(LITM,LSER,LSUP,LRET)
+Value    Char     LITM
+Value    Char     LSER
+Value    Char     LSUP
+Variable Integer  LRET
+
+LRET = 0
+#--- Lecture numéro de série
+Read [STS]STS0=LITM;LSER
+If fstat Raz[F:STS]
+         End
+Endif
+
+LRET = 1
+End
+
+
+########################################################################
+# RECLASTSLO    Effectue la recherche du dernier sous-lot
+#               dans le masque passé en paramètre, dans STOENTW
+#               et dans le fichier STOLOT.
+########################################################################
+# Paramètres E : LITM = Article
+#                LLOT = Lot
+#                LABR = Ecran (="" si appelé d'un document)
+#                LSUP = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LSLO = Sous lot
+#
+# Prérequis    : Ces tables doivent être ouvertes   STOLOT
+#                                                   ITMMASTER
+########################################################################
+Subprog RECLASTSLO(LITM,LLOT,LABR,LSUP,LSLO)
+Value    Char     LITM
+Value    Char     LLOT
+Value    Char     LABR
+Value    Char     LSUP
+Variable Char     LSLO
+
+Local Char     SLO1(GLONSLO)
+Local Char     SLO2(GLONSLO)
+Local Integer  WRET
+    If !clalev([STL]) : Local File STOLOT [STL] : Endif
+
+    If [F:ITM]LOTMGTCOD<>4
+        Raz LSLO
+    Elsif LLOT="" & LABR<>"ENT" & LABR<>"ENM"
+        LSLO=format$("N0:"+num$(GLONSLO),1)
+    Else
+        If LABR <> "SNL1"                           # hcb 89491
+           If LLOT=""    # Le lot sera un n° de compteur => pas besoin de chercher dans ENTW
+              [L]SLO1=format$("N0:"+num$(GLONSLO),1)
+           Else
+              Call RECSLO_M(LITM, LLOT, "ENTW", "", [L]SLO1)
+           Endif
+           If LABR<>""
+              Call RECSLO_M(LITM, LLOT, LABR, "", [L]SLO2)
+              [L]SLO1 = max([L]SLO1, [L]SLO2)
+           Endif
+        Endif                                        # hcb 89491
+        Call RECSLO_F(LITM, LLOT, "", [L]SLO2)
+        [L]SLO1 = max([L]SLO1, [L]SLO2)
+
+        Call PLUS_UN([L]SLO1,[L]SLO1,WRET)
+        If !WRET
+            LSLO= [L]SLO1
+        Else
+            LSLO=""
+        Endif
+    Endif
+End
+########################################################################
+# RECSLO_F    Recherche dernier SLO d un LOT enregistré dans le fichier STOLOT
+########################################################################
+# Paramètres E : LITM = Article
+#                LLOT = Lot
+#                LSUP = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LSLO = Sous lot
+#
+# Prérequis    : Ces tables doivent être ouvertes   STOLOT
+########################################################################
+Subprog RECSLO_F(LITM,LLOT,LSUP,LSLO)
+Value    Char     LITM
+Value    Char     LLOT
+Value    Char     LSUP
+Variable Char     LSLO
+If !clalev([STL]) : Local File STOLOT [STL] : Endif
+Filter [STL] Where  ITMREF    = LITM   &
+&                   LOT       = LLOT
+&            Order By Key STL0 Desc
+Read [STL] First
+If fstat = 0 & [F:STL]SLO<>""
+   LSLO   =[F:STL]SLO
+Else
+    LSLO = format$("N0:"+num$(GLONSLO),0)       # hcb 50151
+#   LSLO   = "00000"                            # hcb 50151
+   #point d'entrée  demande 53457
+   GPOINT = "STKLIBSLO"
+   Gosub ENTREE From EXEFNC
+Endif
+
+Filter [STL]
+
+End
+
+########################################################################
+# RECSLO_M    Recherche dernier SLO d un LOT dans l'écran passé en paramètre
+########################################################################
+# Paramètres E : LITM = Article
+#                LLOT = Lot
+#                LABR = Ecran
+#                LSUP = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LSLO = Sous lot (="" si le lot n'a pas été trouvé)
+# Le masque d'écran doit contenir les champs NBLIG, LOT et SLO
+########################################################################
+Subprog RECSLO_M(LITM,LLOT,LABR,LSUP,LSLO)
+Value    Char     LITM
+Value    Char     LLOT
+Value    Char     LABR
+Value    Char     LSUP
+Variable Char     LSLO
+
+Local Integer LNUMLIGLOT
+Local Integer NBL
+Local Integer LSUITE
+
+    LSLO = ""
+    LSUITE = 1
+
+    If LABR="MTK2"
+        NBL = [M:MTK2]NBITM
+    Else
+        NBL = evalue("[M:"+LABR+"]NBLIG")
+    Endif
+
+    For I=0 To NBL-1
+        If (evalue("dim([M:"+LABR+"]ITMREF)")>1)
+            If evalue("[M:"+LABR+"]ITMREF(I)") <> LITM
+                LSUITE = 0
+            Endif
+        Endif
+        If LSUITE
+            LNUMLIGLOT = evalue("[M:"+LABR+"]NUMLIGLOT(I)")
+            If LNUMLIGLOT>=0 & evalue("[M:"+LABR+"]LOT(LNUMLIGLOT)") = LLOT
+                If evalue("dim([M:"+LABR+"]SLO)")>0 & LSLO<evalue("[M:"+LABR+"]SLO(LNUMLIGLOT)")
+                    LSLO = evalue("[M:"+LABR+"]SLO(LNUMLIGLOT)")
+                Endif
+            Endif
+        Else
+            LSUITE = 1
+        Endif
+    Next I
+End
+
+
+########################################################################
+# Ecriture fichier lot
+########################################################################
+Subprog ECRSTL
+#                              hcb V6per deb
+If [F:STL]NEWLTIDAT = [0/0/0]
+   [F:STL]NEWLTIDAT = [31/12/2999]     # date recontrole
+Endif
+#                              hcb V6per fin
+If [F:STL]SHLDAT    = [0/0/0]
+   [F:STL]SHLDAT    = [31/12/2999]     # date péremption
+Endif
+
+If [F:STL]DLU       = 0
+   [F:STL]DLU       = 1
+Endif
+If [F:STL]DLUDAT    = [0/0/0]
+   [F:STL]DLUDAT    = [F:STL]SHLDAT     # date limite utilisation
+Endif
+If [F:STL]DLUDAT    > [F:STL]SHLDAT
+   [F:STL]DLUDAT    = [F:STL]SHLDAT     # date limite utilisation
+Endif
+
+
+[F:STL]CREDAT = date$
+[F:STL]CREUSR = GUSER
+[F:STL]EXPNUM = [C]EXPORT
+[F:STL]UPDUSR = ""
+[F:STL]UPDDAT = [0/0/0]
+GPOINT = "BEFWRISTL"
+Gosub ENTREE From EXEFNC
+Write [STL]
+End
+
+
+########################################################################
+# Réécriture fichier lot
+########################################################################
+Subprog REWSTL
+#                              hcb V6per deb
+If dim([M:STW]TRSTYP) > 0
+   If [M:STW]TRSTYP = 8
+      [F:STL]LTIDAT = [M:STW]IPTDAT    # date controle
+#       Call CALLTI([F:ITM]EXYMGTCOD,[F:STL]LTIDAT,[F:STL]SHLLTI ,[F:STL]SHLLTIUOM,"",[F:STL]NEWLTIDAT) From STKLIB  # hcb 69412
+#         si date recontrole > date limite utilisation : date recontrole = date limite utilisation
+#          If [F:STL]NEWLTIDAT <> [31/12/2999]     # date recontrole
+#             If [F:STL]NEWLTIDAT  > [F:STL]DLUDAT
+#                [F:STL]NEWLTIDAT  = [F:STL]DLUDAT
+#            Endif
+#         Endif
+   Endif
+Endif
+If [F:STL]NEWLTIDAT = [0/0/0]
+   [F:STL]NEWLTIDAT = [31/12/2999]     # date recontrole
+Endif
+#                              hcb V6per fin
+If [F:STL]SHLDAT    = [0/0/0]
+   [F:STL]SHLDAT    = [31/12/2999]     # date péremption
+Endif
+If [F:STL]DLUDAT    = [0/0/0]
+   [F:STL]DLUDAT    = [F:STL]SHLDAT     # date limite utilisation
+Endif
+If [F:STL]DLUDAT    > [F:STL]SHLDAT
+   [F:STL]DLUDAT    = [F:STL]SHLDAT     # date limite utilisation
+Endif
+If [F:STL]DLU       = 0
+   [F:STL]DLU       = 1
+Endif
+
+[F:STL]EXPNUM = [C]EXPORT
+[F:STL]UPDUSR = GUSER
+[F:STL]UPDDAT = date$
+GPOINT = "BEFREWSTL"
+Gosub ENTREE From EXEFNC
+Rewrite [STL]
+End
+
+
+########################################################################
+# Ecriture fichier lot
+########################################################################
+Subprog ECRSLF
+[F:SLF]CUR    = GSYSCUR
+[F:SLF]CREDAT = date$
+[F:SLF]CREUSR = GUSER
+[F:SLF]EXPNUM = [C]EXPORT
+[F:SLF]UPDUSR = ""
+[F:SLF]UPDDAT = [0/0/0]
+GPOINT = "BEFWRISLF"
+Gosub ENTREE From EXEFNC
+Write [SLF]
+End
+
+
+########################################################################
+# Réécriture fichier lot
+########################################################################
+Subprog REWSLF
+[F:SLF]EXPNUM = [C]EXPORT
+[F:SLF]UPDUSR = GUSER
+[F:SLF]UPDDAT = date$
+GPOINT = "BEFREWSLF"
+Gosub ENTREE From EXEFNC
+Rewrite [SLF]
+End
+
+
+########################################################################
+# Ecriture fichier contrôle qualité (entête)
+########################################################################
+Subprog ECRQLH
+[F:QLH]CREDAT = date$
+[F:QLH]CREUSR = GUSER
+[F:QLH]EXPNUM = [C]EXPORT
+[F:QLH]UPDUSR = ""
+[F:QLH]UPDDAT = [0/0/0]
+GPOINT = "BEFWRIQLH"
+Gosub ENTREE From EXEFNC
+Write [QLH]
+End
+
+
+########################################################################
+# Réécriture fichier contrôle qualité (entête)
+########################################################################
+Subprog REWQLH
+[F:QLH]EXPNUM = [C]EXPORT
+[F:QLH]UPDUSR = GUSER
+[F:QLH]UPDDAT = date$
+GPOINT = "BEFREWQLH"
+Gosub ENTREE From EXEFNC
+Rewrite [QLH]
+End
+
+
+########################################################################
+# Ecriture fichier contrôle qualité (ligne)
+########################################################################
+Subprog ECRQLD
+#----- Recherche no de ligne de la demande d'analyse à créer -----#
+Columns [QLD1] (VCRLIN)
+Filter [QLD1] Where VCRTYP=[F:QLD]VCRTYP & VCRNUM=[F:QLD]VCRNUM
+Read [QLD1] QLD0 Last
+If fstat [F:QLD]VCRLIN=1 Else [F:QLD]VCRLIN=[F:QLD1]VCRLIN+1 : Endif
+Filter [QLD1]
+Columns [QLD1]
+
+#-----
+[F:QLD]CREDAT = date$
+[F:QLD]CREUSR = GUSER
+[F:QLD]EXPNUM = [C]EXPORT
+[F:QLD]UPDUSR = ""
+[F:QLD]UPDDAT = [0/0/0]
+GPOINT = "BEFWRIQLD"
+Gosub ENTREE From EXEFNC
+Write [QLD]
+End
+
+
+########################################################################
+# Réécriture fichier contrôle qualité (ligne)
+########################################################################
+Subprog REWQLD
+[F:QLD]EXPNUM = [C]EXPORT
+[F:QLD]UPDUSR = GUSER
+[F:QLD]UPDDAT = date$
+GPOINT = "BEFREWQLD"
+Gosub ENTREE From EXEFNC
+Rewrite [QLD]
+End
+
+########################################################################
+# Ecriture fichier contrôle qualité échantillonnage   hcb V6CQ
+########################################################################
+Subprog ECRSMP
+[F:SMP]CREDAT = date$
+[F:SMP]CREUSR = GUSER
+[F:SMP]EXPNUM = [C]EXPORT
+[F:SMP]UPDUSR = ""
+[F:SMP]UPDDAT = [0/0/0]
+GPOINT = "BEFWRISMP"
+Gosub ENTREE From EXEFNC
+Write [SMP]
+End
+
+########################################################################
+# Réécriture fichier contrôle qualité échantillonnage hcb V6CQ
+########################################################################
+Subprog REWSMP
+[F:SMP]EXPNUM = [C]EXPORT
+[F:SMP]UPDUSR = GUSER
+[F:SMP]UPDDAT = date$
+GPOINT = "BEFREWSMP"
+Gosub ENTREE From EXEFNC
+Rewrite [SMP]
+End
+
+
+########################################################################
+# Ecriture fichier stock
+########################################################################
+# paramètres E : LOPT = Code option ("" =Cas standard
+#                                    "L"=Pas de mise à jour de la date
+#                                        de libération de l'emplacement
+#                                        cas de la modif d'un mouvement)
+# paramètres S : LRET = Code retour (0=Ok,
+#                                    1=Erreur màj emplacement  GOK=-1
+#                                    2=Erreur màj emplacement  GOK= 0
+#                                    3=Erreur écriture STOCK)
+########################################################################
+Subprog ECRSTO(LOPT,LRET)
+Value    Char    LOPT
+Variable Integer LRET
+Raz LRET
+
+If [F:STO]PCUSTUCOE=0 [F:STO]PCUSTUCOE=1 Endif
+#--- Bug 61604
+#[F:STO]QTYPCU = arr([F:STO]QTYSTU/[F:STO]PCUSTUCOE,0.000001)
+[F:STO]QTYPCU = [F:STO]QTYSTU/[F:STO]PCUSTUCOE
+Call QTEARR([F:STO]QTYPCU,[F:STO]PCU) From TRTDIV
+
+If [F:STO]PCUORI=""
+  [F:STO]PCUORI    = [F:STO]PCU
+  [F:STO]QTYPCUORI = [F:STO]QTYPCU
+  [F:STO]QTYSTUORI = [F:STO]QTYSTU
+Endif
+If [F:STO]LOCCAT=0
+  [F:STO]LOCCAT=1
+Endif
+[F:STO]CUNLOKFLG = 1
+[F:STO]CREDAT    = date$
+[F:STO]CREUSR    = GUSER
+[F:STO]EXPNUM    = [C]EXPORT
+[F:STO]UPDUSR    = ""
+[F:STO]UPDDAT    = [0/0/0]
+GPOINT = "BEFWRISTO"
+Gosub ENTREE From EXEFNC
+Write [STO]
+If !fstat & [F:STO]LOC<>"" & GSTKLIBEMP=1
+  Call STKLIBEMP([F:STO]STOFCY,[F:STO]LOC,LOPT,LRET) From STKLOC
+Elsif fstat
+  LRET=3
+Endif
+GSTKLIBEMP=1
+End
+
+########################################################################
+# Réécriture fichier stock
+########################################################################
+# paramètres E : LOPT = Code option ("" =Cas standard
+#                                    "L"=Pas de mise à jour de la date
+#                                        de libération de l'emplacement
+#                                        cas de la modif d'un mouvement)
+# paramètres S : LRET = Code retour (0=Ok,
+#                                    1=Erreur màj emplacement  GOK=-1
+#                                    2=Erreur màj emplacement  GOK= 0
+#                                    3=Erreur réécriture STOCK)
+########################################################################
+Subprog REWSTO(LOPT,LRET)
+Value    Char    LOPT
+Variable Integer LRET
+Raz LRET
+
+If [F:STO]PCUSTUCOE=0 [F:STO]PCUSTUCOE=1 Endif
+#--- Bug 61604
+#[F:STO]QTYPCU = arr([F:STO]QTYSTU/[F:STO]PCUSTUCOE,0.000001)
+[F:STO]QTYPCU = [F:STO]QTYSTU/[F:STO]PCUSTUCOE
+Call QTEARR([F:STO]QTYPCU,[F:STO]PCU) From TRTDIV
+
+[F:STO]EXPNUM = [C]EXPORT
+[F:STO]UPDUSR = GUSER
+[F:STO]UPDDAT = date$
+GPOINT = "BEFREWSTO"
+Gosub ENTREE From EXEFNC
+Rewrite [STO]
+If !fstat & [F:STO]LOC<>"" & GSTKLIBEMP=1
+  Call STKLIBEMP([F:STO]STOFCY,[F:STO]LOC,LOPT,LRET) From STKLOC
+Elsif fstat
+  LRET=3
+Endif
+GSTKLIBEMP=1
+End
+
+########################################################################
+# Réécriture fichier stock sans libération emplacement
+# (pour allocations par exemple)
+########################################################################
+Subprog REWSTOA
+#
+[F:STO]EXPNUM = [C]EXPORT
+[F:STO]UPDUSR = GUSER
+[F:STO]UPDDAT = date$
+GPOINT = "BEFREWSTO"
+Gosub ENTREE From EXEFNC
+Rewrite [STO]
+End
+
+########################################################################
+# Effacement fichier stock
+########################################################################
+# paramètres E : LOPT = Code option ("" =Cas standard
+#                                    "L"=Pas de mise à jour de la date
+#                                        de libération de l'emplacement
+#                                        cas de la modif d'un mouvement)
+# paramètres S : LRET = Code retour (0=Ok,
+#                                    1=Erreur màj emplacement  GOK=-1
+#                                    2=Erreur màj emplacement  GOK= 0
+#                                    3=Erreur suppression STOCK)
+########################################################################
+Subprog DELSTO(LOPT,LRET)
+Value    Char    LOPT
+Variable Integer LRET
+Raz LRET
+GPOINT = "BEFDELSTO"                 # hcb 94659
+Gosub ENTREE From EXEFNC             # hcb 94659
+Delete [STO]
+If !fstat & [F:STO]LOC<>"" & GSTKLIBEMP=1
+  Call STKLIBEMP([F:STO]STOFCY,[F:STO]LOC,LOPT,LRET) From STKLOC
+Elsif fstat
+  LRET=3
+Endif
+GSTKLIBEMP=1
+End
+
+########################################################################
+# Ecriture fichier rangements STOSRG
+########################################################################
+Subprog ECRSRG
+#----- Recherche no de séquence à créer (désactivé !)-----#
+#Local Shortint WSEQ
+#Filter [SRG1] Where STOCOU=[F:SRG]STOCOU
+#Read [SRG1] SRG0 Last
+#If fstat [L]WSEQ=0 Else [L]WSEQ=[F:SRG1]STOSEQ+1 : Endif
+#Filter [SRG1]
+#[F:SRG]STOSEQ=[L]WSEQ
+#-----
+If [F:SRG]ORICOD=0  [F:SRG]ORICOD=1 : Endif
+If [F:SRG]STAFLG=0  [F:SRG]STAFLG=1 : Endif
+[F:SRG]CREDAT    = date$
+[F:SRG]CREUSR    = GUSER
+[F:SRG]EXPNUM    = [C]EXPORT
+[F:SRG]UPDUSR    = ""
+[F:SRG]UPDDAT    = [0/0/0]
+GPOINT = "BEFWRISRG" :                    # hcb X3-85137
+Gosub ENTREE From EXEFNC                  # hcb X3-85137
+Write [SRG]
+End
+
+
+########################################################################
+# Réécriture fichier rangements STOSRG
+########################################################################
+Subprog REWSRG
+[F:SRG]EXPNUM = [C]EXPORT
+[F:SRG]UPDUSR = GUSER
+[F:SRG]UPDDAT = date$
+#GPOINT = "BEFREWSRG" : # Point d'entrée à créer !
+#Gosub ENTREE From EXEFNC
+Rewrite [SRG]
+End
+
+
+########################################################################
+# Ecriture fichier couts stocks FIFO
+########################################################################
+Subprog ECRSTP
+If [F:STP]QTYSTUACT<>0
+  [F:STP]CREDAT = date$
+  [F:STP]CREUSR = GUSER
+  [F:STP]EXPNUM = [C]EXPORT
+  [F:STP]UPDUSR = ""
+  [F:STP]UPDDAT = [0/0/0]
+  GPOINT = "BEFWRISTP"       # hcb 48976
+  Gosub ENTREE From EXEFNC
+  Write [STP]
+Else
+  Raz fstat
+Endif
+End
+
+
+########################################################################
+# Réécriture fichier couts stocks FIFO (Suppression si quantité nulle)
+########################################################################
+Subprog REWSTP
+If [F:STP]QTYSTUACT=0
+  GPOINT = "BEFDELSTP"     # CCC (2009-10-30) DM 53988
+  Gosub ENTREE From EXEFNC
+  Delete [STP]
+Else
+  [F:STP]EXPNUM = [C]EXPORT
+  [F:STP]UPDUSR = GUSER
+  [F:STP]UPDDAT = date$
+  GPOINT = "BEFREWSTP"     # hcb 48976
+  Gosub ENTREE From EXEFNC
+  Rewrite [STP]
+Endif
+End
+
+########################################################################
+# Re-write table STOMVTCOST for FIFO movements (delete record if QTY is 0)
+########################################################################
+Subprog REWSMC
+If [F:SMC]QTYSTU=0
+  Delete [SMC]
+Else
+  [F:SMC]UPDUSR = GUSER
+  Rewrite [SMC]
+Endif
+End
+
+########################################################################
+# Ecriture fichier des numéros de série
+########################################################################
+Subprog ECRSTS
+[F:STS]CREDAT = date$
+[F:STS]CREUSR = GUSER
+[F:STS]EXPNUM = [C]EXPORT
+[F:STS]UPDUSR = ""
+[F:STS]UPDDAT = [0/0/0]
+GPOINT = "BEFWRISTS"
+Gosub ENTREE From EXEFNC
+Write [STS]
+End
+
+
+########################################################################
+# Réécriture fichier des numéros de série
+########################################################################
+Subprog REWSTS
+[F:STS]EXPNUM = [C]EXPORT
+[F:STS]UPDUSR = GUSER
+[F:STS]UPDDAT = date$
+GPOINT = "BEFREWSTS"
+Gosub ENTREE From EXEFNC
+Rewrite [STS]
+End
+
+
+########################################################################
+# Ecriture fichier Mouvement de stock
+########################################################################
+# Paramètres E : LSEQ       = No séquence du mouvement
+#                             (0=Recherche dernier no séquence utilisé)
+#
+# Paramètres S : LRET       = Code retour (0=Ok,
+#                                          1=Erreur écriture STOJOU,
+#                                          2=Erreur lecture  STOTRK,
+#                                          3=Erreur écriture STOTRK,
+#                                          4=Erreur màj statistiques)
+#
+# Prérequis    : La classe [F:ITG]  doit être chargée (ITMCATEG)
+#                La classe [F:STJ1] doit être ouverte (STOJOU bis)
+#                La classe [F:ITM]  doit être ouverte (ITMMASTER)
+########################################################################
+Subprog ECRSTJ(LSEQ,LRET)
+Value    Integer LSEQ
+Variable Integer LRET
+Local Char REQ(250)(4)
+Raz LRET
+
+#--- Issue 112967
+#If LSEQ=0
+#  #----- Recherche no de séquence du mouvement à créer -----#
+#  Local Integer WSEQ1, WSEQ2
+#  Columns [STJ1] (MVTSEQ)
+#  Filter [STJ1] Where STOFCY=[F:STJ]STOFCY
+#&                   & UPDCOD=1
+#&                   & ITMREF=[F:STJ]ITMREF
+#&                   & IPTDAT=[F:STJ]IPTDAT
+#  WSEQ1=99999999
+#  Read [STJ1]STJ0 First
+#  If !fstat [L]WSEQ1=[F:STJ1]MVTSEQ-1 Endif
+#  Filter [STJ1] Where STOFCY=[F:STJ]STOFCY
+#&                   & UPDCOD=2
+#&                   & ITMREF=[F:STJ]ITMREF
+#&                   & IPTDAT=[F:STJ]IPTDAT
+#  WSEQ2=99999999
+#  Read [STJ1]STJ0 First
+#  If !fstat [L]WSEQ2=[F:STJ1]MVTSEQ-1 Endif
+#  Filter [STJ1]
+#  Columns [STJ1]
+#  [F:STJ]MVTSEQ=min(WSEQ1,WSEQ2)
+#Else
+#  [F:STJ]MVTSEQ=LSEQ
+#Endif
+#--- End issue 112967
+
+#-----
+If [F:STJ]PRIREGFLG=0 [F:STJ]PRIREGFLG=1 : Endif
+[F:STJ]AGGIFAFLG = 1
+Raz [F:STJ]ACCDAT, [F:STJ]NUMVCR, [F:STJ]GTE
+
+#--- Régul de sortie
+If dim([F:STJ]CREMVTDAT)>0
+    If [F:STJ]CREMVTDAT=[0/0/0]
+        Raz [F:STJ1]
+        If [F:STJ]TRSTYP=13
+            # Dans le cas des inventaires, le n° de ligne est à 0 dans l'enregistrement "bidon"
+            # On récupère ses champs CREMVTDAT, CREMVTTIM mais on génère un CREMVTSEQ pour chaque ligne de doc
+            Columns [STJ1] (CREMVTDAT, CREMVTTIM, VCRTYP, VCRNUM, VCRLIN,MVTSEQ, CREMVTSEQ, TRSTYP)
+            Filter [STJ1] Where STOFCY=[F:STJ]STOFCY
+&                             & VCRTYP=[F:STJ]VCRTYP
+&                             & VCRNUM=[F:STJ]VCRNUM
+&                             & (VCRLIN=[F:STJ]VCRLIN | VCRLIN=0)
+&                         Order By VCRLIN Desc
+            For [STJ1]
+                [F:STJ]CREMVTDAT = [F:STJ1]CREMVTDAT
+                [F:STJ]CREMVTTIM = [F:STJ1]CREMVTTIM
+                If [F:STJ1]VCRLIN=0
+                    [F:STJ]CREMVTSEQ = uniqid([STJ])
+                Else
+                    [F:STJ]CREMVTSEQ = [F:STJ1]CREMVTSEQ
+                Endif
+                Break
+            Next
+            Filter [STJ1]
+            Columns [STJ1]
+        Else
+# Issue 96203 - 2014-02-19 by CCC : Performances
+#            # Issue 71078 - 2011-03-03 by CCC : Forcer l'utilisation de la clé STJ1
+#            # ccc (2009-11-13) Bug 53572 : Différencier CREMVTSEQ de l'entrée et de la sortie pour les changements d'emplacement
+#            # On s'appuie donc sur le signe de la quantité sachant que les mvt d'annulation sont écrits directement avec REGFLG=2
+#            REQ(0) = "SELECT"
+#            If GTYPDBA=1
+#                REQ(0) += "/*+ INDEX(M STOJOU_STJ1)*/"
+#            Endif
+#            REQ(0)+=" CREMVTSEQ_0, CREMVTDAT_0, CREMVTTIM_0"
+#            REQ(0)+=" FROM STOJOU"
+#            If GTYPDBA=2
+#                REQ(0) += " WITH(INDEX(STOJOU_STJ1))"
+#            Endif
+#            REQ(0)+=",(SELECT "
+#            If GTYPDBA=1
+#                REQ(0) += "/*+ INDEX(M STOJOU_STJ1)*/"
+#            Endif
+#            REQ(0)+=" MAX(MVTSEQ_0) S, STOFCY_0 F, VCRTYP_0 T,VCRNUM_0 N,VCRLIN_0 L"
+#            REQ(0)+=  " FROM STOJOU"
+#            If GTYPDBA=2
+#                REQ(0) += " WITH(INDEX(STOJOU_STJ1))"
+#            Endif
+#            REQ(1)=  " WHERE STOFCY_0='"+[F:STJ]STOFCY+"' AND ITMREF_0='"+[F:STJ]ITMREF+"' AND VCRTYP_0="+num$([F:STJ]VCRTYP)+" and VCRNUM_0='"+[F:STJ]VCRNUM+"' and VCRLIN_0="+num$([F:STJ]VCRLIN)
+#            If [F:STJ]REGFLG=1 & sgn([F:STJ]ACTQTY)>0 | [F:STJ]REGFLG=2 & sgn([F:STJ]ACTQTY)<0
+#                REQ(2) =  " AND ACTQTY_0>0"
+#            Elsif [F:STJ]REGFLG=1 & sgn([F:STJ]ACTQTY)<0 | [F:STJ]REGFLG=2 & sgn([F:STJ]ACTQTY)>0
+#                REQ(2) =  " AND ACTQTY_0<0"
+#            Endif
+#            REQ(3) =  " GROUP BY STOFCY_0, VCRTYP_0,VCRNUM_0,VCRLIN_0"
+#            REQ(3)+= ") STJ"
+#            REQ(3)+=" WHERE STOFCY_0=STJ.F AND VCRTYP_0=STJ.T AND VCRNUM_0=STJ.N AND VCRLIN_0=STJ.L"
+#            REQ(3)+=  " AND MVTSEQ_0=STJ.S"
+#            [F:STJ]CREMVTSEQ = 0
+#            For (Integer SEQ, Date DAT, Char TIM) From num$(GTYPDBA*2+1) Sql REQ As [SQLX]
+#                [F:STJ]CREMVTSEQ = [F:SQLX]SEQ
+#                [F:STJ]CREMVTDAT = [F:SQLX]DAT
+#                [F:STJ]CREMVTTIM = [F:SQLX]TIM
+#                Break
+#            Next
+#            # Issue 76961 - 2011-10-10 by CCC : Pour une même ligne de doc on assure l'égalité de CREMVTDAT et CREMVTTIM
+#            If [F:STJ]CREMVTSEQ=0 & REQ(2)<>""
+#                REQ(2) = ""
+#                For (Integer SEQ, Date DAT, Char TIM) From num$(GTYPDBA*2+1) Sql REQ As [SQLX]
+#                    [F:STJ]CREMVTSEQ = uniqid([STJ])
+#                    [F:STJ]CREMVTDAT = [F:SQLX]DAT
+#                    [F:STJ]CREMVTTIM = [F:SQLX]TIM
+#                    Break
+#                Next
+#            Endif
+            If clalev([F:STJ5])=0 : Local File STOJOU [STJ5] : Endif
+            Columns [STJ5] (CREMVTSEQ, CREMVTDAT, CREMVTTIM)
+            [F:STJ]CREMVTSEQ = 0
+            If [F:STJ]REGFLG=1 & sgn([F:STJ]ACTQTY)>0 | [F:STJ]REGFLG=2 & sgn([F:STJ]ACTQTY)<0
+                Filter [STJ5] Where STOFCY=[F:STJ]STOFCY
+&                                 & VCRTYP=[F:STJ]VCRTYP
+&                                 & VCRNUM=[F:STJ]VCRNUM
+&                                 & VCRLIN=[F:STJ]VCRLIN
+&                                 & ITMREF=[F:STJ]ITMREF
+&                                 & ACTQTY>0
+&                             Order By MVTSEQ Desc
+                For [STJ5]
+                    [F:STJ]CREMVTSEQ = [F:STJ5]CREMVTSEQ
+                    [F:STJ]CREMVTDAT = [F:STJ5]CREMVTDAT
+                    [F:STJ]CREMVTTIM = [F:STJ5]CREMVTTIM
+                    Break
+                Next
+            Elsif [F:STJ]REGFLG=1 & sgn([F:STJ]ACTQTY)<0 | [F:STJ]REGFLG=2 & sgn([F:STJ]ACTQTY)>0
+                Filter [STJ5] Where STOFCY=[F:STJ]STOFCY
+&                                 & VCRTYP=[F:STJ]VCRTYP
+&                                 & VCRNUM=[F:STJ]VCRNUM
+&                                 & VCRLIN=[F:STJ]VCRLIN
+&                                 & ITMREF=[F:STJ]ITMREF
+&                                 & ACTQTY<0
+&                             Order By MVTSEQ Desc
+                For [STJ5]
+                    [F:STJ]CREMVTSEQ = [F:STJ5]CREMVTSEQ
+                    [F:STJ]CREMVTDAT = [F:STJ5]CREMVTDAT
+                    [F:STJ]CREMVTTIM = [F:STJ5]CREMVTTIM
+                    Break
+                Next
+            Endif
+            Filter [STJ5]
+
+            If [F:STJ]CREMVTSEQ=0
+                Filter [STJ5] Where STOFCY=[F:STJ]STOFCY
+&                                 & VCRTYP=[F:STJ]VCRTYP
+&                                 & VCRNUM=[F:STJ]VCRNUM
+&                                 & VCRLIN=[F:STJ]VCRLIN
+&                                 & ITMREF=[F:STJ]ITMREF
+&                             Order By MVTSEQ Desc
+                For [STJ5]
+                    [F:STJ]CREMVTSEQ = uniqid([STJ])
+                    [F:STJ]CREMVTDAT = [F:STJ5]CREMVTDAT
+                    [F:STJ]CREMVTTIM = [F:STJ5]CREMVTTIM
+                    Break
+                Next
+                Filter [STJ5]
+            Endif
+            Columns [STJ5]
+        Endif
+        If [F:STJ]CREMVTSEQ=0
+            [F:STJ]CREMVTDAT = date$
+            [F:STJ]CREMVTTIM = ctrans(time$,":","")
+            [F:STJ]CREMVTSEQ = uniqid([STJ])
+        Endif
+    Endif
+    Case func STKLIB.TSTREG
+        When 2 :
+            # DM 73716 - 2013-10-08 by CCC
+            # 118579.m - Added TRSTYP & CREMVTSEQ as a parameter to CRESMALOT
+            Call CRESMALOT([F:STJ]STOFCY,[F:STJ]ITMREF,[F:STJ]LOT,[F:STJ]SLO,
+&                          [F:STJ]VCRTYP,[F:STJ]VCRNUM,[F:STJ]VCRLIN,
+&                          [F:STJ]TRSTYP,[F:STJ]CREMVTSEQ,
+&                          [F:STJ]VCRTYPREG,[F:STJ]VCRNUMREG,[F:STJ]VCRLINREG,
+&                          [F:STJ]ACTQTY,[F:STJ]VARORD+[F:STJ]AMTDEV,LRET) From FUNSADJC
+        When 1 :
+            # On passe en paramètre AMTORD+AMTDEV car si une régule ne peut se faire (stock nul au moment de la régul)
+            # on aura uniquement de l'écart non absorbé.
+            # 118579.m - Added TRSTYP & CREMVTSEQ as a parameter to CRESMA
+            Call CRESMA([F:STJ]STOFCY,[F:STJ]VCRTYP,[F:STJ]VCRNUM,[F:STJ]VCRLIN,
+&                       [F:STJ]TRSTYP,[F:STJ]CREMVTSEQ,
+&                       [F:STJ]VCRTYPREG,[F:STJ]VCRNUMREG,[F:STJ]VCRLINREG,
+&                       [F:STJ]ACTQTY,[F:STJ]VARORD+[F:STJ]AMTDEV,LRET) From STKLIB
+    Endcase
+    If LRET<>0 : End : Endif
+Endif
+#--- fin Régul de sortie
+
+#--- Issue 112967
+If LSEQ=0
+  #----- Recherche no de séquence du mouvement à créer -----#
+  Local Integer WSEQ1, WSEQ2
+  Columns [STJ1] (MVTSEQ)
+  Filter [STJ1] Where STOFCY=[F:STJ]STOFCY
+&                   & UPDCOD=1
+&                   & ITMREF=[F:STJ]ITMREF
+&                   & IPTDAT=[F:STJ]IPTDAT
+  WSEQ1=99999999
+  Read [STJ1]STJ0 First
+  If !fstat [L]WSEQ1=[F:STJ1]MVTSEQ-1 Endif
+  Filter [STJ1] Where STOFCY=[F:STJ]STOFCY
+&                   & UPDCOD=2
+&                   & ITMREF=[F:STJ]ITMREF
+&                   & IPTDAT=[F:STJ]IPTDAT
+  WSEQ2=99999999
+  Read [STJ1]STJ0 First
+  If !fstat [L]WSEQ2=[F:STJ1]MVTSEQ-1 Endif
+  Filter [STJ1]
+  Columns [STJ1]
+  [F:STJ]MVTSEQ=min(WSEQ1,WSEQ2)
+Else
+  [F:STJ]MVTSEQ=LSEQ
+Endif
+#--- End issue 112967
+
+#X3-42808 MJH.n - 12 June 2017
+#We need to ensure that these are 0 whenever a new record is created
+[F:STJ]PITVALFLG  = 0
+[F:STJ]PITVALFLG2 = 0
+
+[F:STJ]CREDAT    = date$
+[F:STJ]CRETIM    = mid$(time$,1,2)+mid$(time$,4,2)
+[F:STJ]CREUSR    = GUSER
+[F:STJ]EXPNUM    = [C]EXPORT
+[F:STJ]UPDUSR    = ""
+[F:STJ]UPDDAT    = [0/0/0]
+If [F:STJ]BETCPY = 0
+   [F:STJ]BETCPY = 1
+Endif
+
+#----- Mise à jour traçabilité -----#
+# hcb rajout trstyp <> 0 pour eviter les enregistrements bidons inventaire
+If GSSTOTRK=2 & [F:ITM]TRKCOD>1 & [F:STJ]UPDCOD=2 & [F:STJ]TRSTYP <> 0
+  Call MAJTRK(LRET)
+  If LRET<>0  End : Endif
+Endif
+#----- Ecriture mouvement de stock -----#
+GPOINT = "BEFWRISTJ"
+Gosub ENTREE From EXEFNC
+$ECRSTJ1
+Write [STJ]
+Case fstat
+  When 0
+    Call VALSTA("STJ",1) From SUBPS2
+    If GOK<1  LRET=4 : Endif
+  When 3
+    If [F:STJ]MVTSEQ>0
+      [F:STJ]MVTSEQ -= 1 : Goto ECRSTJ1
+    Endif
+  When Default
+    LRET=1
+Endcase
+End
+
+########################################################################
+# Ré-écriture d'un Mouvement de stock (régularisation de prix)
+########################################################################
+Subprog REWSTJ(LRET)
+Variable Integer LRET
+Raz LRET
+[F:STJ1] = [F:STJ]
+Read [STJ1]STJ0 =
+[F:STJ]UPDDAT = date$
+[F:STJ]UPDUSR = GUSER
+If dim([F:STJ]CREMVTDAT)>0
+    Case func STKLIB.TSTREG
+        When 2:
+            # DM 73716 - 2013-10-08 by CCC
+            # 118579.m - Added TRSTYP & CREMVTSEQ as a parameter to CRESMALOT
+            Call CRESMALOT([F:STJ]STOFCY,[F:STJ]ITMREF,[F:STJ]LOT,[F:STJ]SLO,
+&                          [F:STJ]VCRTYP,[F:STJ]VCRNUM,[F:STJ]VCRLIN,
+&                          [F:STJ]TRSTYP,[F:STJ]CREMVTSEQ,
+&                          [F:STJ]VCRTYPREG,[F:STJ]VCRNUMREG,[F:STJ]VCRLINREG,
+&                          [F:STJ]ACTQTY,[F:STJ]VARORD+[F:STJ]AMTDEV-[F:STJ1]VARORD-[F:STJ1]AMTDEV,LRET) From FUNSADJC
+        When 1:
+            # On passe en paramètre AMTORD+AMTDEV car si une régule ne peut se faire (stock nul au moment de la régul)
+            # on aura uniquement de l'écart non absorbé.
+            # 118579.m - Added TRSTYP & CREMVTSEQ as a parameter to CRESMA
+            Call CRESMA([F:STJ]STOFCY,[F:STJ]VCRTYP,[F:STJ]VCRNUM,[F:STJ]VCRLIN,
+&                       [F:STJ]TRSTYP,[F:STJ]CREMVTSEQ,
+&                       [F:STJ]VCRTYPREG,[F:STJ]VCRNUMREG,[F:STJ]VCRLINREG,
+&                       [F:STJ]ACTQTY,[F:STJ]VARORD+[F:STJ]AMTDEV-[F:STJ1]VARORD-[F:STJ1]AMTDEV,LRET) From STKLIB
+    Endcase
+    If LRET<>0 : End : Endif
+Endif
+
+# Issue 95016 - 2014-01-09 by CCC
+GPOINT = "BEFREWSTJ"
+Gosub ENTREE From EXEFNC
+
+Rewrite [STJ]
+If fstat
+    LRET=1
+Endif
+End
+
+
+########################################################################
+# Ecriture fichier allocation
+########################################################################
+Subprog ECRSTA
+[F:STA]CREDAT = date$
+[F:STA]CREUSR = GUSER
+[F:STA]EXPNUM = [C]EXPORT
+[F:STA]UPDUSR = ""
+[F:STA]UPDDAT = [0/0/0]
+GPOINT = "BEFWRISTA"
+Gosub ENTREE From EXEFNC
+Write [STA]
+End
+
+########################################################################
+# Réécriture fichier allocation
+########################################################################
+Subprog REWSTA
+#--- Bug 72079
+#[F:STA]SRGQTYSTU=min([F:STA]SRGQTYSTU,[F:STA]QTYSTU)
+[F:STA]SRGQTYSTU=min([F:STA]SRGQTYSTU,[F:STA]QTYSTUACT)
+#---
+[F:STA]EXPNUM = [C]EXPORT
+[F:STA]UPDUSR = GUSER
+[F:STA]UPDDAT = date$
+GPOINT = "BEFREWSTA"
+Gosub ENTREE From EXEFNC
+Rewrite [STA]
+End
+
+########################################################################
+# Ecriture fichier cumuls article-site
+########################################################################
+Subprog ECRITV
+[F:ITV]CREDAT    = date$
+[F:ITV]CREUSR    = GUSER
+[F:ITV]EXPNUM    = [C]EXPORT
+[F:ITV]UPDUSR    = ""
+[F:ITV]UPDDAT    = [0/0/0]
+GPOINT = "BEFWRIITV"
+Gosub ENTREE From EXEFNC
+Write [ITV]
+End
+
+########################################################################
+# Réécriture fichier cumuls article-site
+########################################################################
+Subprog REWITV
+[F:ITV]EXPNUM = [C]EXPORT
+[F:ITV]UPDUSR = GUSER
+[F:ITV]UPDDAT = date$
+GPOINT = "BEFREWITV"
+Gosub ENTREE From EXEFNC
+Rewrite [ITV]
+End
+########################################################################
+# Réécriture fichier cumuls article-depot
+########################################################################
+Subprog REWITW
+[F:ITW]EXPNUM = [C]EXPORT
+[F:ITW]UPDUSR = GUSER
+[F:ITW]UPDDAT = date$
+GPOINT = "BEFREWITW"
+Gosub ENTREE From EXEFNC
+Rewrite [ITW]
+End
+
+########################################################################
+# Paramètres E : PITM = Article
+#                PFCY = Site
+#                PDAT = Date de référence
+#                PLOK = 0 -> read
+#                       1 -> readlock
+#            S : PCRE = 1 si l'enregistrement a été créé
+#
+# [F:PER] est utilisée par l'appel à GETPERSOC
+########################################################################
+Subprog GETITH(PITM,PFCY,PDAT,PLOK,PCRE)
+Value    Char    PITM
+Value    Char    PFCY
+Value    Date    PDAT
+Value    Integer PLOK
+Variable Integer PCRE
+
+If !clalev([F:PER]) : Local File PERIOD [PER] : Endif
+
+Local Decimal LQTYTMP1, LQTYTMP2
+Local Decimal LEXE, LPER
+Local Integer LTRBEGIN
+Local Date    WREODAT
+Local Decimal LRCPPRI
+Raz LEXE, LPER, PCRE
+
+# Lecture ITMMVTHIS
+Call GETSOC(PFCY) From DEVSUB
+Call GETPERSOC(GSOCIETE,GTYPGEN,PDAT,LEXE,LPER) From CPTSUB
+If !PLOK
+    Read [ITH] ITH0=PITM;PFCY;[F:PER]PERSTR
+Else
+    Readlock [ITH] ITH0=PITM;PFCY;[F:PER]PERSTR
+Endif
+Case fstat
+  When 4,5
+    If adxlog=0
+        Trbegin [ITH]
+        LTRBEGIN=1
+    Else
+        LTRBEGIN=0
+    Endif
+    #----- Récup cumuls annuels et dates & prix de la période précédente -----#
+    Filter [ITH] Where ITMREF=PITM
+&                    & STOFCY=PFCY
+&                    & FIYNUM=LEXE
+&                    & PERSTR<[F:PER]PERSTR
+    Read [ITH] ITH0 Last
+    Filter [ITH]
+    If fstat  Raz [F:ITH] : Endif
+    # Cumuls annuels
+    LQTYTMP1=[F:ITH]YEARCPQTY
+    LQTYTMP2=[F:ITH]YEAISSQTY
+    GBIDD1  =[F:ITH]YEARCPAMT
+    GBIDD2  =[F:ITH]YEAISSAMT
+    GBIDI1  =[F:ITH]YEARCPMVT
+    GBIDI2  =[F:ITH]YEAISSMVT
+    # Dates et prix
+    GBIDA1  =[F:ITH]LASISSDAT
+    GBIDA2  =[F:ITH]LASRCPDAT
+    LRCPPRI =[F:ITH]LASRCPPRI
+    GBIDA3  =[F:ITH]LASPURDAT
+    GBIDD3  =[F:ITH]LASPURPRI
+    WREODAT =[F:ITH]LASREODAT
+    #-----
+    Raz [F:ITH]
+    [F:ITH]ITMREF   =PITM
+    [F:ITH]STOFCY   =PFCY
+    [F:ITH]PERSTR   =[F:PER]PERSTR
+    [F:ITH]PEREND   =[F:PER]PEREND
+    [F:ITH]FIYNUM   =LEXE
+    [F:ITH]PERNUM   =LPER
+    #----- Chargement cumuls annuels -----#
+    [F:ITH]YEARCPQTY=LQTYTMP1
+    [F:ITH]YEAISSQTY=LQTYTMP2
+    [F:ITH]YEARCPAMT=GBIDD1
+    [F:ITH]YEAISSAMT=GBIDD2
+    [F:ITH]YEARCPMVT=GBIDI1
+    [F:ITH]YEAISSMVT=GBIDI2
+    # Chargement dates et prix
+    [F:ITH]LASISSDAT = GBIDA1
+    [F:ITH]LASRCPDAT = GBIDA2
+    [F:ITH]LASRCPPRI = LRCPPRI
+    [F:ITH]LASPURDAT = GBIDA3
+    [F:ITH]LASPURPRI = GBIDD3
+    [F:ITH]LASREODAT = WREODAT
+    #-----
+    Call ECRITH
+    If fstat
+        If LTRBEGIN
+            Rollback
+        Endif
+        End
+    Endif
+    PCRE=1
+#   If GUSER = "HCB"
+#      Call ECR_TRACE([F:ITH]ITMREF-","-[F:ITH]STOFCY-","-format$("D:"+GFMDAT,[F:PER]PERSTR)-","-num$([F:PER]PERNUM),0) From GESECRAN
+#   Endif
+    If LTRBEGIN
+        Commit
+    Endif
+    If !PLOK
+        Read [ITH] ITH0=PITM;PFCY;[F:PER]PERSTR
+    Else
+        Readlock [ITH] ITH0=PITM;PFCY;[F:PER]PERSTR
+    Endif
+Endcase
+End
+
+########################################################################
+Subprog ECRITH
+[F:ITH]CREDAT    = date$
+[F:ITH]CREUSR    = GUSER
+[F:ITH]EXPNUM    = [C]EXPORT
+[F:ITH]UPDUSR    = ""
+[F:ITH]UPDDAT    = [0/0/0]
+GPOINT = "BEFWRIITH"
+Gosub ENTREE From EXEFNC
+Write [ITH]
+End
+
+########################################################################
+# Réécriture fichier cumuls article-site
+########################################################################
+Subprog REWITH
+
+[F:ITH]EXPNUM = [C]EXPORT
+[F:ITH]UPDUSR = GUSER
+[F:ITH]UPDDAT = date$
+GPOINT = "BEFREWITH"
+Gosub ENTREE From EXEFNC
+Rewrite [ITH]
+End
+
+########################################################################
+# CRE_STOWIPW    Création enregistrement quantité en cours de traitement
+########################################################################
+# Paramètres E : LSTOCOU = Chrono stock
+#                LWIPQTY = Quantité à créer
+#                LWIPQTA = Quantité à créer en UA
+########################################################################
+Subprog CRE_STOWIPW(LSTOCOU,LWIPQTY,LWIPQTA)
+Value   Decimal  LSTOCOU
+Value   Decimal  LWIPQTY
+Value   Decimal  LWIPQTA
+
+Local   Integer  WSEQ
+
+If !clalev([F:SWW])  Local File STOWIPW [SWW]  Endif
+# Récupération prochain no séquence
+Filter [SWW] Where STOCOU=LSTOCOU & PRONUM=adxuid(1)
+Read [SWW] Last
+If fstat
+   WSEQ = 1
+Else
+   WSEQ = [F:SWW]SEQ+1
+Endif
+Filter [SWW]
+
+# Création qté en cours de traitement
+[F:SWW]STOCOU = LSTOCOU
+[F:SWW]PRONUM = adxuid(1)
+[F:SWW]SEQ    = WSEQ
+[F:SWW]WIPQTY = LWIPQTY
+[F:SWW]WIPQTA = LWIPQTA
+[F:SWW]CREDAT = date$
+[F:SWW]CREUSR = GUSER
+Write [SWW]
+
+End
+
+########################################################################
+# DEL_STOWIPW    Suppression enreg quantité en cours de traitement
+########################################################################
+# Paramètres E : LSTOCOU = Chrono stock
+#                LWIPQTY = Quantité à supprimer
+########################################################################
+Subprog DEL_STOWIPW(LSTOCOU,LWIPQTY)
+Value   Decimal  LSTOCOU
+Value   Decimal  LWIPQTY
+
+#If !clalev([F:SWW])  Local File STOWIPW [SWW]  Endif
+If clalev([F:SWW]) = 0  Local File STOWIPW [SWW]  Endif
+
+# Suppression qté en cours de traitement
+Filter [SWW] Where STOCOU=LSTOCOU & PRONUM=adxuid(1) & WIPQTY=LWIPQTY
+Read [SWW] First
+If !fstat
+   Readlock [SWW] Curr
+   If !fstat Delete [SWW] Endif
+Endif
+Filter [SWW]
+
+End
+
+########################################################################
+# DIM_STOWIPW    Diminution enreg quantité en cours de traitement
+########################################################################
+# Paramètres E : LSTOCOU = Chrono stock
+#                LWIPQTY = Quantité à diminuer
+#                LWIPQTA = Quantité à diminuer en UA
+########################################################################
+Subprog DIM_STOWIPW(LSTOCOU,LWIPQTY,LWIPQTA)
+Value   Decimal  LSTOCOU
+Value   Decimal  LWIPQTY
+Value   Decimal  LWIPQTA
+
+If !clalev([F:SWW])  Local File STOWIPW [SWW]  Endif
+
+# Diminution qté en cours de traitement
+Filter [SWW] Where STOCOU=LSTOCOU & PRONUM=adxuid(1)
+Readlock [SWW] First
+If !fstat
+   If LWIPQTY < [F:SWW]WIPQTY
+      [F:SWW]WIPQTY -= LWIPQTY
+      [F:SWW]WIPQTA -= LWIPQTA
+      Raz LWIPQTY, LWIPQTA
+      Rewrite [SWW]
+   Else
+      LWIPQTY -= [F:SWW]WIPQTY
+      LWIPQTA -= [F:SWW]WIPQTA
+      Delete [SWW]
+      While LWIPQTY>0
+         Readlock [SWW] Next
+         If !fstat
+            If LWIPQTY < [F:SWW]WIPQTY
+               [F:SWW]WIPQTY -= LWIPQTY
+               [F:SWW]WIPQTA -= LWIPQTA
+               Raz LWIPQTY, LWIPQTA
+               Rewrite [SWW]
+            Else
+               LWIPQTY -= [F:SWW]WIPQTY
+               LWIPQTA -= [F:SWW]WIPQTA
+               Delete [SWW]
+            Endif
+         Endif
+      Wend
+   Endif
+Endif
+Filter [SWW]
+
+End
+
+########################################################################
+# ADD_STOWIPW    Augmentation enreg quantité en cours de traitement
+########################################################################
+# Paramètres E : LSTOCOU = Chrono stock
+#                LINIQTA = Quantité initiale en UA
+#                LWIPQTY = Quantité à augmenter
+#                LWIPQTA = Quantité à augmenter en UA
+########################################################################
+Subprog ADD_STOWIPW(LSTOCOU,LINIQTA,LWIPQTY,LWIPQTA)
+Value   Decimal  LSTOCOU
+Value   Decimal  LINIQTA
+Value   Decimal  LWIPQTY
+Value   Decimal  LWIPQTA
+
+If !clalev([F:SWW])  Local File STOWIPW [SWW]  Endif
+
+# Augmentation qté en cours de traitement
+Filter [SWW] Where STOCOU=LSTOCOU & PRONUM=adxuid(1) & WIPQTA=LINIQTA
+Readlock [SWW] First
+If !fstat
+   [F:SWW]WIPQTY += LWIPQTY
+   [F:SWW]WIPQTA += LWIPQTA
+   Rewrite [SWW]
+   If !fstat
+      Raz LWIPQTY, LWIPQTA
+   Endif
+Endif
+Filter [SWW]
+
+End
+
+#--- Issue 110327
+########################################################################
+# CRE_STOSERW    Création enregistrements série en cours de traitement
+########################################################################
+# Paramètres E : LITM = Article
+#                LSER = No série début
+#                LQTE = Nombre de série
+# LRET =  0 : OK
+#  1 : Erreur
+#99 : Erreur programme
+########################################################################
+Subprog CRE_STOSERW(LITM,LSER,LQTE,LRET)
+Value    Char    LITM
+Value    Char    LSER
+Value    Decimal LQTE
+Variable Integer LRET
+
+Local    Char    WSER(GLONSER)
+Local    Integer WTRBEGIN
+Raz LRET
+
+If LITM="" | LSER="" | LQTE=0
+  LRET=99 : End
+Endif
+
+If !clalev([F:SSW])  Local File STOSERW [SSW]  Endif
+If !clalev([F:STS1]) Local File STOSER  [STS1] Endif
+
+# Si pas de transaction en cours
+If adxlog<>1
+   Trbegin [SSW]
+   WTRBEGIN=1
+Endif
+
+#--- No série en cours de traitement?
+If func STKLIB.REC_STOSERW(LITM,LSER)<>0
+  If GTRACE="1"
+    Call ECR_TRACE(LSER-mess(449,184,1),1) From GESECRAN
+  Else
+    Call ERREUR(LSER-mess(449,184,1)) From GESECRAN
+  Endif
+  LRET=1 : Goto CRE_SSW_FIN
+Endif
+# On lit le no série dans STOSER car s'il a une pièce de sortie,
+# c'est qu'il est alloué, il n'y a donc pas de STOSERW à créer
+Read [STS1]STS0=LITM;LSER
+If !fstat & [F:STS1]SDHNUM=""
+  # Création 1er no série en cours de traitement
+  [F:SSW]ITMREF = LITM
+  [F:SSW]SERNUM = LSER
+  [F:SSW]PRONUM = adxuid(1)
+  [F:SSW]CREDAT = date$
+  [F:SSW]CREUSR = GUSER
+  Write [SSW]
+  If fstat
+    Call FSTA("SSW") From GLOCK
+    LRET=1 : Goto CRE_SSW_FIN
+  Endif
+Endif
+LQTE-=1
+If LQTE=0 : Goto CRE_SSW_FIN : Endif
+
+# Boucle de création des autres no série en cours de traitement
+While LQTE>0
+  WSER = LSER
+  Call PLUS_UN(WSER,LSER,LRET) From STKLIB
+  If LRET<>0
+    If GTRACE="1"
+      Call ECR_TRACE(mess(476,197,1),1) From GESECRAN
+    Else
+      Call ERREUR(mess(476,197,1)) From GESECRAN
+    Endif
+    Break
+  Else
+    #--- No série en cours de traitement?
+    If func STKLIB.REC_STOSERW(LITM,LSER)<>0
+      If GTRACE="1"
+        Call ECR_TRACE(mess(449,184,1),1) From GESECRAN
+      Else
+        Call ERREUR(mess(449,184,1)) From GESECRAN
+      Endif
+      LRET=1 : Break
+    Endif
+    # On lit le no série dans STOSER car s'il a une pièce de sortie,
+    # c'est qu'il est alloué, il n'y a donc pas de STOSERW à créer
+    Read [STS1]STS0=LITM;LSER
+    If !fstat & [F:STS1]SDHNUM=""
+      # Création no série en cours de traitement
+      [F:SSW]ITMREF = LITM
+      [F:SSW]SERNUM = LSER
+      [F:SSW]PRONUM = adxuid(1)
+      [F:SSW]CREDAT = date$
+      [F:SSW]CREUSR = GUSER
+      Write [SSW]
+      If fstat
+        Call FSTA("SSW") From GLOCK
+        LRET=1 : Break
+      Endif
+    Endif
+    LQTE-=1
+  Endif
+Wend
+
+$CRE_SSW_FIN
+# Si on a ouvert une transaction
+If WTRBEGIN=1
+   If LRET=0
+     Commit
+   Else
+     Rollback
+   Endif
+   Raz WTRBEGIN
+Endif
+
+End
+
+########################################################################
+# DEL_STOSERW    Suppression enregistrements série en cours de traitement
+########################################################################
+# Paramètres E : LITM = Article
+#                LSER = No série
+#                LQTE = Nombre de série
+# LRET =  0 : OK
+#  1 : Erreur
+#99 : Erreur programme
+########################################################################
+Subprog DEL_STOSERW(LITM,LSER,LQTE,LRET)
+Value    Char    LITM
+Value    Char    LSER
+Value    Decimal LQTE
+Variable Integer LRET
+
+Local    Char    WSER(GLONSER)
+Local    Integer WTRBEGIN
+Raz LRET
+
+If LITM="" | LSER="" | LQTE=0
+  LRET=99 : End
+Endif
+
+If !clalev([F:SSW])  Local File STOSERW [SSW]  Endif
+If !clalev([F:STS1]) Local File STOSER  [STS1] Endif
+
+#--- Si pas de transaction en cours
+If adxlog<>1
+   Trbegin [SSW]
+   WTRBEGIN=1
+Endif
+
+#--- Suppression 1er no série en cours de traitement
+# On lit le no série dans STOSER car s'il a une pièce de sortie,
+# c'est qu'il est alloué, il n'y a donc pas de STOSERW à supprimer
+# !gimport ajouté car dans les imports sorties diverses il ni a pas de cre_stoserw
+#  comme il ni a pas non plus de cre_stowip
+Read [STS1]STS0=LITM;LSER
+If !fstat & [F:STS1]SDHNUM=""
+  Readlock [SSW]SSW0=LITM;LSER
+  If fstat
+     If !GIMPORT
+        Call RSTA("SSW",LITM-LSER) From GLOCK
+        LRET=1
+     Endif
+     Goto DEL_SSW_FIN
+  Endif
+  Delete [SSW]
+  If fstat
+    Call FSTA("SSW") From GLOCK
+    LRET=1 : Goto DEL_SSW_FIN
+  Endif
+Endif
+LQTE-=1
+If LQTE=0 : Goto DEL_SSW_FIN : Endif
+
+#--- Suppression autres no série en cours de traitement
+While LQTE>0
+  WSER = LSER
+  Call PLUS_UN(WSER,LSER,LRET) From STKLIB
+  If LRET<>0
+    If GTRACE="1"
+      Call ECR_TRACE(mess(476,197,1),1) From GESECRAN
+    Else
+      Call ERREUR(mess(476,197,1)) From GESECRAN
+    Endif
+    Break
+  Else
+    # On lit le no série dans STOSER car s'il a une pièce de sortie,
+    # c'est qu'il est alloué, il n'y a donc pas de STOSERW à supprimer
+    Read [STS1]STS0=LITM;LSER
+    If !fstat & [F:STS1]SDHNUM=""
+      Readlock [SSW]SSW0=LITM;LSER
+      If fstat
+        Call RSTA("SSW",LITM-LSER) From GLOCK
+        LRET=1 : Break
+      Else
+        Delete [SSW]
+        If fstat
+          Call FSTA("SSW") From GLOCK
+          LRET=1 : Break
+        Endif
+      Endif
+    Endif
+    LQTE-=1
+  Endif
+Wend
+
+$DEL_SSW_FIN
+#--- Si on a ouvert une transaction
+If WTRBEGIN=1
+   If LRET=0
+     Commit
+   Else
+     Rollback
+   Endif
+   Raz WTRBEGIN
+Endif
+End
+
+########################################################################
+# REC_STOSERW    Recherche enreg série en cours de traitement
+#                Renvoie 1 si série en cours de traitement
+#                        0 si série disponible
+########################################################################
+# Paramètres E : LITM = Article
+#                LSER = No série
+########################################################################
+Funprog REC_STOSERW(LITM,LSER)
+Value   Char    LITM
+Value   Char    LSER
+Local   Integer LRET
+If !clalev([F:SSW])  Local File STOSERW [SSW]  Endif
+# Recherche si série en cours de traitement
+LRET=0
+Look [SSW]SSW0=LITM;LSER
+If !fstat LRET=1 Endif
+End LRET
+
+########################################################################
+# REC_STOSERW_UID Recherche enreg série en cours de traitement sauf pour
+#                 pour le process en cours (utilisé pour TRTSTOSOR)
+#                 Renvoie 1 si série en cours de traitement
+#                         0 si série disponible
+########################################################################
+# Paramètres E : LITM = Article
+#                LSER = No série
+#                LUID = No process en cours
+########################################################################
+Funprog REC_STOSERW_UID(LITM,LSER,LUID)
+Value   Char    LITM
+Value   Char    LSER
+Value   Integer LUID
+Local   Integer LRET
+If !clalev([F:SSW])  Local File STOSERW [SSW]  Endif
+# Recherche si série en cours de traitement
+LRET=0
+Read [SSW]SSW0=LITM;LSER
+If !fstat & [F:SSW]PRONUM<>LUID
+  LRET=1
+Endif
+End LRET
+#--- End issue 110327
+
+########################################################################
+# Fait +1 sur numéro de série LDEB
+########################################################################
+# Paramètres E : LDEB = Numéro à incrementer
+#            S : LFIN = Numéro incrementé
+#              : LRET = Code retour    :(0=OK / 1=Erreur)
+########################################################################
+Subprog PLUS_UN(LDEB,LFIN,LRET)
+Value    Char     LDEB
+Variable Char     LFIN
+Variable Integer  LRET
+
+Local    Char    WCHI(11) : WCHI = "01234567890"
+Local    Integer I, J
+
+# Issue 122068 - 2017-04-18 by MAE :
+# - on ne sait pas pourquoi les blancs étaient supprimés alors qu'on peut créer un numéro de série avec un blanc
+# - on peut créer des numéros de série à la suite ave un blanc
+#LFIN = vireblc(LDEB,4)
+LFIN = LDEB
+# End issue 122068
+LRET = 1
+I    = len(LFIN)
+
+For I = len(LFIN) To 1 Step -1
+  J = instr(1,WCHI,mid$(LFIN,I,1))
+  If J <> 0
+    LFIN = left$(LFIN,I-1)+mid$(WCHI,J+1,1)+right$(LFIN,I+1)
+    If mid$(WCHI,J,1) <> "9"
+      LRET = 0
+      Break
+    Endif
+  #--- Issue X3-66323
+  Else
+    Break
+  #---
+  Endif
+Next I
+
+End
+
+########################################################################
+# Fait -1 sur une chaine
+########################################################################
+# Paramètres E : LDEB = Numéro à décrementer
+#            S : LFIN = Numéro décrementé
+#              : LRET = Code retour    :(0=OK / 1=Erreur)
+########################################################################
+Subprog MOINS_UN(LDEB,LFIN,LRET)
+Value    Char     LDEB
+Variable Char     LFIN
+Variable Integer  LRET
+
+Local    Char    WCHI(11) : WCHI = "98765432109"
+Local    Integer I, J
+
+# Issue 122068 - 2017-04-18 by MAE :
+# - on ne sait pas pourquoi les blancs étaient supprimés alors qu'on peut créer un numéro de série avec un blanc
+# - on peut créer des numéros de série à la suite avec un blanc
+#LFIN = vireblc(LDEB,4)
+LFIN = LDEB
+# End issue 122068
+LRET = 1
+I    = len(LFIN)
+
+For I = len(LFIN) To 1 Step -1
+  J = instr(1,WCHI,mid$(LFIN,I,1))
+  If J <> 0
+    LFIN = left$(LFIN,I-1)+mid$(WCHI,J+1,1)+right$(LFIN,I+1)
+    If mid$(WCHI,J,1) <> "0"
+      LRET = 0
+      Break
+    Endif
+  #--- Issue X3-66323
+  Else
+    Break
+  #---
+  Endif
+Next I
+
+End
+
+########################################################################
+# Calcul d'un no série fin à partir d'un no série début et d'un nombre
+########################################################################
+# Paramètres E : LDEB = Numéro début
+#                LINC = Nombre de numéro
+#            S : LFIN = Numéro fin
+#              : LRET = Code retour    :(0=OK / 1=Erreur)
+########################################################################
+Subprog PLUS_NB(LDEB,LINC,LFIN,LRET)
+Value    Char     LDEB
+Value    Integer  LINC
+Variable Char     LFIN
+Variable Integer  LRET
+Local    Char    WCHI(10)   : WCHI = "0123456789"
+Local    Char    WPRE, WSUF, WNUM
+Local    Integer I, J
+
+Raz LRET, WPRE, WSUF
+
+# Pas d'incrément
+If LINC=0
+   LRET=1 : Raz LFIN : End
+Endif
+
+# hcb 102889  deb
+If LINC > 1                          # hcb 113963
+   Local Char  WNUMFIN(GLONSER)
+   For J=2 To LINC
+       Call PLUS_UN(LDEB,WNUMFIN,LRET) From STKLIB
+       If LRET=0
+          LDEB = WNUMFIN
+       Else
+          Break
+       Endif
+   Next J
+   If  LRET = 1
+       Raz LFIN
+       End
+   Endif
+   LFIN = WNUMFIN
+Else                                # hcb 113963
+   LFIN = LDEB                      # hcb 113963
+Endif                               # hcb 113963
+
+#I    = len(LFIN)
+#LFIN = vireblc(LDEB,4)
+#For I = len(LFIN) To 1 Step -1
+#  J = instr(1,WCHI,mid$(LFIN,I,1))
+#  If J <> 0
+#    WSUF = mid$(LFIN,I,1)+WSUF
+#  Else
+#    WPRE = left$(LFIN,I)
+#    Break
+#  Endif
+#Next I
+# No série sans suffixe numérique
+#If WSUF=""
+#   LRET=1
+#   Raz LFIN
+#   End
+#Endif
+#WNUM=num$(val(WSUF)+LINC-1)
+# Incrément trop grand --> longueur no fin > no début
+#If len(WNUM)>len(WSUF)
+#   LRET=1 : Raz LFIN : End
+#Else
+#   J = len(WSUF)-len(WNUM)
+#   If J<>0 WNUM=sigma(I=1,J,"0")+WNUM Endif
+#Endif
+#LFIN=WPRE+WNUM
+
+# hcb 102889  fin
+
+End
+
+########################################################################
+# Calcul d'un nombre de no à partir d'un no début et d'un no fin
+########################################################################
+# Paramètres E : LDEB = Numéro début
+#                LFIN = Numéro fin
+#            S : LINC = Nombre de numéro
+#              : LRET = Code retour    :(0=OK / 1=Erreur)
+########################################################################
+Subprog NB_SERIE(LDEB,LFIN,LINC,LRET)
+Value    Char     LDEB
+Value    Char     LFIN
+Variable Integer  LINC
+Variable Integer  LRET
+
+Local    Char    WCHI(10)   : WCHI = "0123456789"
+Local    Char    WPRED, WSUFD, WPREF, WSUFF, WNUM
+Local    Integer I, J
+
+Raz LRET, WPRED, WSUFD, WPREF, WSUFF
+
+I    = len(LFIN)
+LDEB = vireblc(LDEB,4)
+LFIN = vireblc(LFIN,4)
+
+For I = len(LFIN) To 1 Step -1
+  J = instr(1,WCHI,mid$(LFIN,I,1))
+  If J <> 0
+    WSUFF = mid$(LFIN,I,1)+WSUFF
+  Else
+    WPREF = left$(LFIN,I)
+    Break
+  Endif
+Next I
+
+For I = len(LDEB) To 1 Step -1
+  J = instr(1,WCHI,mid$(LDEB,I,1))
+  If J <> 0
+    WSUFD = mid$(LDEB,I,1)+WSUFD
+  Else
+    WPRED = left$(LDEB,I)
+    Break
+  Endif
+Next I
+
+# No série sans suffixe numérique ou début > fin
+If WSUFD="" | WSUFF="" | WSUFD>WSUFF
+   LRET=1 : Raz LINC : End
+Endif
+
+LINC=val(WSUFF)-val(WSUFD)+1
+
+End
+
+########################################################################
+# Routine d'affectation d'un chrono stock
+########################################################################
+# Paramètres E : LFCY      = Site
+#                LDAT      = Date
+#            S   LCHR      = Compteur
+########################################################################
+Subprog GCHRONOSTK(LFCY,LDAT,LCHR)
+Variable Char    LFCY
+Variable Date    LDAT
+Variable Decimal LCHR
+Local    Integer VS
+Local Char    WCHR
+Call NUMERO(GCHR,LFCY,LDAT,"",WCHR,VS) From SUBANM
+If VS = 1
+  GOK = 0
+  LCHR = 0
+Else
+  LCHR = val(WCHR)
+Endif
+End
+
+########################################################################
+# STODISMOD      Calcul stock disponible d'un article par statut
+#                en modif d'entrée
+########################################################################
+# Paramètres E : AITV     = Abrév table cumuls article-site (défaut:[F:ITV])
+#                LTYPLOC  = Type d'emplacement:
+#                           >= 0 Tous les emplacements internes
+#                           + les combinaisons exploitant les poids suivants
+#                              1 = attente rangement
+#                              2 = clients
+#                              4 = sous-traitants
+#                           < 0 Aucun emplacements internes
+#                           + les combinaisons exploitant les poids suivants
+#                             -1 = attente rangement
+#                             -2 = clients
+#                             -4 = sous-traitants
+#                           Exemple :
+#                              5 = interne & attente rangement & sous-traitants
+#                             -5 = attente rangement & sous-traitants
+#                LSTA       = Statut sur la ligne à modifier
+#                             1 = "A"
+#                             2 = "Q"
+#                             4 = "R"
+#                           Exemple :
+#                             5 = "A"+"R"
+#                LOWN     = Propriétaire ( "" = site courant [F:ITV]STOFCY)
+#            S : LDISA    = Stock disponible "A" en US active
+#                LDISQ    = Stock disponible "Q" en US active
+#                LDISR    = Stock disponible "R" en US active
+#                LGLOALL  = Stock alloué en global (selon statuts)
+# Prérequis    : La classe [F:] de ITMMVT doit être chargée
+#                La classe [F:] de ITMCATEG doit être chargée
+#
+# Remarque     : Si le propriétaire est renseigné, on prendra :
+#                le stock du propriétaire + le stock du site
+#                Si le propriétaire n'est pas renseigné, on ne prendra
+#                que le stock du site
+#
+########################################################################
+Subprog STODISMOD(AITV,LTYPLOC,LSTA,LOWN,LDISA,LDISQ,LDISR,LGLOALL)
+Value    Char     AITV
+Value    Integer  LTYPLOC
+Value    Integer  LSTA
+Value    Char     LOWN
+Variable Decimal  LDISA
+Variable Decimal  LDISQ
+Variable Decimal  LDISR
+Variable Decimal  LGLOALL
+
+Local Char     CRIT(250)
+Local Char     LITM(GLONITM)
+Local Char     LFCY(GLONFCY)
+Local Shortint WINT, WPLF, WBPR, WSCO
+
+Raz LDISA, LDISQ, LDISR, LGLOALL
+Raz WINT, WPLF, WBPR, WSCO
+
+If LSTA=0 | LSTA>8 : LSTA=1 : Endif
+
+If AITV="" AITV="[F:ITV]" Endif
+
+LITM = evalue(AITV+"ITMREF")
+LFCY = evalue(AITV+"STOFCY")
+
+If LTYPLOC>=0
+   WINT=1
+Else
+   WINT=0
+   LTYPLOC=abs(LTYPLOC)
+Endif
+If find (LTYPLOC,1,3,5,7) WPLF=1 Endif
+If find (LTYPLOC,2,3,6,7) WBPR=1 Endif
+If find (LTYPLOC,4,5,6,7) WSCO=1 Endif
+
+# Stock disponible du site courant
+If WINT=1
+   LDISA += evalue(AITV+"PHYSTO")-evalue(AITV+"PHYALL")
+   LDISQ += evalue(AITV+"CTLSTO")-evalue(AITV+"CTLALL")
+   LDISR += evalue(AITV+"REJSTO")-evalue(AITV+"REJALL")
+Endif
+If WPLF=1
+   LDISA += evalue(AITV+"PLFPHYSTO")
+   LDISQ += evalue(AITV+"PLFCTLSTO")
+   LDISR += evalue(AITV+"PLFREJSTO")
+Endif
+If WBPR=1
+   LDISA += evalue(AITV+"BPRPHYSTO")
+   LDISQ += evalue(AITV+"BPRCTLSTO")
+   LDISR += evalue(AITV+"BPRREJSTO")
+Endif
+If WSCO=1
+   LDISA += evalue(AITV+"SCOPHYSTO")-evalue(AITV+"SCOPHYALL")
+   LDISQ += evalue(AITV+"SCOCTLSTO")-evalue(AITV+"SCOCTLALL")
+   LDISR += evalue(AITV+"SCOREJSTO")-evalue(AITV+"SCOREJALL")
+Endif
+
+# Rajout du stock disponible du propriétaire si celui-ci est renseigné
+If LOWN<>"" & LOWN<>LFCY   : # Au cas où ...
+   CRIT  = '[F:STO1]ITMREF=LITM'
+   CRIT += '&[F:STO1]STOFCY=LFCY'
+   CRIT += '&[F:STO1]OWNER=LOWN'
+   If WINT=1
+      # Tous les emplacements internes +
+      Case LTYPLOC
+       When  1 : CRIT+='&find([F:STO1]LOCCAT,1,2)<>0'   : # attente rangement
+       When  2 : CRIT+='&find([F:STO1]LOCCAT,1,3)<>0'   : # client
+       When  3 : CRIT+='&find([F:STO1]LOCCAT,1,2,3)<>0' : # attente rangt & client
+       When  4 : CRIT+='&find([F:STO1]LOCCAT,1,4)<>0'   : # sous-traitant
+       When  5 : CRIT+='&find([F:STO1]LOCCAT,1,2,4)<>0' : # attente rangt & sous-traitant
+       When  6 : CRIT+='&find([F:STO1]LOCCAT,1,3,4)<>0' : # client & sous-traitant
+       When  7 :                                        : # attente rangt, client & sous-traitant
+       When Default : CRIT+='&[F:STO1]LOCCAT=1'
+      Endcase
+   Else
+      Case LTYPLOC
+       When  1 : CRIT+='&[F:STO1]LOCCAT=2'               : # attente rangement
+       When  2 : CRIT+='&[F:STO1]LOCCAT=3'               : # client
+       When  3 : CRIT+='&find([F:STO1]LOCCAT,2,3)<>0'    : # attente rangt & client
+       When  4 : CRIT+='&[F:STO1]LOCCAT=4'               : # sous-traitant
+       When  5 : CRIT+='&find([F:STO1]LOCCAT,2,4)<>0'    : # attente rangt & sous-traitant
+       When  6 : CRIT+='&find([F:STO1]LOCCAT,3,4)<>0'    : # client & sous-traitant
+       When  7 : CRIT+='&find([F:STO1]LOCCAT,2,3,4)<>0'  : # attente rangt, client & sous-traitant
+       When Default : CRIT+='&[F:STO1]LOCCAT=9'          : # rien
+      Endcase
+   Endif
+
+   If clalev([F:STO1])=0 Local File STOCK  [STO1] Endif
+
+   # Calcul du disponible par statut pour les lignes de stock
+   For [STO1]STO3 Where evalue(CRIT)
+      Case [F:STO1]STA
+       When "A" : LDISA += [F:STO1]QTYSTUACT-[F:STO1]CUMALLQTA-[F:STO1]CUMWIPQTA
+       When "Q" : LDISQ += [F:STO1]QTYSTUACT-[F:STO1]CUMALLQTA-[F:STO1]CUMWIPQTA
+       When "R" : LDISR += [F:STO1]QTYSTUACT-[F:STO1]CUMALLQTA-[F:STO1]CUMWIPQTA
+      Endcase
+   Next
+Endif
+
+#--- TS Bug 48865
+# Calcul de l'alloué global selon les statuts autorisés en allocation globale
+#If dim([F:ITG]GLOAAAFLG)>0
+#   If (find(LSTA,1,3,5,7) & [F:ITG]GLOAAAFLG=2) |
+#&     (find(LSTA,2,3,6,7) & [F:ITG]GLOQQQFLG=2) |
+#&     (find(LSTA,4,5,6,7) & [F:ITG]GLORRRFLG=2) |
+#&     [F:ITG]STOMGTCOD<2
+#      LGLOALL += evalue(AITV+"GLOALL")
+#   Endif
+#Endif
+Gosub CAL_LGLOALL
+#---
+
+End
+
+########################################################################
+# STOPRETOT      Calcul stock disponible prévisionnel d'un article
+########################################################################
+# Paramètres E : AITV       = Abrév table cumuls article-site (défaut:[F:ITV])
+#                LTYPLOC  = Type d'emplacement:
+#                           > 0 Tous les emplacements internes
+#                           + les combinaisons exploitant les poids suivants
+#                              1 = attente rangement
+#                              2 = clients
+#                              4 = sous-traitants
+#                           < 0 Aucun emplacements internes
+#                           + les combinaisons exploitant les poids suivants
+#                             -1 = attente rangement
+#                             -2 = clients
+#                             -4 = sous-traitants
+#                           Exemple :
+#                              5 = interne & attente rangement & sous-traitants
+#                             -5 = attente rangement & sous-traitants
+#                LSTA       = Statuts (M.2701) (si 0 alors "A")
+#                LSUP       = Inutilisé (paramètre supplémentaire au cas où)
+#            S   LSTUACTPRE = Stock disponible prévisionnel en US active
+#
+# Prérequis    : La classe [F:] de ITMMVT   doit être chargée
+#                La classe [F:] de ITMCATEG doit être chargée
+#
+########################################################################
+Subprog STOPRETOT(AITV,LTYPLOC,LSTA,LSUP,LSTUACTPRE)
+Value    Char     AITV
+Value    Integer  LTYPLOC
+Value    Integer  LSTA
+Value    Char     LSUP
+Variable Decimal  LSTUACTPRE
+
+Call STODISTOT(AITV,LTYPLOC,LSTA,"",LSTUACTPRE)
+
+If AITV="" AITV="[F:ITV]" Endif
+
+LSTUACTPRE += evalue(AITV+"ORDSTO")-evalue(AITV+"WAISTO")
+
+End
+
+########################################################################
+# STODISTOT      Calcul stock disponible d'un article
+########################################################################
+# Paramètres E : AITV       = Abrév table cumuls article-site (défaut:[F:ITV])
+#                LTYPLOC  = Type d'emplacement:
+#                           >= 0 Tous les emplacements internes
+#                           + les combinaisons exploitant les poids suivants
+#                              1 = attente rangement
+#                              2 = clients
+#                              4 = sous-traitants
+#                           < 0 Aucun emplacements internes
+#                           + les combinaisons exploitant les poids suivants
+#                             -1 = attente rangement
+#                             -2 = clients
+#                             -4 = sous-traitants
+#                           Exemple :
+#                              5 = interne & attente rangement & sous-traitants
+#                             -5 = attente rangement & sous-traitants
+#                LSTA       = Statuts (M.2701) (si 0 alors "A")
+#                LOWN       = Propriétaire ( "" = site courant [F:ITV]STOFCY)
+#            S : LSTUACTDIS = Stock disponible en US active
+#
+# Prérequis    : La classe [F:]    de ITMMVT   doit être chargée
+#                La classe [F:ITG] de ITMCATEG doit être chargée
+#
+# Remarque     : Si le propriétaire est renseigné, on prendra :
+#                le stock du propriétaire + le stock du site
+#                Si le propriétaire n'est pas renseigné, on ne prendra
+#                que le stock du site, mais on ne déduira du disponible
+#                que l'alloué global non imputable au stock tiers
+#                afin de calculer un disponible le moins contraignant possible
+#
+########################################################################
+Subprog STODISTOT(AITV,LTYPLOC,LSTA,LOWN,LSTUACTDIS)
+Value    Char     AITV
+Value    Integer  LTYPLOC
+Value    Integer  LSTA
+Value    Char     LOWN
+Variable Decimal  LSTUACTDIS
+
+Local Decimal  LGLOALL, LSCCACTDIS
+Local Char     CRIT(250)
+Local Char     LITM(GLONITM)
+Local Char     LFCY(GLONFCY)
+Local Shortint WA, WQ, WR, WINT, WPLF, WBPR, WSCO
+
+Raz LSTUACTDIS, WA, WQ, WR, WINT, WPLF, WBPR, WSCO
+
+If AITV="" AITV="[F:ITV]" Endif
+
+LITM = evalue(AITV+"ITMREF")
+LFCY = evalue(AITV+"STOFCY")
+
+# Stock disponible du site courant
+If find (LSTA,1,3,5,7) WA=1 Endif
+If find (LSTA,2,3,6,7) WQ=1 Endif
+If find (LSTA,4,5,6,7) WR=1 Endif
+If WA+WQ+WR=0 WA=1 Endif
+
+If LTYPLOC>=0
+   WINT=1
+Else
+   WINT=0
+   LTYPLOC=abs(LTYPLOC)
+Endif
+If find (LTYPLOC,1,3,5,7) WPLF=1 Endif
+If find (LTYPLOC,2,3,6,7) WBPR=1 Endif
+If find (LTYPLOC,4,5,6,7) WSCO=1 Endif
+
+If WINT=1
+   If WA=1 LSTUACTDIS += evalue(AITV+"PHYSTO")-evalue(AITV+"PHYALL") Endif
+   If WQ=1 LSTUACTDIS += evalue(AITV+"CTLSTO")-evalue(AITV+"CTLALL") Endif
+   If WR=1 LSTUACTDIS += evalue(AITV+"REJSTO")-evalue(AITV+"REJALL") Endif
+Endif
+If WPLF=1
+   If WA=1 LSTUACTDIS += evalue(AITV+"PLFPHYSTO") Endif
+   If WQ=1 LSTUACTDIS += evalue(AITV+"PLFCTLSTO") Endif
+   If WR=1 LSTUACTDIS += evalue(AITV+"PLFREJSTO") Endif
+Endif
+If WBPR=1
+   If WA=1 LSTUACTDIS += evalue(AITV+"BPRPHYSTO") Endif
+   If WQ=1 LSTUACTDIS += evalue(AITV+"BPRCTLSTO") Endif
+   If WR=1 LSTUACTDIS += evalue(AITV+"BPRREJSTO") Endif
+Endif
+If WSCO=1
+   If WA=1 LSTUACTDIS += evalue(AITV+"SCOPHYSTO")-evalue(AITV+"SCOPHYALL") Endif
+   If WQ=1 LSTUACTDIS += evalue(AITV+"SCOCTLSTO")-evalue(AITV+"SCOCTLALL") Endif
+   If WR=1 LSTUACTDIS += evalue(AITV+"SCOREJSTO")-evalue(AITV+"SCOREJALL") Endif
+Endif
+
+#--- TS Bug 48865
+Gosub CAL_LGLOALL
+
+# Rajout du stock disponible du propriétaire si celui-ci est renseigné
+If LOWN<>"" & LOWN<>LFCY   : # Au cas où ...
+   CRIT  = '[F:STO1]ITMREF=LITM'
+   CRIT += '&[F:STO1]STOFCY=LFCY'
+   CRIT += '&[F:STO1]OWNER=LOWN'
+   If WINT=1
+      # Tous les emplacements internes +
+      Case LTYPLOC
+       When  1 : CRIT+='&find([F:STO1]LOCCAT,1,2)<>0'   : # attente rangement
+       When  2 : CRIT+='&find([F:STO1]LOCCAT,1,3)<>0'   : # client
+       When  3 : CRIT+='&find([F:STO1]LOCCAT,1,2,3)<>0' : # attente rangt & client
+       When  4 : CRIT+='&find([F:STO1]LOCCAT,1,4)<>0'   : # sous-traitant
+       When  5 : CRIT+='&find([F:STO1]LOCCAT,1,2,4)<>0' : # attente rangt & sous-traitant
+       When  6 : CRIT+='&find([F:STO1]LOCCAT,1,3,4)<>0' : # client & sous-traitant
+       When  7 :                                        : # attente rangt, client & sous-traitant
+       When Default : CRIT+='&[F:STO1]LOCCAT=1'
+      Endcase
+   Else
+      Case LTYPLOC
+       When  1 : CRIT+='&[F:STO1]LOCCAT=2'               : # attente rangement
+       When  2 : CRIT+='&[F:STO1]LOCCAT=3'               : # client
+       When  3 : CRIT+='&find([F:STO1]LOCCAT,2,3)<>0'    : # attente rangt & client
+       When  4 : CRIT+='&[F:STO1]LOCCAT=4'               : # sous-traitant
+       When  5 : CRIT+='&find([F:STO1]LOCCAT,2,4)<>0'    : # attente rangt & sous-traitant
+       When  6 : CRIT+='&find([F:STO1]LOCCAT,3,4)<>0'    : # client & sous-traitant
+       When  7 : CRIT+='&find([F:STO1]LOCCAT,2,3,4)<>0'  : # attente rangt, client & sous-traitant
+       When Default : CRIT+='&[F:STO1]LOCCAT=9'          : # rien
+      Endcase
+   Endif
+   # Alimentation du filtre sur le statut
+   Case LSTA
+    When 1       : CRIT+='&left$([F:STO1]STA,1)="A"'
+    When 2       : CRIT+='&left$([F:STO1]STA,1)="Q"'
+    When 3       : CRIT+='&(left$([F:STO1]STA,1)="A"|left$([F:STO1]STA,1)="Q")'
+    When 4       : CRIT+='&left$([F:STO1]STA,1)="R"'
+    When 5       : CRIT+='&(left$([F:STO1]STA,1)="A"|left$([F:STO1]STA,1)="R")'
+    When 6       : CRIT+='&(left$([F:STO1]STA,1)="Q"|left$([F:STO1]STA,1)="R")'
+    When 7       :
+    When Default : CRIT+='&left$([F:STO1]STA,1)="A"'
+   Endcase
+
+   If clalev([F:STO1])=0 Local File STOCK  [STO1] Endif
+
+   # Calcul du disponible (LSTUACTDIS) pour les lignes de stock
+   For [STO1]STO3 Where evalue(CRIT)
+      LSTUACTDIS += [F:STO1]QTYSTUACT-[F:STO1]CUMALLQTA-[F:STO1]CUMWIPQTA
+   Next
+
+   #--- TS Bug 48865
+   # Déduction de l'alloué global selon les statuts autorisés en allocation globale
+   #If dim([F:ITG]GLOAAAFLG)>0 & [F:ITG]STOMGTCOD>=2
+   #   If (WA=1&[F:ITG]GLOAAAFLG=2) | (WQ=1&[F:ITG]GLOQQQFLG=2) | (WR=1&[F:ITG]GLORRRFLG=2)
+   #      LSTUACTDIS -= evalue(AITV+"GLOALL")
+   #   Endif
+   #Else
+   #   LSTUACTDIS -= evalue(AITV+"GLOALL")
+   #Endif
+   LSTUACTDIS -= LGLOALL
+   #---
+
+# Le propriétaire n'est pas renseigné
+Else
+   # Stock tiers dispo
+   LSCCACTDIS = evalue(AITV+"SCCLNDSTO")-evalue(AITV+"SCCALL")
+
+   #--- TS Bug 48865
+   # Calcul de l'alloué global selon les statuts autorisés en allocation globale
+   #If dim([F:ITG]GLOAAAFLG)>0 & [F:ITG]STOMGTCOD>=2
+   #   If (WA=1&[F:ITG]GLOAAAFLG=2) | (WQ=1&[F:ITG]GLOQQQFLG=2) | (WR=1&[F:ITG]GLORRRFLG=2)
+   #      LGLOALL = evalue(AITV+"GLOALL")
+   #   Endif
+   #Else
+   #   LGLOALL = evalue(AITV+"GLOALL")
+   #Endif
+   #---
+
+   # On déduit du disponible stock tiers, l'alloué global non imputable
+   # au stock tiers afin de calculer un dispo le moins contraignant possible
+   LSTUACTDIS += min(0,LSCCACTDIS-LGLOALL)
+
+Endif
+
+# Point d'entrée pour modification du disponible
+GPOINT = "STODISTOT"
+Gosub ENTREE From EXEFNC
+
+End
+
+########################################################################
+# STODISPO     Calcul stock disponible d'un article
+#              filtré sur lot, emplacement, statut, dépôt
+########################################################################
+# Paramètres E : AITV       = Abrév table cumuls article-site (défaut:[F:ITV])
+#                LFCY       = Site
+#                LITM       = Article
+#                LLOT       = No lot / Préfixe avec "*"
+#                             Tous les lots : "*" / Lot blanc seul : ""
+#                LLOC       = No emplacement / Préfixe avec "*"
+#                             Tous les emplacements : "" ou "*"
+#                LTYPLOC  = Type d'emplacement:
+#                           >= 0 Tous les emplacements internes
+#                           + les combinaisons exploitant les poids suivants
+#                              1 = attente rangement
+#                              2 = clients
+#                              4 = sous-traitants
+#                           < 0 Aucun emplacements internes
+#                           + les combinaisons exploitant les poids suivants
+#                             -1 = attente rangement
+#                             -2 = clients
+#                             -4 = sous-traitants
+#                           Exemple :
+#                              5 = interne & attente rangement & sous-traitants
+#                             -5 = attente rangement & sous-traitants
+#                LSTA       = Statuts (M.2701) (si 0 alors "A")
+#                LLIV       = "" ou client livré (formatté : 15x+3x)
+#                                si consommation réservation client
+#                             Inactif si LOWN<>LFCY
+#                LOWN       = Propriétaire (si "" alors LFCY)
+#                LWRH       = Dépôt ou ""
+#                LVAL       = Version majeure si renseignée et exclusive (règle de gestion)  # TS 106217#            S : LSTUACTDIS = Quantité disponible en unité active
+#
+# Prérequis    : La classe [F:ITM] de ITMMASTER doit être chargée
+#                La classe [F:]    de ITMMVT    doit être chargée
+#                La classe [F:ITG] de ITMCATEG  doit être chargée
+#
+# Remarque     : Si le propriétaire est renseigné, on prendra :
+#                le stock du propriétaire + le stock du site
+#                Si le propriétaire n'est pas renseigné, on ne prendra
+#                que le stock du site, mais on ne déduira du disponible
+#                que l'alloué global non imputable au stock tiers
+#                afin de calculer un disponible le moins contraignant possible
+#
+########################################################################
+Subprog STODISPO(AITV,LFCY,LITM,LLOT,LLOC,LTYPLOC,LSTA,LLIV,LOWN,LWRH,LVAL,LSTUACTDIS)    : # TS 106217
+Value    Char    AITV
+Value    Char    LFCY
+Value    Char    LITM
+Value    Char    LLOT
+Value    Char    LLOC
+Value    Integer LTYPLOC
+Value    Integer LSTA
+Value    Char    LLIV
+Value    Char    LOWN
+Value    Char    LWRH
+Value    Char    LVAL               : # TS 106217
+Variable Decimal LSTUACTDIS
+
+Local Decimal  LGLOALL, WSCCACTDIS
+Local Char     CRIT(250), LCLI(15)
+Local Char     SVGLOT(GLONLOT), WLOT(GLONLOT), WLOC(GLONLOC)
+Local Decimal  WSTUACTDIS
+Local Shortint WA, WQ, WR, WINT, WPLF, WBPR, WSCO
+
+Raz WA, WQ, WR, WINT, WPLF, WBPR, WSCO
+
+If AITV="" AITV="[F:ITV]" Endif
+
+# Traitement zone selection lot
+LLOT = vireblc(LLOT,1)
+If mid$(LLOT,len(LLOT),1) = "*"
+  WLOT = left$(LLOT,len(LLOT)-1)
+Else
+  WLOT = LLOT
+Endif
+# Traitement zone selection emplacement
+LLOC = vireblc(LLOC,1)
+If mid$(LLOC,len(LLOC),1) = "*"
+  WLOC = left$(LLOC,len(LLOC)-1)
+Else
+  WLOC = LLOC
+Endif
+
+CRIT  = '[F:STO1]ITMREF=LITM'
+CRIT += '&[F:STO1]STOFCY=LFCY'
+
+If WLOT <> ""
+   If WLOT <> LLOT
+      CRIT += '&left$([F:STO1]LOT,len(WLOT))=WLOT'
+   Else
+      CRIT += '&[F:STO1]LOT=WLOT'
+   Endif
+Endif
+If WLOC <> ""
+   If WLOC <> LLOC
+      CRIT += '&left$([F:STO1]LOC,len(WLOC))=WLOC'
+   Else
+      CRIT += '&[F:STO1]LOC=WLOC'
+   Endif
+Endif
+If LWRH<>""
+   CRIT += '&[F:STO1]WRH=LWRH'
+Endif
+#--- TS 106217
+If LVAL<>""
+   CRIT += '&[F:STO1]ECCVALMAJ=LVAL'
+Endif
+#---
+
+If LTYPLOC>=0
+   WINT=1
+Else
+   WINT=0
+   LTYPLOC=abs(LTYPLOC)
+Endif
+If find (LTYPLOC,1,3,5,7) WPLF=1 Endif
+If find (LTYPLOC,2,3,6,7) WBPR=1 Endif
+If find (LTYPLOC,4,5,6,7) WSCO=1 Endif
+
+If WINT=1
+   # Tous les emplacements internes +
+   Case LTYPLOC
+    When  1 : CRIT+='&find([F:STO1]LOCCAT,1,2)<>0'   : # attente rangement
+    When  2 : CRIT+='&find([F:STO1]LOCCAT,1,3)<>0'   : # client
+    When  3 : CRIT+='&find([F:STO1]LOCCAT,1,2,3)<>0' : # attente rangt & client
+    When  4 : CRIT+='&find([F:STO1]LOCCAT,1,4)<>0'   : # sous-traitant
+    When  5 : CRIT+='&find([F:STO1]LOCCAT,1,2,4)<>0' : # attente rangt & sous-traitant
+    When  6 : CRIT+='&find([F:STO1]LOCCAT,1,3,4)<>0' : # client & sous-traitant
+    When  7 :                                        : # attente rangt, client & sous-traitant
+    When Default : CRIT+='&[F:STO1]LOCCAT=1'
+   Endcase
+Else
+   Case LTYPLOC
+    When  1 : CRIT+='&[F:STO1]LOCCAT=2'               : # attente rangement
+    When  2 : CRIT+='&[F:STO1]LOCCAT=3'               : # client
+    When  3 : CRIT+='&find([F:STO1]LOCCAT,2,3)<>0'    : # attente rangt & client
+    When  4 : CRIT+='&[F:STO1]LOCCAT=4'               : # sous-traitant
+    When  5 : CRIT+='&find([F:STO1]LOCCAT,2,4)<>0'    : # attente rangt & sous-traitant
+    When  6 : CRIT+='&find([F:STO1]LOCCAT,3,4)<>0'    : # client & sous-traitant
+    When  7 : CRIT+='&find([F:STO1]LOCCAT,2,3,4)<>0'  : # attente rangt, client & sous-traitant
+    When Default : CRIT+='&[F:STO1]LOCCAT=9'          : # rien
+   Endcase
+Endif
+
+If find (LSTA,1,3,5,7) WA=1 Endif
+If find (LSTA,2,3,6,7) WQ=1 Endif
+If find (LSTA,4,5,6,7) WR=1 Endif
+If WA+WQ+WR=0 WA=1 Endif
+
+# Alimentation du filtre sur le statut
+Case LSTA
+ When 1       : CRIT+='&left$([F:STO1]STA,1)="A"'
+ When 2       : CRIT+='&left$([F:STO1]STA,1)="Q"'
+ When 3       : CRIT+='&(left$([F:STO1]STA,1)="A"|left$([F:STO1]STA,1)="Q")'
+ When 4       : CRIT+='&left$([F:STO1]STA,1)="R"'
+ When 5       : CRIT+='&(left$([F:STO1]STA,1)="A"|left$([F:STO1]STA,1)="R")'
+ When 6       : CRIT+='&(left$([F:STO1]STA,1)="Q"|left$([F:STO1]STA,1)="R")'
+ When 7       :
+ When Default : CRIT+='&left$([F:STO1]STA,1)="A"'
+Endcase
+
+If LOWN=""
+   CRIT += '&[F:STO1]OWNER=LFCY'
+Else
+   CRIT += '&find([F:STO1]OWNER,LOWN,LFCY)'
+Endif
+
+Raz LSTUACTDIS, WSTUACTDIS, SVGLOT
+
+If clalev([F:STO1])=0 Local File STOCK  [STO1] Endif
+
+# Calcul du disponible pour les lignes de stock (LSTUACTDIS)
+For [STO1]STO3 Where evalue(CRIT)
+   LSTUACTDIS += [F:STO1]QTYSTUACT-[F:STO1]CUMALLQTA-[F:STO1]CUMWIPQTA
+Next
+
+# Calcul du disponible article (WSTUACTDIS)
+If WINT=1
+   If WA=1 WSTUACTDIS += evalue(AITV+"PHYSTO")-evalue(AITV+"PHYALL") Endif
+   If WQ=1 WSTUACTDIS += evalue(AITV+"CTLSTO")-evalue(AITV+"CTLALL") Endif
+   If WR=1 WSTUACTDIS += evalue(AITV+"REJSTO")-evalue(AITV+"REJALL") Endif
+Endif
+If WPLF=1
+   If WA=1 WSTUACTDIS += evalue(AITV+"PLFPHYSTO") Endif
+   If WQ=1 WSTUACTDIS += evalue(AITV+"PLFCTLSTO") Endif
+   If WR=1 WSTUACTDIS += evalue(AITV+"PLFREJSTO") Endif
+Endif
+If WBPR=1
+   If WA=1 WSTUACTDIS += evalue(AITV+"BPRPHYSTO") Endif
+   If WQ=1 WSTUACTDIS += evalue(AITV+"BPRCTLSTO") Endif
+   If WR=1 WSTUACTDIS += evalue(AITV+"BPRREJSTO") Endif
+Endif
+If WSCO=1
+   If WA=1 WSTUACTDIS += evalue(AITV+"SCOPHYSTO")-evalue(AITV+"SCOPHYALL") Endif
+   If WQ=1 WSTUACTDIS += evalue(AITV+"SCOCTLSTO")-evalue(AITV+"SCOCTLALL") Endif
+   If WR=1 WSTUACTDIS += evalue(AITV+"SCOREJSTO")-evalue(AITV+"SCOREJALL") Endif
+Endif
+
+#--- TS Bug 48865
+Gosub CAL_LGLOALL
+#---
+
+# Rajout du stock du propriétaire si celui-ci est renseigné
+If LOWN<>"" & LOWN<>LFCY   : # Au cas où ...
+   Raz CRIT
+   CRIT  = '[F:STO1]ITMREF=LITM'
+   CRIT += '&[F:STO1]STOFCY=LFCY'
+   CRIT += '&[F:STO1]OWNER=LOWN'
+   If WINT=1
+      # Tous les emplacements internes +
+      Case LTYPLOC
+       When  1 : CRIT+='&find([F:STO1]LOCCAT,1,2)<>0'   : # attente rangement
+       When  2 : CRIT+='&find([F:STO1]LOCCAT,1,3)<>0'   : # client
+       When  3 : CRIT+='&find([F:STO1]LOCCAT,1,2,3)<>0' : # attente rangt & client
+       When  4 : CRIT+='&find([F:STO1]LOCCAT,1,4)<>0'   : # sous-traitant
+       When  5 : CRIT+='&find([F:STO1]LOCCAT,1,2,4)<>0' : # attente rangt & sous-traitant
+       When  6 : CRIT+='&find([F:STO1]LOCCAT,1,3,4)<>0' : # client & sous-traitant
+       When  7 :                                        : # attente rangt, client & sous-traitant
+       When Default : CRIT+='&[F:STO1]LOCCAT=1'
+      Endcase
+   Else
+      Case LTYPLOC
+       When  1 : CRIT+='&[F:STO1]LOCCAT=2'               : # attente rangement
+       When  2 : CRIT+='&[F:STO1]LOCCAT=3'               : # client
+       When  3 : CRIT+='&find([F:STO1]LOCCAT,2,3)<>0'    : # attente rangt & client
+       When  4 : CRIT+='&[F:STO1]LOCCAT=4'               : # sous-traitant
+       When  5 : CRIT+='&find([F:STO1]LOCCAT,2,4)<>0'    : # attente rangt & sous-traitant
+       When  6 : CRIT+='&find([F:STO1]LOCCAT,3,4)<>0'    : # client & sous-traitant
+       When  7 : CRIT+='&find([F:STO1]LOCCAT,2,3,4)<>0'  : # attente rangt, client & sous-traitant
+       When Default : CRIT+='&[F:STO1]LOCCAT=9'          : # rien
+      Endcase
+   Endif
+   # Alimentation du filtre sur le statut
+   Case LSTA
+    When 1       : CRIT+='&left$([F:STO1]STA,1)="A"'
+    When 2       : CRIT+='&left$([F:STO1]STA,1)="Q"'
+    When 3       : CRIT+='&(left$([F:STO1]STA,1)="A"|left$([F:STO1]STA,1)="Q")'
+    When 4       : CRIT+='&left$([F:STO1]STA,1)="R"'
+    When 5       : CRIT+='&(left$([F:STO1]STA,1)="A"|left$([F:STO1]STA,1)="R")'
+    When 6       : CRIT+='&(left$([F:STO1]STA,1)="Q"|left$([F:STO1]STA,1)="R")'
+    When 7       :
+    When Default : CRIT+='&left$([F:STO1]STA,1)="A"'
+   Endcase
+   # Calcul du disponible (LSTUACTDIS) pour les lignes de stock
+   For [STO1]STO3 Where evalue(CRIT)
+      WSTUACTDIS += [F:STO1]QTYSTUACT-[F:STO1]CUMALLQTA-[F:STO1]CUMWIPQTA
+   Next
+
+   #--- TS Bug 48865
+   # Déduction de l'alloué global selon les statuts autorisés en allocation globale
+   #If dim([F:ITG]GLOAAAFLG)>0 & [F:ITG]STOMGTCOD>=2
+   #   If (WA=1&[F:ITG]GLOAAAFLG=2) | (WQ=1&[F:ITG]GLOQQQFLG=2) | (WR=1&[F:ITG]GLORRRFLG=2)
+   #      WSTUACTDIS -= evalue(AITV+"GLOALL")
+   #   Endif
+   #Else
+   #   WSTUACTDIS -= evalue(AITV+"GLOALL")
+   #Endif
+   WSTUACTDIS -= LGLOALL
+   #---
+
+# Le propriétaire n'est pas renseigné
+Else
+   # Stock tiers dispo
+   WSCCACTDIS = evalue(AITV+"SCCLNDSTO")-evalue(AITV+"SCCALL")
+
+   #--- TS Bug 48865
+   # Calcul de l'alloué global selon les statuts autorisés en allocation globale
+   #If dim([F:ITG]GLOAAAFLG)>0 & [F:ITG]STOMGTCOD>=2
+   #   If (WA=1&[F:ITG]GLOAAAFLG=2) | (WQ=1&[F:ITG]GLOQQQFLG=2) | (WR=1&[F:ITG]GLORRRFLG=2)
+   #      WGLOALL = evalue(AITV+"GLOALL")
+   #   Endif
+   #Else
+   #   WGLOALL = evalue(AITV+"GLOALL")
+   #Endif
+   #---
+
+   # On déduit du disponible stock tiers, l'alloué global non imputable
+   # au stock tiers afin de calculer un dispo le moins contraignant possible
+   WSTUACTDIS += min(0,WSCCACTDIS-LGLOALL)
+
+Endif
+
+# Pas de prise en compte des réservations clients
+# Détermination du dispo réel
+If LLIV = ""
+   If WSTUACTDIS < LSTUACTDIS
+      LSTUACTDIS = WSTUACTDIS
+   Endif
+   #--- Dem 83176
+   #End
+   Goto STODISPO_SUI
+   #---
+Endif
+
+# Prise en compte des réservations client
+# si le dispo article est inférieur au dispo filtré
+If WSTUACTDIS < LSTUACTDIS
+   If clalev([F:STA1])=0 Local File STOALL [STA1] Endif
+   LCLI=vireblc(format$("K:15X",LLIV),1)
+   For [STA1]STA2 Where ITMREF=LITM & VCRTYP=1 &
+&                       (VCRNUM=LLIV | vireblc(VCRNUM,1)=LCLI) &
+&                       STOFCY=LFCY & ALLDAT>=date$
+       WSTUACTDIS += [F:STA1]QTYSTUACT
+   Next
+   If WSTUACTDIS < LSTUACTDIS
+      LSTUACTDIS = WSTUACTDIS
+   Endif
+Endif
+
+#--- Dem 83176
+# Point d'entrée pour modification du disponible
+$STODISPO_SUI
+GPOINT = "STODISPO"
+Gosub ENTREE From EXEFNC
+
+End
+
+########################################################################
+# STODIS         Calcul stock disponible d'une ligne de stock
+########################################################################
+# Paramètres E : ASTO       = Abréviation table stock   (défaut:[F:STO])
+#                AITM       = Abréviation table article (défaut:[F:ITM])
+#                LSUP       = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LPCUDIS    = Stock disponible en UC
+#                LSTUDIS    = Stock disponible en US
+#                LSTUACTDIS = Stock disponible en US active
+#
+# Prérequis    : Ces classes [F:] doivent être chargées ITMMASTER
+#                                                       STOCK
+#
+########################################################################
+Subprog STODIS(ASTO,AITM,LSUP,LPCUDIS,LSTUDIS,LSTUACTDIS)
+Value    Char    ASTO
+Value    Char    AITM
+Value    Char    LSUP
+Variable Decimal LPCUDIS
+Variable Decimal LSTUDIS
+Variable Decimal LSTUACTDIS
+
+
+If ASTO="" ASTO="[F:STO]" Endif
+If AITM="" AITM="[F:ITM]" Endif
+
+LSTUDIS    = evalue(ASTO+"QTYSTU")   -evalue(ASTO+"CUMALLQTY")-evalue(ASTO+"CUMWIPQTY")
+LSTUACTDIS = evalue(ASTO+"QTYSTUACT")-evalue(ASTO+"CUMALLQTA")-evalue(ASTO+"CUMWIPQTA")
+If evalue(ASTO+"PCU")  = evalue(AITM+"STU")
+   LPCUDIS = LSTUDIS
+   End
+Endif
+If evalue(ASTO+"PCUSTUCOE") <> 0
+   LPCUDIS = LSTUDIS/evalue(ASTO+"PCUSTUCOE")
+Else
+   LPCUDIS = 0
+Endif
+End
+
+########################################################################
+# STODISSOR      Calcul stock disponible d'une ligne de stock pour sortie
+########################################################################
+# Paramètres E : ASTO       = Abréviation table stock   (défaut:[F:STO])
+#                AITM       = Abréviation table article (défaut:[F:ITM])
+#                LSUP       = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LPCUDIS    = Stock disponible en UC
+#                LSTUDIS    = Stock disponible en US
+#                LSTUACTDIS = Stock disponible en US active
+#
+# Prérequis    : Ces classes [F:] doivent être chargées ITMMASTER
+#                                                       STOCK
+#
+########################################################################
+Subprog STODISSOR(ASTO,AITM,LSUP,LPCUDIS,LSTUDIS,LSTUACTDIS)
+Value    Char    ASTO
+Value    Char    AITM
+Value    Char    LSUP
+Variable Decimal LPCUDIS
+Variable Decimal LSTUDIS
+Variable Decimal LSTUACTDIS
+Local    Decimal WWIPQTY
+Local    Decimal WWIPQTA
+Raz WWIPQTY, WWIPQTA
+
+If !clalev([TWS])  Local File TABWIPSTO [TWS]  Endif
+
+If ASTO="" ASTO="[F:STO]" Endif
+If AITM="" AITM="[F:ITM]" Endif
+
+If GWIPSTOLCK=2
+   # Calcul quantités bloquées
+   For [TWS]TWS0 Where STOCOU=evalue(ASTO+"STOCOU")
+      WWIPQTY += [F:TWS]WIPQTY
+      WWIPQTA += [F:TWS]WIPQTA
+   Next
+Endif
+
+# On obtient le 'disponible' en déduisant du stock physique
+# le max de : qté allouée + qté en cours de trt & qté bloquée
+LSTUDIS    = evalue(ASTO+"QTYSTU")   -max(evalue(ASTO+"CUMALLQTY")+evalue(ASTO+"CUMWIPQTY"),WWIPQTY)
+LSTUACTDIS = evalue(ASTO+"QTYSTUACT")-max(evalue(ASTO+"CUMALLQTA")+evalue(ASTO+"CUMWIPQTA"),WWIPQTA)
+
+If evalue(ASTO+"PCUSTUCOE") <> 0
+   LPCUDIS = LSTUDIS/evalue(ASTO+"PCUSTUCOE")
+Else
+   LPCUDIS = 0
+Endif
+
+End
+
+########################################################################
+# STODISFIFO         Calcul stock disponible FIFO
+########################################################################
+# Paramètres E : LFCY       = Site
+#                LITM       = Article
+#                LDAT       = Date entrée
+#                LTIM       = Heure
+#                LCOU       = Chrono
+#            S : LSTUDIS    = Stock disponible en US
+#
+# Prérequis    : Ces classes [F:] doivent être ouvertes STOCOST
+#
+########################################################################
+Subprog STODISFIFO(LITM,LFCY,LDAT,LTIM,LCOU,LSTUDIS)
+Value    Char    LITM
+Value    Char    LFCY
+Value    Date    LDAT
+Value    Char    LTIM
+Value    Decimal LCOU
+Variable Decimal LSTUDIS
+
+If LDAT=[0/0/0] & LTIM="" & LCOU=0
+    #--- Lecture pile FIFO
+    Raz LSTUDIS
+    For [STP] Where ITMREF=LITM & STOFCY=LFCY
+       LSTUDIS += [F:STP]QTYSTUACT
+    Next
+Else
+    #--- Lecture pile FIFO
+    Read [STP]STP0=LITM;LFCY;LDAT;LTIM;LCOU
+    If fstat
+       LSTUDIS = 0
+    Else
+       LSTUDIS = [F:STP]QTYSTUACT
+    Endif
+Endif
+End
+
+########################################################################
+# STOECCVAL      Calcul stock article site d'une version
+########################################################################
+# Paramètres E : LITM       = Article
+#                LFCY       = Site
+#                LMAJ       = Version majeure
+#                LMIN       = Version mineure
+#            S : LSTUACT    = Stock en US active
+########################################################################
+Subprog STOECCVAL(LITM,LFCY,LMAJ,LMIN,LSTUACT)
+Value    Char     LITM
+Value    Char     LFCY
+Value    Char     LMAJ
+Value    Char     LMIN
+Variable Decimal  LSTUACT
+
+Local    Char     CRITERE(100)
+
+Local File ITMMVT     [ITV]
+Local File STOLOT     [STL]
+Local File STOLOTFCY  [SLF]
+
+LSTUACT=0
+
+If LITM="" | LFCY="" : End : Endif
+
+Read [ITV]ITV0=LITM;LFCY
+If fstat : End : Endif
+
+If LMAJ=""
+  LSTUACT = [F:ITV]PHYSTO+[F:ITV]CTLSTO+[F:ITV]REJSTO
+&          +[F:ITV]PLFPHYSTO+[F:ITV]PLFCTLSTO+[F:ITV]PLFREJSTO
+&          +[F:ITV]BPRPHYSTO+[F:ITV]BPRCTLSTO+[F:ITV]BPRREJSTO
+&          +[F:ITV]SCOPHYSTO+[F:ITV]SCOCTLSTO+[F:ITV]SCOREJSTO
+Else
+  CRITERE = '[F:SLF]ITMREF=LITM&[F:SLF]STOFCY=LFCY&[F:STL]ECCVALMAJ=LMAJ'
+  If LMIN<>""
+    CRITERE += '&[F:STL]ECCVALMIN=LMIN'
+  Endif
+
+  Link [SLF] With [STL]STL0=[F:SLF]ITMREF;[F:SLF]LOT;[F:SLF]SLO As [LNK]
+&            Where evalue(CRITERE)
+  For [LNK]
+    LSTUACT += [F:SLF]AAACUMQTY+[F:SLF]QQQCUMQTY+[F:SLF]RRRCUMQTY
+  Next
+Endif
+
+End
+
+#--- TS Bug 48865
+########################################################################
+# Calcul de la qté allouée globale à déduire des calcul de stock dispo
+########################################################################
+# Le but est de déterminer au mieux la quantité d'allocation globale
+# à déduire de l'allocation globale de l'article site en fonction :
+# - des statuts autorisés en sortie / allocation détaillée (WDET)
+# - des statuts autorisés en allocation globale (WGLO)
+# Exemples :
+#    WDET : A  / WGLO : A    on prend tout l'alloué global
+#    WDET : A  / WGLO : AQ   on déduit le dispo en Q de l'alloué global
+#    WDET : A  / WGLO : Q    incohérent --> on met l'alloué global à 0
+#    WDET : AQ / WGLO : AR   incohérent --> on prend tout l'alloué global
+########################################################################
+$CAL_LGLOALL
+
+#--- Bug 63633
+# Si le stock dispo ne concerne pas les emplacements internes, on considère que
+# l'alloué global est nul car il concerne en général des emplacements internes
+If WINT=0
+   LGLOALL=0 : Return
+Endif
+#---
+
+Local Integer WDET : # Sommmes des poids des statuts autorisés
+Local Integer WGLO : # Sommmes des poids des statuts autorisés (allocation globale)
+
+WDET=max(1,LSTA)
+WGLO=0
+If [F:ITG]GLOAAAFLG=2 WGLO+=1 Endif
+If [F:ITG]GLOQQQFLG=2 WGLO+=2 Endif
+If [F:ITG]GLORRRFLG=2 WGLO+=4 Endif
+WGLO=max(1,WGLO)
+
+Case WDET
+ When 1  : Case WGLO
+            When 2,4,6 : LGLOALL=0
+            When 1     : LGLOALL=evalue(AITV+"GLOALL")
+            When 3     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"CTLSTO")+evalue(AITV+"CTLALL")-evalue(AITV+"PLFCTLSTO")))
+            When 5     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"REJSTO")+evalue(AITV+"REJALL")-evalue(AITV+"PLFREJSTO")))
+            When 7     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"CTLSTO")+evalue(AITV+"CTLALL")-evalue(AITV+"PLFCTLSTO")
+&                                      -evalue(AITV+"REJSTO")+evalue(AITV+"REJALL")-evalue(AITV+"PLFREJSTO")))
+           Endcase
+
+ When 2  : Case WGLO
+            When 1,4,5 : LGLOALL=0
+            When 2     : LGLOALL=evalue(AITV+"GLOALL")
+            When 3     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"PHYSTO")+evalue(AITV+"PHYALL")-evalue(AITV+"PLFPHYSTO")))
+            When 6     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"REJSTO")+evalue(AITV+"REJALL")-evalue(AITV+"PLFREJSTO")))
+            When 7     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"PHYSTO")+evalue(AITV+"PHYALL")-evalue(AITV+"PLFPHYSTO")
+&                                      -evalue(AITV+"REJSTO")+evalue(AITV+"REJALL")-evalue(AITV+"PLFREJSTO")))
+           Endcase
+
+ When 3  : Case WGLO
+            When 4     : LGLOALL=0
+            When 1,2,3 : LGLOALL=evalue(AITV+"GLOALL")
+            When 5,6   : LGLOALL=evalue(AITV+"GLOALL") : # Impossible mieux faire (incohérence entre global et détaillé)
+            When 7     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"REJSTO")+evalue(AITV+"REJALL")-evalue(AITV+"PLFREJSTO")))
+           Endcase
+
+ When 4  : Case WGLO
+            When 1,2,3 : LGLOALL=0
+            When 4     : LGLOALL=evalue(AITV+"GLOALL")
+            When 5     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"PHYSTO")+evalue(AITV+"PHYALL")-evalue(AITV+"PLFPHYSTO")))
+            When 6     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"CTLSTO")+evalue(AITV+"CTLALL")-evalue(AITV+"PLFCTLSTO")))
+            When 7     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"PHYSTO")+evalue(AITV+"PHYALL")-evalue(AITV+"PLFPHYSTO")
+&                                      -evalue(AITV+"CTLSTO")+evalue(AITV+"CTLALL")-evalue(AITV+"PLFCTLSTO")))
+           Endcase
+
+ When 5  : Case WGLO
+            When 2     : LGLOALL=0
+            When 1,4,5 : LGLOALL=evalue(AITV+"GLOALL")
+            When 3,6   : LGLOALL=evalue(AITV+"GLOALL") : # Impossible mieux faire (incohérence entre global et détaillé)
+            When 7     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"CTLSTO")+evalue(AITV+"CTLALL")-evalue(AITV+"PLFCTLSTO")))
+           Endcase
+
+ When 6  : Case WGLO
+            When 1     : LGLOALL=0
+            When 2,4,6 : LGLOALL=evalue(AITV+"GLOALL")
+            When 3,5   : LGLOALL=evalue(AITV+"GLOALL") : # Impossible mieux faire (incohérence entre global et détaillé)
+            When 7     : LGLOALL=max(0,(evalue(AITV+"GLOALL")
+&                                      -evalue(AITV+"PHYSTO")+evalue(AITV+"PHYALL")-evalue(AITV+"PLFPHYSTO")))
+           Endcase
+
+ When 7       : LGLOALL=evalue(AITV+"GLOALL")
+ When Default : LGLOALL=evalue(AITV+"GLOALL")
+
+Endcase
+
+Return
+#---
+
+########################################################################
+# CTRLOTPER      Contrôle lot périmé
+########################################################################
+# Paramètres E : LITM       = Article
+#                LLOT       = Lot
+#                LSLO       = Sous-Lot
+#                LDAT       = Date à contrôler
+#            S : LRET       = 0:Lot OK / 1:Lot périmé / 99:Erreur lecture
+########################################################################
+Funprog CTRLOTPER(LITM,LLOT,LSLO,LDAT)
+Value    Char    LITM
+Value    Char    LLOT
+Value    Char    LSLO
+Value    Date    LDAT
+
+Local    Integer LRET
+
+If !clalev([F:STL]) Local File STOLOT [STL] Endif
+
+LRET = 0
+#--- Lecture lot
+Read [STL]STL0=LITM;LLOT;LSLO
+If fstat
+   LRET = 99
+Elsif LDAT > [F:STL]SHLDAT
+   LRET = 1
+Endif
+
+End LRET
+
+########################################################################
+# CTRQTYPCU      A partir d'une quantité US, détermination
+#                de la quantité US exploitable en unité complète d'UC
+########################################################################
+# Paramètres E : LUNIT      = Unité de conditionnement
+#                LCOEF      = Coef UC/US
+#                LQTYSTU    = Quantité US à traiter
+#            S : LQTYSTUARR = Quantité US en unité complète d'UC
+#
+########################################################################
+Subprog CTRQTYPCU(LUNIT,LCOEF,LQTYSTU,LQTYSTUARR)
+Value    Char    LUNIT
+Value    Decimal LCOEF
+Value    Decimal LQTYSTU
+Variable Decimal LQTYSTUARR
+
+Local    Decimal WQTYPCU, WQTYPCUARR, WDIFSTU, WARR
+
+If !clalev([F:TUN]) Local File TABUNIT [TUN] Endif
+
+LQTYSTUARR = LQTYSTU
+If find(LCOEF,0,1) End Endif
+
+Read [TUN]TUN0=LUNIT
+If fstat End Endif
+
+WQTYPCU    = LQTYSTU/LCOEF
+WQTYPCUARR = WQTYPCU
+
+Case [F:TUN]UOMDEC
+ When 0 : WARR=1        : WQTYPCUARR = int(WQTYPCU)
+ When 1 : WARR=0.1      : WQTYPCUARR = int(WQTYPCU*10)      : WQTYPCUARR = WQTYPCUARR/10
+ When 2 : WARR=0.01     : WQTYPCUARR = int(WQTYPCU*100)     : WQTYPCUARR = WQTYPCUARR/100
+ When 3 : WARR=0.001    : WQTYPCUARR = int(WQTYPCU*1000)    : WQTYPCUARR = WQTYPCUARR/1000
+ When 4 : WARR=0.0001   : WQTYPCUARR = int(WQTYPCU*10000)   : WQTYPCUARR = WQTYPCUARR/10000
+ When 5 : WARR=0.00001  : WQTYPCUARR = int(WQTYPCU*100000)  : WQTYPCUARR = WQTYPCUARR/100000
+ When 6 : WARR=0.000001 : WQTYPCUARR = int(WQTYPCU*1000000) : WQTYPCUARR = WQTYPCUARR/1000000
+Endcase
+
+LQTYSTUARR = WQTYPCUARR*LCOEF
+
+End
+
+###############################################################################
+# STKCTRIPT   Controle de la date d'imputation
+###############################################################################
+# Paramètres E : LDAT = Date à contrôler
+#                LFCY = Site
+#                LPAR = Statut période
+#                       1=direct / 2=différé / 3=ajustement / 4=interdit
+#
+###############################################################################
+Subprog STKCTRIPT(LDAT,LFCY,LPAR)
+Value    Date    LDAT
+Value    Char    LFCY
+Value    Char    LPAR
+Local    Char    WSTA(1)
+Local    Char    LACCIFA
+
+Raz mkstat, GERR
+# Point d'entrée contrôle date imputation
+# (GPE <> 0 pour ne pas effectuer le contrôle standard)
+GPOINT = "VERIPTDAT"
+GPE    = 0
+Gosub ENTREE From EXEFNC
+
+# Date anterieure ou égale a date du jour
+If GPE = 0
+# Pas de dates postérieures à la date du jour
+   If LDAT > date$
+      mkstat=2 : GERR=1
+      GMESSAGE = mess(8,30,1)-format$("DD2",LDAT)-":"-mess(21,196,1)
+      End
+   Endif
+   If clalev([F:PER])=0 : Local File PERIOD   [PER] : Endif
+   If clalev([F:FCY])=0 : Local File FACILITY [FCY] : Endif
+   WSTA = ""
+   If LFCY <> [F:FCY]FCY
+      Read [FCY]FCY0=LFCY
+      If fstat
+         GMESSAGE = mess(15,104,1)
+         mkstat=2 : GERR=1
+         End
+      Endif
+   Endif
+
+   For [PER] Where CPY=[F:FCY]LEGCPY & LEDTYP=GTYPGEN & LDAT>=[F:PER]PERSTR & LDAT<=[F:PER]PEREND
+      WSTA = num$([F:PER]PERSTOSTA)
+      Break
+   Next
+
+   # Période indéfinie ou traitement interdit à cette date
+   If WSTA = "" | !instr(1,LPAR,WSTA)
+      GMESSAGE = mess(3,45,1)-LFCY-"/"-mess(8,30,1)-format$("DD2",LDAT)-":"-mess(21,196,1)
+      mkstat=2 : GERR=1
+
+      End
+   Endif
+   Call PARAM(LFCY,"ACCIFA",LACCIFA) From ADOVAL
+   GACCIFA = val(LACCIFA)
+   If [F:PER]PERSTA=3 & GACCIFA >1                # hcb 101538
+      # période fermée (29/10/01  TB)
+      GMESSAGE = mess(3,45,1)-LFCY-"/"-mess(8,30,1)-format$("DD2",LDAT)-":"-mess(36,101,1)
+      GERR=2
+   Endif
+Endif
+End
+
+###############################################################################
+# CTRCPT      Controle des compteurs
+###############################################################################
+# Paramètres E : PCPT = nom du compteur
+#              : PTYP = type du champ dans le quel doit être placée la
+#                       valeur du compteur (=4  : Entier long                   )
+#                                          (=7  : Décimal                       )
+#                                          (>10 : Chaîne caractères long PTYP-10)
+#
+#            S : PRET = Code retour (=0 : OK            )
+#                                   (=1 : Cpt pas adapté)
+#                                   (=2 : Cpt vide      )
+#                                   (=3 : Cpt inexistant)
+###############################################################################
+Subprog CTRCPT(PCPT, PTYP, PRET)
+Value    Char    PCPT
+Value    Integer PTYP
+Variable Integer PRET
+
+    If PCPT=""
+        PRET = 2
+        End
+    Endif
+    If clalev([F:ANM]) = 0 Local File ACODNUM [ANM] : Endif
+    Read [ANM]ANM0=PCPT
+    If fstat <> 0
+        PRET = 3
+        End
+    Endif
+
+    PRET = 1
+
+    If PTYP>=4 & PTYP<=9
+        If [F:ANM]NBPOS=1 & [F:ANM]TYP= 2 & [F:ANM]NIVDEF=1
+            PRET = 0
+        Endif
+    Elsif PTYP > 10
+        If sum([F:ANM]POSLNG(0..dim([F:ANM]POSLNG)-1)) <= (PTYP-10)
+            PRET = 0
+        Endif
+    Endif
+
+End
+
+########################################################################
+# CTRCPT      Controle des compteurs
+########################################################################
+# LCPT = 0 chrono stock        4  contenants
+#        1 analyses            5
+#        2 chrono FIFO         6  transfert
+#        3                     7  inventaire
+#        4                     8  lots
+#        9 encours             10 Pièces mouvements divers (disparait ???)
+########################################################################
+Subprog CTRCPT_OLD(LCPT,LRET)
+Value    Integer LCPT
+Variable Integer LRET
+If clalev([F:ANM]) = 0 Local File ACODNUM [ANM] : Endif
+LRET = 1
+Case LCPT
+  When 0 :
+    Read [ANM]ANM0=GCHR
+    If fstat = 0 & [F:ANM]NBPOS=1 & [F:ANM]TYP= 2 & [F:ANM]NIVDEF=1 &
+&                  [F:ANM]POSLNG(0)=10 & [F:ANM]POSTYP(0)=8
+      LRET = 0
+    Endif
+  When 1 :
+    Read [ANM]ANM0=GQUA
+    If fstat = 0 & [F:ANM]NIVDEF=1     &
+&                  sum([F:ANM]POSLNG(0..dim([F:ANM]POSLNG)-1)) <=15
+      LRET = 0
+    Endif
+  When 2 :
+    Read [ANM]ANM0=GFIFO
+     If fstat = 0 & [F:ANM]NBPOS=1 & [F:ANM]TYP= 2 & [F:ANM]NIVDEF=1 &
+&                   [F:ANM]POSLNG(0)=10 & [F:ANM]POSTYP(0)=8
+       LRET = 0
+     Endif
+  When 6 :
+    Read [ANM]ANM0=GTRF
+    If fstat = 0 & sum([F:ANM]POSLNG(0..dim([F:ANM]POSLNG)-1)) <=15
+      LRET = 0
+    Endif
+  When 7 :
+    Read [ANM]ANM0=GINV
+    If fstat = 0 & [F:ANM]NIVDEF=1     &
+&              sum([F:ANM]POSLNG(0..dim([F:ANM]POSLNG)-1)) <=15
+       LRET = 0
+    Endif
+  When 8 :
+    Read [ANM]ANM0=GLOT
+    If fstat = 0 & [F:ANM]NIVDEF=1     &
+&              sum([F:ANM]POSLNG(0..dim([F:ANM]POSLNG)-1)) <=GLONLOT
+      LRET = 0
+    Endif
+  When 9 :
+    Read [ANM]ANM0=GWIP
+    If fstat = 0 & sum([F:ANM]POSLNG(0..dim([F:ANM]POSLNG)-1)) <=15
+      LRET = 0
+    Endif
+  When 10 :
+    Read [ANM]ANM0=GMIS
+    If fstat = 0 & sum([F:ANM]POSLNG(0..dim([F:ANM]POSLNG)-1)) <=15
+      LRET = 0
+    Endif
+  When 11 :
+    Read [ANM]ANM0=GMII
+    If fstat = 0 & sum([F:ANM]POSLNG(0..dim([F:ANM]POSLNG)-1)) <=15
+      LRET = 0
+    Endif
+Endcase
+End
+
+########################################################################
+# CALPER         Calcul date de peremption
+########################################################################
+# Paramètres E : LCOD       = gestion peremtion   [F:ITM]EXYMGTCOD
+#                LREF       = date reference peremptiont
+#                LSHL       = delai peremption    [F:ITM]SHL
+#                LUOM       = unite de tps delai peremption [F:ITM]SHLUOM
+#                LSUP       = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LPER       = date péremption
+#
+# Prérequis    : Classes [F:] doit  être chargée : ITMMASTER
+#
+########################################################################
+Subprog CALPER(LCOD,LREF,LSHL,LUOM,LSUP,LPER)
+Value    Integer LCOD
+Value    Date    LREF
+Value    Integer LSHL
+Value    Integer LUOM
+Value    Char    LSUP
+Variable Date    LPER
+#
+Local    Decimal WJOU
+
+Local    Date    WD1, WD2
+Local    Integer WAN, WMOI
+Local    Integer WNB1
+Local    Decimal WMD
+
+
+#Si pas de gestion de peremption
+If LCOD < 2
+   LPER = [31/12/2999]
+  End
+Endif
+
+#Si saisie manuelle
+If LCOD = 6 & !GIMPORT              # hcb typ6
+   End
+Endif
+
+If LUOM =  1
+   WJOU =  nday(LREF)
+   WJOU += LSHL
+   LPER =  nday$(WJOU)
+Else
+  # Issue X3-190948
+#   WJOU = day(LREF)
+#   WMOI = month(LREF)+LSHL
+#   Raz WNB1
+#   If WMOI >  12
+#      WMOI -= 12
+#      WNB1 += 1
+#   Endif
+#   WAN = year(LREF)+WNB1
+#   LPER = gdat$(WJOU,WMOI,WAN)
+   LPER = addmonth(LREF,LSHL )
+# End issue X3-190948
+Endif
+
+# Si arrondi fin de mois
+If LCOD = 3
+   LPER = eomonth(LPER)
+Endif
+# Si arrondi debut mois suivant
+If LCOD =  4
+   LPER =  eomonth(LPER)
+   WJOU =  nday(LPER)
+   WJOU += 1
+   LPER  = nday$(WJOU)
+Endif
+
+GPOINT = "CALPER"                    # hcb 44445
+Gosub ENTREE From EXEFNC             # hcb 44445
+
+End
+########################################################################
+# CALREF         Calcul reference date peremption
+########################################################################
+# Paramètres E : LCOD       = gestion peremtion   [F:ITM]EXYMGTCOD
+#                LREF       = date peremption
+#                LSHL       = delai peremption    [F:ITM]SHL
+#                LUOM       = unite de tps delai peremption [F:ITM]SHLUOM
+#                LSUP       = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LPER       = date reference peremption
+#
+# Prérequis    : Classes [F:] doit  être chargée : ITMMASTER
+#
+########################################################################
+Subprog CALREF(LCOD,LREF,LSHL,LUOM,LSUP,LPER)
+Value    Integer LCOD
+Value    Date    LREF
+Value    Integer LSHL
+Value    Integer LUOM
+Value    Char    LSUP
+Variable Date    LPER
+#
+Local    Decimal WJOU
+
+Local    Date    WD1, WD2
+Local    Integer WAN, WMOI
+Local    Integer WNB1
+Local    Decimal WMD
+
+
+If LUOM =  1
+   WJOU =  nday(LREF)
+   WJOU -= LSHL
+   LPER =  nday$(WJOU)
+Else
+   WJOU = day(LREF)
+   WMOI = month(LREF)-LSHL
+   Raz WNB1
+   If WMOI <  1
+      WMOI += 12
+      WNB1 -= 1
+   Endif
+   WAN = year(LREF)+WNB1
+   LPER = gdat$(WJOU,WMOI,WAN)
+Endif
+
+GPOINT = "CALREF"
+Gosub ENTREE From EXEFNC
+
+End
+
+
+########################################################################
+# CALDLU         Calcul date limite utilisation
+########################################################################
+# Paramètres E : LCOD       = gestion peremtion             [F:ITM]EXYMGTCOD
+#                LREF       = réference péremption
+#                LEXY       = date péremption
+#                LDLU       = Coefficient Utilisation       [F:ITM]DLU
+#                LSUP       = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LPER       = date limite utilisation
+#
+# Prérequis    : Ces classes [F:] doivent être chargées ITMMASTER
+#
+########################################################################
+Subprog CALDLU(LCOD,LREF,LEXY,LDLU,LSUP,LPER,LLTI)
+Value    Integer LCOD
+Value    Date    LREF
+Value    Date    LEXY
+Value    Decimal LDLU
+Value    Char    LSUP
+Variable Date    LPER
+Variable Integer LLTI
+#
+
+Local    Decimal WJREF
+
+Local    Decimal WJEXY
+Local    Decimal WJOU
+
+#Si pas de gestion de peremption
+If LCOD < 2
+   LPER = [31/12/2999]
+   End
+Endif
+
+If LDLU > 1 | LDLU = 0 | LDLU < 0
+   LDLU = 1
+Endif
+
+If LDLU = 1
+   LPER = LEXY
+   LLTI = nday(LPER) - nday(LREF)
+   End
+Endif
+
+WJREF = nday(LREF)
+WJEXY = nday(LEXY)
+If WJEXY > WJREF
+   WJOU  = WJEXY - WJREF
+   WJOU  = (WJOU * LDLU) + 0.5
+   LPER = nday$(WJREF+int(WJOU))
+Else
+   LPER = LEXY
+Endif
+If LPER <> [0/0/0]
+   LLTI = nday(LPER) - nday(LREF)
+Endif
+
+GPOINT = "CALDLU"
+Gosub ENTREE From EXEFNC
+
+End
+
+########################################################################
+# CALLTI         Calcul date re-controle
+########################################################################
+# Paramètres E : LCOD       = gestion peremption   [F:ITM]EXYMGTCOD
+#                LREF       = date reference recontrole
+#                LSHL       = delai recontrole     [F:ITM]SHLLTI
+#                LUOM       = unite de tps delai recontrole  [F:ITM]SHLLTIUOM
+#                LSUP       = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LPER       = date recontrole
+#
+# Prérequis    : Ces classes [F:] doivent être chargées ITMMASTER
+#
+########################################################################
+Subprog CALLTI(LCOD,LREF,LSHL,LUOM,LSUP,LPER)
+Value    Integer LCOD
+Value    Date    LREF
+Value    Integer LSHL
+Value    Integer LUOM
+Value    Char    LSUP
+Variable Date    LPER
+#
+Local    Decimal WJOU
+
+Local    Date    WD1, WD2
+Local    Integer WAN, WMOI
+Local    Integer WNB1
+Local    Decimal WMD
+
+#Si pas de gestion de peremption
+If LCOD < 2
+  LPER = [31/12/2999]
+  End
+Endif
+#Si pas de délai
+If LSHL = 0                                   # hcb 115382
+   LPER = [31/12/2999]
+  End
+Endif
+If LUOM = 1
+   WJOU = nday(LREF)
+   WJOU += LSHL
+   LPER = nday$(WJOU)
+Else
+   WJOU = day(LREF)
+   WMOI = month(LREF)+LSHL
+   Raz WNB1
+   If WMOI>12
+      WMOI  -= 12
+      WNB1+= 1
+   Endif
+   WAN = year(LREF)+WNB1
+   LPER = gdat$(WJOU,WMOI,WAN)
+Endif
+
+GPOINT = "CALLTI"
+Gosub ENTREE From EXEFNC
+
+End
+
+#--- Issue X3-163275 by TS
+##################################################################
+# Calcul d'une date à partir d'une date origine                  #
+#                   avec application d'un delai en jours ouvrés  #
+#----------------------------------------------------------------#
+# Entrée  ORIDAT   : Date origine                                #
+#         LTI      : Délai en jours ouvrés                       #
+#         UVYDAY   : Jours indisponibilités                      #
+#         UVYCOD   : Code période indisponibilité                #
+#         SENCAL   : Sens de calcul date (0 pour +)              #
+#         SENDEC   : Sens décalage si jours indispo (0 pour +)   #
+# Sortie  DSTDAT   : Date destination                            #
+#----------------------------------------------------------------#
+Subprog CALCUL_DATE(ORIDAT, LTI, UVYDAY, UVYCOD, SENCAL, SENDEC, DSTDAT)
+Value    Date     ORIDAT
+Value    Integer  LTI
+Value    Libelle  UVYDAY
+Value    Char     UVYCOD
+Value    Integer  SENCAL
+Value    Integer  SENDEC
+Variable Date     DSTDAT
+Local    Integer  I
+
+I=LTI
+DSTDAT=ORIDAT
+
+While (I>0)
+    If SENCAL=0 : DSTDAT+=1
+    Else        : DSTDAT-=1 : Endif
+    Call CTL_JOU(DSTDAT, UVYDAY, UVYCOD, SENDEC) From CONTX3
+    If mkstat=0 : I-=1 : Else : mkstat=0 : Endif
+Wend
+
+End
+#--- End issue X3-163275 by TS
+
+########################################################################
+# MAJTRK         Sous programme de mise à jour de la tracabilité
+########################################################################
+# Paramètres S : LRET       = Code retour (0=Ok,
+#																					 1=Erreur incrémentation série : #---Issue 110327
+#                                          2=Erreur lecture,
+#                                          3=Erreur écriture)
+#
+# Prérequis    : Les classes [F:ITG] et [F:STJ] doivent être préchargées
+########################################################################
+Subprog MAJTRK(LRET)
+Variable Integer LRET
+#-----
+Raz LRET
+If GSSTOTRK<>2 | [F:ITM]TRKCOD<2 | [F:STJ]UPDCOD<>2  End : Endif : # Pas traçabilité
+# Pas de traçabilité si lot blanc et pas de serie  (ts hcb)
+#--- Issue 110327
+#If [F:STJ]LOT="" & [F:STJ]SERNUM = "" End Endif
+If [F:STJ]LOT="" & [F:STJ]SERNUM="" & [F:STJ]SERDEB="" End Endif
+#---
+#----- Variables locales -----#
+Local    Integer I : I=3 : # Nombre de tentative sur ReadLock
+Local    Integer WTYP
+Local    Char    WNUM
+Local    Decimal WLIN
+Local    Integer WTYPORI
+Local    Char    WNUMORI
+Local    Decimal WLINORI
+Local    Char    WSLO(GLONSLO)
+Local    Char    SERNUM(GLONSER)
+#--- Issue 110327
+Local    Char    WSER(GLONSER)
+Local    Char    WSERF(GLONSER)
+Local    Integer WMVTSEQ
+#---
+If !clalev([F:STR])  Local File STOTRK [STR] : Endif
+#-----------------------------------------------------------------------
+# Détermination numéros pièce et pièce origine
+# Le numéro de pièce pour gestion de la traçabilité est sélectionné selon
+# le type de mouvement
+#     - Numéro de pièce d'origine pour :
+#         Les entrées OF
+#         Les sorties OF
+#         Les réintégration de stock
+#         Les retours reception
+#         Les retours livraison
+#     - Numéro de pièce dans les autres cas
+#-----------------------------------------------------------------------
+# La traçabilité est géré sur:
+#     - OF        : Entrée OF, Sortie OF, Réintégration de stock
+#                   ENTRéE et sortie diverse (si origine=OF)
+#     - Composé   : Assemblage et désassemblage
+#     - Réception : Retour fournisseur
+#     - Livraison : Retour client
+#-----------------------------------------------------------------------
+Case [F:STJ]TRSTYP
+  When 1, 2, 3, 4, 29                  : #--- Issue 110101 TS Traca SST = ajout 29 : sortie ordre sst
+    If find([F:STJ]VCRTYPORI,10,36)
+      WTYP       = [F:STJ]VCRTYPORI
+      WNUM       = [F:STJ]VCRNUMORI
+      WLIN       = [F:STJ]VCRLINORI
+      WTYPORI    = [F:STJ]VCRTYP
+      WNUMORI    = [F:STJ]VCRNUM
+      WLINORI    = [F:STJ]VCRLIN
+    #Elsif find([F:STJ]VCRTYP,31,32)
+    #  WTYP       = [F:STJ]VCRTYP
+    #  WNUM       = [F:STJ]VCRNUM
+    #  WLIN       = 1
+    #  WTYPORI    = [F:STJ]VCRTYP
+    #  WNUMORI    = [F:STJ]VCRNUM
+    #  WLINORI    = [F:STJ]VCRLIN
+    Else
+      WTYP       = [F:STJ]VCRTYP
+      WNUM       = [F:STJ]VCRNUM
+      WLIN       = [F:STJ]VCRLIN
+      WTYPORI    = [F:STJ]VCRTYPORI
+      WNUMORI    = [F:STJ]VCRNUMORI
+      WLINORI    = [F:STJ]VCRLINORI
+    Endif
+  When 5, 6, 11, 12, 18, 19
+    WTYP         = [F:STJ]VCRTYPORI
+    WNUM         = [F:STJ]VCRNUMORI
+    WLIN         = [F:STJ]VCRLINORI
+    WTYPORI      = [F:STJ]VCRTYP
+    WNUMORI      = [F:STJ]VCRNUM
+    WLINORI      = [F:STJ]VCRLIN
+  When Default
+    WTYP         = [F:STJ]VCRTYP
+    WNUM         = [F:STJ]VCRNUM
+    WLIN         = [F:STJ]VCRLIN
+    WTYPORI      = [F:STJ]VCRTYPORI
+    WNUMORI      = [F:STJ]VCRNUMORI
+    WLINORI      = [F:STJ]VCRLINORI
+Endcase
+
+#--- PE pour gérer la traçabilité sur le suivi au lieu de l'OF
+# Issue X3-115795
+#--- ou pour ne pas générer de traçabilité sur les mouvements interne
+#--- (mettre GPE=1 si TRSTYP=7,8,9,21,22,23,25 ou 34 par exemple)
+Raz GPE
+# End issue X3-115795
+ GPOINT = "ORI_TRK"
+ Gosub ENTREE From EXEFNC
+# Issue X3-115795
+If GPE=1 End Endif
+# End issue X3-115795
+
+#--- Séquence à écrire dans le point d'entrée
+# If find([F:STJ]TRSTYP,5,6,19)
+#    WTYP         = [F:STJ]VCRTYP
+#    WNUM         = [F:STJ]VCRNUM
+#    WLIN         = [F:STJ]VCRLIN
+#    WTYPORI      = [F:STJ]VCRTYPORI
+#    WNUMORI      = [F:STJ]VCRNUMORI
+#    WLINORI      = [F:STJ]VCRLINORI
+# Endif
+
+#----- Ecriture trace selon paramètre -----#
+Case [F:ITM]TRKCOD
+  When 2 : Gosub TRK_DET : # Traçabilité détaillée
+  When 3 : Gosub TRK_AGR : # Traçabilité agrégée
+Endcase
+End
+
+#-----------------------#
+# Traçabilité détaillée #
+#-----------------------#
+$TRK_DET
+# Si lot facultatif et lot blanc
+#    Si niveau traçabilité 'Lot' et no série E/S
+#    ou niveau traçabilité 'Par défaut' ou 'Lot' et pas de no série E/S
+#       alors pas de traçabilité
+If dim([F:ITM]TRKLEV)>0
+   If [F:ITM]LOTMGTCOD=2 & [F:STJ]LOT=""
+      #--- Issue 110327
+      #If ([F:ITM]TRKLEV=2 & [F:ITM]SERMGTCOD=3) | ([F:ITM]TRKLEV<3 & [F:ITM]SERMGTCOD<>3)
+      If [F:ITM]TRKLEV=2 | [F:ITM]SERMGTCOD<3
+      #---
+         Return
+      Endif
+   Endif
+Endif
+# Si niveau traçabilité 'Lot' ou 'Sous-lot' et gestion série E/S
+# ou niveau traçabilité 'Lot' et gestion sous-lot
+If dim([F:ITM]TRKLEV)>0
+   #--- Issue 110327
+   #If (find([F:ITM]TRKLEV,2,3) & [F:ITM]SERMGTCOD=3) | ([F:ITM]TRKLEV=2 & [F:ITM]LOTMGTCOD=4)
+   If (find([F:ITM]TRKLEV,2,3) & [F:ITM]SERMGTCOD>=3) | ([F:ITM]TRKLEV=2 & [F:ITM]LOTMGTCOD=4)
+   #---
+      Gosub TRK_DET2
+      Return
+   Endif
+Endif
+#--- Issue 110327
+If dim([F:ITM]TRKLEV)>0
+   If find([F:ITM]TRKLEV,1,4) & [F:ITM]SERMGTCOD=4
+      Gosub TRK_DET3
+      Return
+   Endif
+Endif
+#---
+[F:STR]          = [F:STJ]
+[F:STR]VCRTYP    = WTYP
+[F:STR]VCRNUM    = WNUM
+[F:STR]VCRLIN    = WLIN
+[F:STR]VCRTYPORI = WTYPORI
+[F:STR]VCRNUMORI = WNUMORI
+[F:STR]VCRLINORI = WLINORI
+[F:STR]CREUSR    = GUSER
+[F:STR]CREDAT    = date$
+[F:STR]UPDUSR    = ""
+[F:STR]UPDDAT    = [0/0/0]
+[F:STR]EXPNUM    = [C]EXPORT
+#--- Issue 110327
+[F:STR]MVTSEQSTJ = [F:STJ]MVTSEQ
+#---
+$TRK_DET1
+Write [STR]
+Case fstat
+  When 0
+  When 3
+    [F:STR]MVTSEQ -= 1
+    Goto TRK_DET1
+  When Default
+    LRET = 3
+Endcase
+Return
+
+#--- Bug 55665
+# Agrégation sur lot ou lot/sous-lot si gestion série
+# ou         sur lot                 si gestion lot/sous-lot
+$TRK_DET2
+WSLO    = [F:STJ]SLO
+WSERNUM = [F:STJ]SERNUM
+# Alimentation sous-lot et série
+If [F:ITM]TRKLEV=2 & [F:ITM]LOTMGTCOD=4 WSLO="" Endif
+#--- Issue 110327
+#If [F:ITM]SERMGTCOD=3 WSERNUM="" Endif
+If [F:ITM]SERMGTCOD>=3 WSERNUM="" Endif
+#---
+Filter [STR] Where ITMREF = [F:STJ]ITMREF
+&                & LOT    = [F:STJ]LOT
+&                & SLO    = WSLO
+&                & STOFCY = [F:STJ]STOFCY
+&                & SERNUM = WSERNUM
+&                & STA    = [F:STJ]STA
+&                & PALNUM = [F:STJ]PALNUM
+&                & CTRNUM = [F:STJ]CTRNUM
+&                & VCRTYP = WTYP
+&                & VCRNUM = WNUM
+&                & VCRLIN = WLIN
+&            Order By Key STR0
+Read [STR] First
+Filter [STR]
+If fstat Gosub TRK_DET22 : Return Endif
+
+# Agrégation sur enregistrement déjà existant
+$TRK_DET21
+Readlock [STR] Curr
+If fstat=1
+  If I>0
+    I-=1 : Goto TRK_DET21
+  Else
+    LRET=2
+  Endif
+Elsif !fstat
+  [F:STR]QTYSTU   += [F:STJ]QTYSTU
+  [F:STR]QLYCTLDEM = [F:STJ]QLYCTLDEM
+  [F:STR]POT       = [F:STJ]POT
+  [F:STR]ACT       = [F:STJ]ACT
+  [F:STR]SHLDAT    = [F:STJ]SHLDAT
+  [F:STR]EXPNUM    = [C]EXPORT
+  [F:STR]UPDUSR    = GUSER
+  [F:STR]UPDDAT    = date$
+  Rewrite [STR]
+  If fstat
+    LRET = 3
+  Endif
+Endif
+Return
+
+# Création nouvel enregistrement
+$TRK_DET22
+[F:STR]          = [F:STJ]
+[F:STR]SLO       = WSLO
+[F:STR]SERNUM    = WSERNUM
+[F:STR]REGFLG    = 1
+[F:STR]VCRTYP    = WTYP
+[F:STR]VCRNUM    = WNUM
+[F:STR]VCRLIN    = WLIN
+[F:STR]VCRTYPORI = WTYPORI
+[F:STR]VCRNUMORI = WNUMORI
+[F:STR]VCRLINORI = WLINORI
+[F:STR]CREUSR    = GUSER
+[F:STR]CREDAT    = date$
+[F:STR]UPDUSR    = ""
+[F:STR]UPDDAT    = [0/0/0]
+[F:STR]EXPNUM    = [C]EXPORT
+#--- Issue 110327
+[F:STR]MVTSEQSTJ = [F:STJ]MVTSEQ
+#---
+$TRK_DET221
+Write [STR]
+If fstat=3
+  [F:STR]MVTSEQ -= 1
+  Goto TRK_DET221
+Elsif fstat
+  LRET = 3
+Endif
+Return
+#---
+
+#--- Issue 110327
+$TRK_DET3
+If [F:STJ]SERDEB<>""
+  WSER    = [F:STJ]SERDEB
+  WMVTSEQ = [F:STJ]MVTSEQ
+  # Boucle de traitement des no séries du mouvement de stock
+  While WSER<=[F:STJ]SERFIN
+    [F:STR]          = [F:STJ]
+    [F:STR]MVTSEQ    = WMVTSEQ
+    If [F:STJ]QTYSTU>0
+      [F:STR]QTYSTU = 1
+    Else
+      [F:STR]QTYSTU =-1
+    Endif
+    [F:STR]SERNUM    = WSER
+    [F:STR]VCRTYP    = WTYP
+    [F:STR]VCRNUM    = WNUM
+    [F:STR]VCRLIN    = WLIN
+    [F:STR]VCRTYPORI = WTYPORI
+    [F:STR]VCRNUMORI = WNUMORI
+    [F:STR]VCRLINORI = WLINORI
+    [F:STR]CREUSR    = GUSER
+    [F:STR]CREDAT    = date$
+    [F:STR]UPDUSR    = ""
+    [F:STR]UPDDAT    = [0/0/0]
+    [F:STR]EXPNUM    = [C]EXPORT
+    [F:STR]MVTSEQSTJ = [F:STJ]MVTSEQ
+    $TRK_DET31
+    Write [STR]
+    If fstat=3
+      [F:STR]MVTSEQ -= 1
+      Goto TRK_DET31
+    Elsif fstat
+      LRET = 3
+      Break
+    Endif
+    WMVTSEQ = [F:STR]MVTSEQ-1
+    # Passage au no série suivant
+    Call PLUS_UN(WSER,WSERF,LRET) From STKLIB
+    If LRET<>0 | WSERF>[F:STJ]SERFIN : Break : Endif
+    WSER = WSERF
+  Wend
+Endif
+
+Return
+#--- End issue 110327
+
+#---------------------#
+# Traçabilité agrégée #
+#---------------------#
+$TRK_AGR
+#--- Bug 55665
+# Si lot facultatif et lot blanc
+#    Si niveau traçabilité 'Lot' et no série E/S
+#    ou niveau traçabilité 'Par défaut' ou 'Lot' et pas de no série E/S
+#       alors pas de traçabilité
+If dim([F:ITM]TRKLEV)>0
+   If [F:ITM]LOTMGTCOD=2 & [F:STJ]LOT=""
+      #--- Issue 110327
+      #If ([F:ITM]TRKLEV=2 & [F:ITM]SERMGTCOD=3) | ([F:ITM]TRKLEV<3 & [F:ITM]SERMGTCOD<>3)
+      If [F:ITM]TRKLEV=2 | [F:ITM]SERMGTCOD<3
+      #---
+         Return
+      Endif
+   Endif
+Endif
+#--- Issue 110327
+If dim([F:ITM]TRKLEV)>0
+   If find([F:ITM]TRKLEV,1,4) & [F:ITM]SERMGTCOD=4
+      Gosub TRK_DET3
+      Return
+   Endif
+Endif
+#---
+WSLO    = [F:STJ]SLO
+WSERNUM = [F:STJ]SERNUM
+# Si niveau traçabilité 'Lot' ou 'Sous-lot' et gestion série E/S
+# ou niveau traçabilité 'Lot' et gestion sous-lot
+If dim([F:ITM]TRKLEV)>0
+   #--- Issue 110327
+   #If find([F:ITM]TRKLEV,2,3) & [F:ITM]SERMGTCOD=3
+   If find([F:ITM]TRKLEV,2,3) & [F:ITM]SERMGTCOD>=3
+   #---
+      WSERNUM=""
+   Endif
+   If [F:ITM]TRKLEV=2 & [F:ITM]LOTMGTCOD=4
+      WSLO=""
+   Endif
+Endif
+# Suppression filtre sur statut ?
+Filter [STR] Where ITMREF = [F:STJ]ITMREF
+&                & LOT    = [F:STJ]LOT
+&                & SLO    = WSLO
+&                & STOFCY = [F:STJ]STOFCY
+&                & SERNUM = WSERNUM
+&                & STA    = [F:STJ]STA
+&                & PALNUM = [F:STJ]PALNUM
+&                & CTRNUM = [F:STJ]CTRNUM
+&                & VCRTYP = WTYP
+&                & VCRNUM = WNUM
+&                & VCRLIN = WLIN
+&            Order By Key STR0
+#---
+Read [STR] First
+Filter [STR]
+If fstat Gosub TRK_AGR_DET : Return Endif
+$TRK_AGR1
+Readlock [STR] Curr
+If fstat=1 & I>0  I-=1 : Goto TRK_AGR1 : Endif
+Filter [STR]
+If fstat=1
+  LRET = 2
+Elsif !fstat
+  [F:STR]QTYSTU   += [F:STJ]QTYSTU
+  [F:STR]QLYCTLDEM = [F:STJ]QLYCTLDEM
+  [F:STR]POT       = [F:STJ]POT
+  [F:STR]ACT       = [F:STJ]ACT
+  [F:STR]SHLDAT    = [F:STJ]SHLDAT
+  [F:STR]EXPNUM    = [C]EXPORT
+  [F:STR]UPDUSR    = GUSER
+  [F:STR]UPDDAT    = date$
+  Rewrite [STR]
+  If fstat
+    LRET = 3
+  Endif
+Endif
+Return
+
+# hcb 29983 dans le cas d une tracabilité agregée REGFLG = 1
+$TRK_AGR_DET
+[F:STR]          = [F:STJ]
+#--- Bug 55665
+[F:STR]SLO       = WSLO
+[F:STR]SERNUM    = WSERNUM
+#---
+[F:STR]REGFLG    = 1
+[F:STR]VCRTYP    = WTYP
+[F:STR]VCRNUM    = WNUM
+[F:STR]VCRLIN    = WLIN
+[F:STR]VCRTYPORI = WTYPORI
+[F:STR]VCRNUMORI = WNUMORI
+[F:STR]VCRLINORI = WLINORI
+[F:STR]CREUSR    = GUSER
+[F:STR]CREDAT    = date$
+[F:STR]UPDUSR    = ""
+[F:STR]UPDDAT    = [0/0/0]
+[F:STR]EXPNUM    = [C]EXPORT
+#--- Issue 110327
+[F:STR]MVTSEQSTJ = [F:STJ]MVTSEQ
+#---
+$TRK_AGR_DET1
+Write [STR]
+Case fstat
+  When 0
+  When 3
+    [F:STR]MVTSEQ -= 1
+    Goto TRK_AGR_DET1
+  When Default
+    LRET = 3
+Endcase
+Return
+
+#--- Bug 63088 - Modification complète du SP REC_PRECOD -
+########################################################################
+# REC_PRECOD    Recherche du code préparation correspondant aux
+#               caractéristiques de la ligne de document
+########################################################################
+# Paramètres E : LFCY    = Site
+#                LP2     = Article
+#                LP3     = Catégorie article
+#                LP4     = Famille article 1
+#                LP5     = Famille article 2
+#                LP6     = Famille article 3
+#                LP7     = Famille article 4
+#                LP8     = Famille article 5
+#                LP9     = Client
+#                LP10    = Catégorie client
+#                LP11    = Famille client 1
+#                LP12    = Famille client 2
+#                LP13    = Famille client 3
+#                LP14    = Famille client 4
+#                LP15    = Famille client 5
+# Paramètres S : LPRECOD = Code préparation
+#
+# Prérequis    :
+#
+########################################################################
+Subprog REC_PRECOD(LFCY,LP2,LP3,LP4,LP5,LP6,LP7,LP8,LP9,LP10,LP11,LP12,LP13,LP14,LP15,LPRECOD)
+Value    Char    LFCY
+Value    Char    LP2
+Value    Char    LP3
+Value    Char    LP4
+Value    Char    LP5
+Value    Char    LP6
+Value    Char    LP7
+Value    Char    LP8
+Value    Char    LP9
+Value    Char    LP10
+Value    Char    LP11
+Value    Char    LP12
+Value    Char    LP13
+Value    Char    LP14
+Value    Char    LP15
+Variable Char    LPRECOD
+
+Local Char    WC1, WC2, WC3, WC4, WC5
+Local Char    WF1(250), WF2(250), WF3(250), WF4(250), WF5(250)
+Local Integer I, J, K
+
+Raz WC1, WC2, WC3, WC4, WC5
+Raz LPRECOD
+
+If !clalev([F:PRC])  Local File TABPRECOD  [PRC]  Endif
+If !clalev([F:PRC1]) Local File TABPRECOD  [PRC1] Endif
+
+Read [PRC]PRC0=LFCY;0;""
+If fstat End Endif
+
+# Récupération du paramétrage (critères et nombre de critères)
+I=0
+If val([F:PRC]FOR1)>1
+   I=1
+   WC1=evalue("LP"+num$([F:PRC]FOR1))
+   If val([F:PRC]FOR2)>1
+      I=2
+      WC2=evalue("LP"+num$([F:PRC]FOR2))
+      If val([F:PRC]FOR3)>1
+         I=3
+         WC3=evalue("LP"+num$([F:PRC]FOR3))
+         If val([F:PRC]FOR4)>1
+            I=4
+            WC4=evalue("LP"+num$([F:PRC]FOR4))
+            If val([F:PRC]FOR5)>1
+               I=5
+               WC5=evalue("LP"+num$([F:PRC]FOR5))
+            Endif
+         Endif
+      Endif
+   Endif
+Endif
+
+# Boucle sur la table des codes préparation (1er critère)
+# dans l'ordre : no critère, code prépa
+For [PRC]PRC0 Where STOFCY=LFCY & NUMCRIT=1
+   # Constitution des formules
+   Gosub CRE_FOR
+   # Récupération du code préparation si les critères sont respectés
+   Case J
+    When 1 : If evalue(WF1)
+                LPRECOD=[F:PRC]PRECOD
+             Endif
+    When 2 : If evalue(WF1)|evalue(WF2)
+                LPRECOD=[F:PRC]PRECOD
+             Endif
+    When 3 : If evalue(WF1)|evalue(WF2)|evalue(WF3)
+                LPRECOD=[F:PRC]PRECOD
+             Endif
+    When 4 : If evalue(WF1)|evalue(WF2)|evalue(WF3)|evalue(WF4)
+                LPRECOD=[F:PRC]PRECOD
+             Endif
+    When 5 : If evalue(WF1)|evalue(WF2)|evalue(WF3)|evalue(WF4)|evalue(WF5)
+                LPRECOD=[F:PRC]PRECOD
+             Endif
+   Endcase
+   # Le code prépartion trouvé respecte-t-il les autres critères ?
+   K=1
+   While K<I & LPRECOD<>""
+    K+=1
+    Read [PRC1]PRC0=LFCY;K;LPRECOD
+    If !fstat
+       # Constitution des formules
+       Gosub CRE_FOR1
+       # Récupération du code préparation si les critères sont respectés
+       Case J
+        When 1 : If !evalue(WF1)
+                    LPRECOD=""
+                 Endif
+        When 2 : If !evalue(WF1)&!evalue(WF2)
+                    LPRECOD=""
+                 Endif
+        When 3 : If !evalue(WF1)&!evalue(WF2)&!evalue(WF3)
+                    LPRECOD=""
+                 Endif
+        When 4 : If !evalue(WF1)&!evalue(WF2)&!evalue(WF3)&!evalue(WF4)
+                    LPRECOD=""
+                 Endif
+        When 5 : If !evalue(WF1)&!evalue(WF2)&!evalue(WF3)&!evalue(WF4)&!evalue(WF5)
+                    LPRECOD=""
+                 Endif
+       Endcase
+    Endif
+   Wend
+   # Le code préparation respecte tous les critères
+   If LPRECOD<>"" Break Endif
+Next
+
+#--- Issue X3-154991
+GPOINT="NEW_CRITERIA" : Gosub ENTREE From EXEFNC
+
+End
+
+$CRE_FOR
+Raz WF1, WF2, WF3, WF4, WF5
+# Remplacement des '%' par la variable à tester
+J=1
+Call CREE_FORMULE([F:PRC]FOR1,"WC"+num$([F:PRC]NUMCRIT),WF1) From TRTCATEG
+If [F:PRC]FOR2<>""
+   J=2
+   Call CREE_FORMULE([F:PRC]FOR2,"WC"+num$([F:PRC]NUMCRIT),WF2) From TRTCATEG
+   If [F:PRC]FOR3<>""
+      J=3
+      Call CREE_FORMULE([F:PRC]FOR3,"WC"+num$([F:PRC]NUMCRIT),WF3) From TRTCATEG
+      If [F:PRC]FOR4<>""
+         J=4
+         Call CREE_FORMULE([F:PRC]FOR4,"WC"+num$([F:PRC]NUMCRIT),WF4) From TRTCATEG
+         If [F:PRC]FOR5<>""
+            J=5
+            Call CREE_FORMULE([F:PRC]FOR5,"WC"+num$([F:PRC]NUMCRIT),WF5) From TRTCATEG
+         Endif
+      Endif
+   Endif
+Endif
+Return
+
+$CRE_FOR1
+Raz WF1, WF2, WF3, WF4, WF5
+# Remplacement des '%' par la variable à tester
+J=1
+Call CREE_FORMULE([F:PRC1]FOR1,"WC"+num$([F:PRC1]NUMCRIT),WF1) From TRTCATEG
+If [F:PRC1]FOR2<>""
+   J=2
+   Call CREE_FORMULE([F:PRC1]FOR2,"WC"+num$([F:PRC1]NUMCRIT),WF2) From TRTCATEG
+   If [F:PRC1]FOR3<>""
+      J=3
+      Call CREE_FORMULE([F:PRC1]FOR3,"WC"+num$([F:PRC1]NUMCRIT),WF3) From TRTCATEG
+      If [F:PRC1]FOR4<>""
+         J=4
+         Call CREE_FORMULE([F:PRC1]FOR4,"WC"+num$([F:PRC1]NUMCRIT),WF4) From TRTCATEG
+         If [F:PRC1]FOR5<>""
+            J=5
+            Call CREE_FORMULE([F:PRC1]FOR5,"WC"+num$([F:PRC1]NUMCRIT),WF5) From TRTCATEG
+         Endif
+      Endif
+   Endif
+Endif
+Return
+
+########################################################################
+# SENSTRS : Retourne en fonction de PTRSTYP (m.704)
+#                    1 pour une entrée normale
+#                   -1   "   "    "    négative
+#                    2   "   "  sortie normale
+#                   -2   "   "    "    négative
+#                    3      un changement d'emplacement
+########################################################################
+Funprog SENSTRS( PTRSTYP )
+Value Integer PTRSTYP
+
+Local Integer LSENS
+
+LSENS = 0
+#--- Bug 61165 puis 62182
+Case PTRSTYP
+  When  1,3,5,10,16,28                      : LSENS =  1 # Entrée
+  When 11,32                                : LSENS = -1 # Entrée -
+  When  2,4,6,24,27,29                      : LSENS =  2 # Sortie
+  When 12,19                                : LSENS = -2 # Sortie -
+  When  7,8,9,14,17,18,20,21,22,25,26,33,36 : LSENS =  3 # Chgt emplacement
+Endcase
+#Case PTRSTYP
+#  When 1,3,5,10,28                   : LSENS =  1 # Entrée
+#  When 11                            : LSENS = -1 # Entrée -
+#  When 2,4,6,24,27,29                : LSENS =  2 # Sortie
+#  When 12,19                         : LSENS = -2 # Sortie -
+#  When 7,8,9,14,17,18,20,21,22,25,26 : LSENS =  3 # Chgt emplacement
+#Endcase
+#---
+End LSENS
+
+########################################################################
+# SENSVCR : Retourne en fonction de PVCRTYP (m.701)
+#                    1 pour une entrée normale
+#                   -1   "   "    "    négative
+#                    2   "   "  sortie normale
+#                   -2   "   "    "    négative
+#                    3      un changement d'emplacement
+# Types de documents traités : 4,5,6,8,12,13,15,19,20,28,29,33,34
+########################################################################
+Funprog SENSVCR( PVCRTYP )
+Value Integer PVCRTYP   # FGR 18/01/2010 : X3SUIVI60986 : pas PTRSTYP
+
+Local Integer LSENS
+
+LSENS = 0
+Case PVCRTYP
+  When  6,15,19          : LSENS =  1  # Entrée
+  When  8                : LSENS = -1  # Entrée -
+  When  4, 5,12,20,33    : LSENS =  2  # Sortie
+  When 13,18             : LSENS = -2  # Sortie -
+  When 28,29,34          : LSENS =  3  # Chgt emplacement
+Endcase
+
+End LSENS
+
+########################################################################
+# FORMAT_INV     Chargement des formats (invisibles) des zones écrans
+########################################################################
+$FORMAT_INV
+# LOTMGTCOD  politique gestion lot
+#            1 = Non
+#            2 = Oui facultatif
+#            3 = Oui obligatoire
+#            4 = Oui obligatoire + Sous lot
+
+If [F:ITM]LOTMGTCOD = 1
+
+   GWSINVLOT   = "-"+GSINVLOT
+   GWSINVLOS   = "-"+GSINVLOS
+   GWSINVSLO   = "-"+GSINVSLO
+   GWSINTLOT   = ""
+   GWSINTSLO   = ""
+   #----- Si import et que la globale GSAIFLG existe -----#
+   If GIMPORT & dim(GSAIFLG)>0
+     GSAIFLG=left$(GSAIFLG,7)+"2"+mid$(GSAIFLG,9,1)+"2"+right$(GSAIFLG,11)
+   Endif
+   #-----
+Else
+   GWSINVLOT   = GSINVLOT
+   GWSINVLOS   = GSINVLOS
+   GWSINTLOT   = GSINTLOT
+Endif
+
+If [F:ITM]LOTMGTCOD = 4
+   GWSINVSLO   = GSINVSLO
+   GWSINTSLO   = GSINTSLO
+Else
+   GWSINVSLO   = "-"+GSINVSLO
+   GWSINTSLO   = ""
+   #----- Si import et que la globale GSAIFLG existe -----#
+   If GIMPORT & dim(GSAIFLG)>0
+     GSAIFLG=left$(GSAIFLG,9)+"2"+right$(GSAIFLG,11)
+   Endif
+   #-----
+Endif
+# Gestion des no série
+If [F:ITM]SERMGTCOD<2
+   GWSINVSER = "-"+GSINVSER
+   GWSINVSERF= "-"+GSINVSERF
+   GWSINTSER = ""
+   GWSINTSERF= ""
+   #----- Si import et que la globale GSAIFLG existe -----#
+   If GIMPORT & dim(GSAIFLG)>0
+     GSAIFLG=left$(GSAIFLG,10)+"2"+right$(GSAIFLG,12)
+   Endif
+   #-----
+Else
+   GWSINVSER = GSINVSER
+   GWSINVSERF= GSINVSERF
+   GWSINTSER = GSINTSER
+   GWSINTSERF= GSINTSERF
+Endif
+# Gestion des emplacements
+If [F:ITF]LOCMGTCOD<>2
+   GWSINVEMP = "-"+GSINVEMP
+   GWSINVEMPT= "-"+GSINVEMPT
+   GWSINTEMP = ""
+   GWSINTEMPT= ""
+   #----- Si import et que la globale GSAIFLG existe -----#
+   If GIMPORT & dim(GSAIFLG)>0
+     GSAIFLG=left$(GSAIFLG,4)+"22"+right$(GSAIFLG,7)
+   Endif
+   #-----
+Else
+   GWSINVEMP = GSINVEMP
+   GWSINVEMPT= GSINVEMPT
+   GWSINTEMP = GSINTEMP
+   GWSINTEMPT= GSINTEMPT
+Endif
+# Article géré en titre ou non
+If [F:ITF]STOMGTCOD<3
+   GWSINVPOT = "-"+GSINVPOT
+Else
+   GWSINVPOT = GSINVPOT
+Endif
+# Article géré en péremption ou non
+If [F:ITM]EXYMGTCOD<2
+   GWSINVSHL = "-"+GSINVSHL
+Else
+   GWSINVSHL = GSINVSHL
+Endif
+#--- hcb 71276
+# Article géré en version ou non
+GWSINVECCMAJ = "-"+GSINVECCMAJ
+GWSINVECCMIN = "-"+GSINVECCMIN
+If [F:ITM]ECCSTO =2
+   GWSINVECCMAJ = GSINVECCMAJ
+Endif
+If [F:ITM]ECCSTO =3
+   GWSINVECCMAJ = GSINVECCMAJ
+   GWSINVECCMIN = GSINVECCMIN
+Endif
+# Article non géré en version
+If [F:ITM]ECCFLG <2
+   GWSINVECCMAJ = "-"+GSINVECCMAJ
+   GWSINVECCMIN = "-"+GSINVECCMIN
+Endif
+#---
+
+#--- Issue X3-53322
+If [F:ITF]LPNMGTCOD=2
+  GWSINVLPNNUM  = GSINVLPNNUM
+  GWSINVTCTRNUM = GSINVTCTRNUM
+  GWSINVNBLPN   = GSINVNBLPN
+Else
+  GWSINVLPNNUM  = "-"+GSINVLPNNUM
+  GWSINVTCTRNUM = "-"+GSINVTCTRNUM
+  GWSINVNBLPN   = "-"+GSINVNBLPN
+Endif
+#---
+
+If GWRHACT<>2
+   GWSINVWRH = "-"+GSINVWRH
+# Site avec gestion de dépôt ou non
+Else
+   If clalev([F:FCY])=0 : Local File FACILITY [FCY] : Endif
+   If [F:ITF]STOFCY<>[F:FCY]FCY
+      Read [FCY]FCY0=[F:ITF]STOFCY
+      If fstat Raz [F:FCY] Endif
+   Endif
+   If [F:FCY]WRHGES=2
+      #--- Bug 60935
+      If [F:ITF]LOCMGTCOD<>2
+         GWSINVWRH = "-"+GSINVWRH
+      Else
+         GWSINVWRH = GSINVWRH
+      Endif
+      #GWSINVWRH = GSINVWRH
+      #---
+   Else
+      GWSINVWRH = "-"+GSINVWRH
+   Endif
+Endif
+
+Return
+
+########################################################################
+# FORMAT_INV_ENT Chargement des formats (invisibles) serie ENTREE
+########################################################################
+$FORMAT_INV_ENT
+If [F:ITM]SERMGTCOD<3
+   GWSINVSER = "-"+GSINVSER
+   GWSINVSERF= "-"+GSINVSERF
+   GWSINTSER = ""
+   GWSINTSERF= ""
+   #----- Si import et que la globale GSAIFLG existe -----#
+   If GIMPORT & dim(GSAIFLG)>0
+     GSAIFLG=left$(GSAIFLG,10)+"2"+right$(GSAIFLG,12)
+   Endif
+   #-----
+Else
+   GWSINVSER = GSINVSER
+   GWSINVSERF= GSINVSERF
+   GWSINTSER = GSINTSER
+   GWSINTSERF= GSINTSERF
+Endif
+
+Return
+
+########################################################################
+# FORMAT_INV_SOR Chargement des formats (invisibles) serie SORTIE
+########################################################################
+$FORMAT_INV_SOR
+#--- Issue 110327
+#If [F:ITM]SERMGTCOD<>2
+If [F:ITM]SERMGTCOD<>2 & [F:ITM]SERMGTCOD<>4
+#---
+   GWSINVSER = "-"+GSINVSER
+   GWSINVSERF= "-"+GSINVSERF
+   GWSINTSER = ""
+   GWSINTSERF= ""
+Else
+   GWSINVSER = GSINVSER
+   GWSINVSERF= GSINVSERF
+   GWSINTSER = GSINTSER
+   GWSINTSERF= GSINTSERF
+Endif
+
+Return
+
+#                                                                                       # hcb 110327 deb
+#######################################################################################
+# FORMAT_INV_CHG Chargement des formats série pour controle qualité et changement stock
+#######################################################################################
+$FORMAT_INV_CHG
+GWSINVSERD  = GWSINVSER
+GWSINVSERFD = "-"+GSINVSER
+If [F:ITM]SERMGTCOD = 4
+   GWSINVSER   ="KP:"+num$(GLONSER)+"X"
+   GWSINVSERF  ="KP:"+num$(GLONSER)+"X"
+   GWSINVSERFD ="KP:"+num$(GLONSER)+"X"
+   GWSINVSERD  = "-"+GSINVSER
+Endif
+
+Return
+#                                                                                       # hcb 110327 end
+
+########################################################################
+# OPEN_FILES     Ouverture des tables nécessaires à la màj des stocks
+########################################################################
+$OPEN_FILES
+If !clalev([F:ACC])   Local File ACCES      [ACC]   Endif
+If !clalev([F:ATZ])   Local File ATABZON    [ATZ]   Endif
+If !clalev([F:ACV])   Local File ACTIV      [ACV]   Endif
+If !clalev([F:TUN])   Local File TABUNIT    [TUN]   Endif
+If !clalev([F:TCU])   Local File TABCUR     [TCU]   Endif
+If !clalev([F:TLO])   Local File TABLOCTYP  [TLO]   Endif
+If !clalev([F:TCM])   Local File TABCOSTMET [TCM]   Endif
+If !clalev([F:TWS])   Local File TABWIPSTO  [TWS]   Endif
+If !clalev([F:FCY])   Local File FACILITY   [FCY]   Endif
+If GWRHACT=2
+  If !clalev([F:WRH])   Local File WAREHOUSE  [WRH]   Endif
+  If !clalev([F:ITW])   Local File ITMWRH     [ITW]   Endif
+Endif
+If !clalev([F:ITM])   Local File ITMMASTER  [ITM]   Endif
+If !clalev([F:ITF])   Local File ITMFACILIT [ITF]   Endif
+If !clalev([F:ITG])   Local File ITMCATEG   [ITG]   Endif
+If !clalev([F:ITV])   Local File ITMMVT     [ITV]   Endif
+If !clalev([F:ITH])   Local File ITMMVTHIS  [ITH]   Endif
+If !clalev([F:ITU])   Local File ITMBPC     [ITU]   Endif
+If !clalev([F:ITP])   Local File ITMBPS     [ITP]   Endif
+If !clalev([F:STA])   Local File STOALL     [STA]   Endif
+If !clalev([F:STA1])  Local File STOALL     [STA1]  Endif
+If !clalev([F:STL])   Local File STOLOT     [STL]   Endif
+If !clalev([F:SLF])   Local File STOLOTFCY  [SLF]   Endif
+If !clalev([F:SLF_])  Local File STOLOTFCY  [SLF_]  Endif    # Pour éviter une ouverture à chaque appel de QTYLOT
+If !clalev([F:STO])   Local File STOCK      [STO]   Endif
+If !clalev([F:STO1])  Local File STOCK      [STO1]  Endif
+If !clalev([F:STP])   Local File STOCOST    [STP]   Endif
+If !clalev([F:QLH])   Local File STOQLYH    [QLH]   Endif
+If !clalev([F:QLD])   Local File STOQLYD    [QLD]   Endif
+If !clalev([F:QLD1])  Local File STOQLYD    [QLD1]  Endif
+If !clalev([F:QLA])   Local File QLYCRDASW  [QLA]   Endif
+If !clalev([F:QLA1])  Local File QLYCRDASW  [QLA1]  Endif
+If !clalev([F:STS])   Local File STOSER     [STS]   Endif
+If !clalev([F:STC])   Local File STOLOC     [STC]   Endif
+If !clalev([F:STJ])   Local File STOJOU     [STJ]   Endif
+If !clalev([F:STJ1])  Local File STOJOU     [STJ1]  Endif
+If !clalev([F:STR])   Local File STOTRK     [STR]   Endif
+If !clalev([F:SRG])   Local File STOSRG     [SRG]   Endif
+If !clalev([F:AVN])   Local File AVALNUM    [AVN]   Endif
+If !clalev([F:PER])   Local File PERIOD     [PER]   Endif
+If !clalev([F:SJV])   Local File STOJOUVAL  [SJV]   Endif
+If !clalev([F:SJO])   Local File STOJOUOVE  [SJO]   Endif
+If !clalev([F:SMC])   Local File STOMVTCOST [SMC]   Endif
+If !clalev([F:SMA])   Local File STKMVTADJ  [SMA]   Endif
+If !clalev([F:ITF1])  Local File ITMFACILIT [ITF1]  Endif    # hcb 86563
+If !clalev([F:LPN])   Local File LPN        [LPN]   Endif    #--- Issue X3-53322
+
+Return
+
+######################################################################
+# MSKDEF : Renvoie le masque par défaut : "[XXX]"
+Funprog MSKDEF
+If instr(1,dbgstr(1),",")
+    End vireblc(left$(dbgstr(1),instr(1,dbgstr(1),",")-1),4)
+Endif
+End vireblc(dbgstr(1),4)
+
+################################################"
+# controle de l'article par rapport au site
+Subprog CONTITF(LITM,LFCY)
+Value Char LITM
+Value Char LFCY
+
+If LITM="" | LFCY="" : End : Endif
+If clalev([F:ITF]) = 0 : Local File ITMFACILIT [ITF] : Endif
+
+Look [ITF]ITF0=LITM;LFCY
+If fstat > 1
+    GMESSAGE = mess(25,192,1) : # Article inexistant pour le site
+    mkstat=2
+Endif
+End
+
+############################################################
+# Routine de validation du code accès
+# LPFL = Profil (GPROFIL)
+# LACC = Code accès
+# LRET = code retour 1 = non autorisé
+#                    2 = autorisé
+Subprog VERACC(LPFL,LACC,LRET)
+Variable Char    LPFL
+Variable Char    LACC
+Variable Integer LRET
+Case LACC
+  When ""
+    LRET = 2
+  When Default :
+    If clalev([F:ACC]) = 0 : Local File ACCES [ACC] : Endif
+    Read [ACC]CODACC=LPFL;LACC
+    If fstat = 0
+      If [F:ACC]EXEC = 2
+        LRET = 2
+      Else
+        LRET = 1
+      Endif
+    Else
+      LRET = 1
+    Endif
+Endcase
+End
+
+################################################################################
+# GET_TRSTYP     Sous programme de recherche du Type mouvement de stock (TRSTYP)
+################################################################################
+# Paramètres E : LTYP    = Type piece (701)
+#                LNUM    = Piece
+#                LSUP    = Inutilisé (paramètre supplémentaire au cas où)
+#            S : LTRS    = Type mouvement (704)
+#
+########################################################################
+Subprog GET_TRSTYP(LTYP,LNUM,LSUP,LTRS)
+Value    Integer LTYP
+Value    Char    LNUM
+Value    Char    LSUP
+Variable Integer LTRS
+#-----
+Raz LTRS
+
+Case LTYP
+When 3        # Préparation
+      LTRS=4  # Issue 94159
+      If clalev([F:PRH])=0  Local File STOPREH  [PRH]   Endif
+      Read [PRH]PRH0=LNUM
+      If !fstat
+         Case [F:PRH]ORIPRH
+          When 1 : LTRS =  4      # livraison client
+          When 2 : LTRS = 17      # livraison prêt
+          When 3 : LTRS = 20      # livraison sous-traitance
+         Endcase
+      Endif
+
+When 4        # Livraison
+      LTRS=4  # Issue 94159
+      If clalev([F:SDH])=0  Local File SDELIVERY  [SDH]   Endif
+      Read [SDH]SDH0=LNUM
+      If !fstat
+         LTRS = 4                 # livraison client
+         If [F:SDH]LND = 2
+            LTRS = 17             # Livraison prêt
+         Else
+            If [F:SDH]SCO = 2
+               LTRS = 20          # Livraison sous-traitance
+            Endif
+         Endif
+      Endif
+
+When 5      # Facture vente
+      LTRS = 4                    # livraison client
+When 8      # Retour Fournisseur                           # hcb 94846
+      LTRS = 11                    # Retour reception
+
+
+Endcase
+
+End
+
+
+####################################################################
+# Teste la nécessité de créer un enregistrement dans [SMA]
+# Renvoie 2 si oui et si valo PM lot, 1 si oui, sinon 0
+#
+# Prérequis : [F:STJ] = mouvement à écrire, doit être alimenté
+#             [F:STJ1] = abréviation de STOJOU pouvant être utilisé pour des recherches
+####################################################################
+Funprog TSTREG
+Local Integer LRES : Raz LRES
+Local Char    LTCM(GLONTCM)
+Local Char    LFILLOT(250)
+
+If !clalev ([F:SMA]) : Local File STKMVTADJ [SMA] : Endif
+
+# GISSADJ est une variable qui existe lorsqu'une régul de sortie est en cours
+# La régul de sortie peut appeler un calcul de PRF qui engendre une régul => il faut passer
+# La régul d'une sortie composant en assemblage implique une régul du composer => il faut passer
+If dim(GISSADJ)>0 & GISSADJ=1 & [F:STJ]TRSTYP<>5
+& | [F:STJ]VCRTYP=9 & [F:STJ]VCRLIN=0 & [F:STJ]ACTQTY=0     # 105355 - 2015-01-12 by HCB & CCC : false record for counting musn't create SMA
+    End 0
+Endif
+
+    # Si sortie matière d'un OF...
+    If [F:STJ]TRSTYP=6 & [F:STJ]VCRTYPORI<>0
+        If !clalev([F:MFC]) : Local File MFGCOST   [MFC] : Endif
+        If !clalev([F:SRW]) : Local File STKREGWRK [SRW] : Endif
+        #... on vérifie que le PRF a déjà été calculé (possible en régul de stock manquant)...
+        Filter [MFC] Where STOFCY=[F:STJ]STOFCY
+&                        & VCRTYP=[F:STJ]VCRTYPORI
+&                        & VCRNUM=[F:STJ]VCRNUMORI
+&                        & MFCTYP=4
+        Look [MFC]MFC0 First
+        Filter [MFC]
+        If !fstat
+            # ... si c'est le cas, on crée un déclencheur de recalcul de PRF dans SRW
+            Local Decimal PTABNUL(1) : Raz PTABNUL  # CCC (2009-11-27) Bug 60405 : Utilisation d'un tableau en paramètre de ECRSRW
+            Call ECRSRW([F:STJ]STOFCY, [F:STJ]VCRTYPORI, [F:STJ]VCRNUMORI, [F:STJ]VCRLINORI, 0, PTABNUL) From FUNSADJB
+        Endif
+    Endif
+
+    If !clalev ([F:TCM]) : Local File TABCOSTMET [TCM] : Endif
+    Raz [F:TCM]
+    Call GETTCM([F:STJ]ITMREF,[F:STJ]STOFCY,LTCM,LRES) From STKVAL
+    If [F:TCM]PRIREGS<>2 : End 0 : Endif
+
+    # On vérifie qu'on n'est pas en train de créer l'entrée d'un transfert inter-sites direct
+    # car si c'est le cas on n'a pas besoin d'écrire un SMA
+    # (et il ne faut pas sous peine d'annuler le montant et la qté)
+    # Seule la sortie nous intéresse.
+    If [F:STJ]TRSTYP=14    #transfert inter-sites
+        Filter [SMA] Where STOFCY<>[F:STJ]STOFCY & VCRTYP=[F:STJ]VCRTYP & VCRNUM=[F:STJ]VCRNUM & VCRLIN=[F:STJ]VCRLIN
+        Look [SMA]SMA0 First
+        Filter [SMA]
+        If !fstat
+            End 0
+        Endif
+    Endif
+
+    If [F:TCM]ISSVLTCOD=6
+        LFILLOT = "LOT=[F:STJ]LOT&SLO=[F:STJ]SLO"
+    Else
+        LFILLOT = "1=1"
+    Endif
+
+    # On vérifie qu'il y a des mouvements postérieurs à celui en cours de création
+    # Issue 115539 - 2016-05-12 by STLIG : Check for newer stock journal -
+    #                                      Add filter for different Entry type, Entry (number) or Entry line no.
+    Filter [STJ1] Where STOFCY  = [F:STJ]STOFCY
+&                     & UPDCOD  = 2
+&                     & ITMREF  = [F:STJ]ITMREF
+&                     & evalue(LFILLOT)
+&                     & REGFLG  = 1
+&                     & (VCRTYP<>[F:STJ]VCRTYP | VCRNUM<>[F:STJ]VCRNUM | VCRLIN<>[F:STJ]VCRLIN)
+&                     & ( IPTDAT  > [F:STJ]IPTDAT
+&                       | ( IPTDAT = [F:STJ]IPTDAT
+&                         & ( CREMVTDAT > [F:STJ]CREMVTDAT
+&                           | ( CREMVTDAT = [F:STJ]CREMVTDAT
+&                             & ( CREMVTTIM > [F:STJ]CREMVTTIM
+&                               | ( CREMVTTIM = [F:STJ]CREMVTTIM
+&                                 & CREMVTSEQ > [F:STJ]CREMVTSEQ
+&                                 )
+&                               )
+&                             )
+&                           )
+&                         )
+&                       )
+
+    # Issue 65137 - 2010-06-04 by CCC : Pb moteur avec le With Nohint
+    ## FQ 54145 pb de perf si STJ0 n'est pas performant dans ce cas
+    ## Look [STJ1] First
+    #Look [STJ1] First With Nohint
+    Look [STJ1] First
+    Filter [STJ1]
+    If !fstat
+        LRES=1
+        If [F:TCM]ISSVLTCOD=6
+            LRES=2
+        Endif
+    Endif
+End LRES
+
+#####################################################################
+# Création d'un enregistrement dans STKMVTADJ pour régul de sortie
+#####################################################################
+Subprog CRESMA(PFCY,PVCRTYP,PVCRNUM,PVCRLIN,PTRSTYP,PCRESEQ,PVCRTYPREG,PVCRNUMREG,PVCRLINREG,PQTY,PAMT,PRET)
+Value    Char    PFCY
+Value    Integer PVCRTYP
+Value    Char    PVCRNUM
+Value    Integer PVCRLIN
+Value    Integer PTRSTYP  # 118579.n - Include TRSTYP in STKMVTADJ table
+Value    Integer PCRESEQ  # 118579.n - Include CREMVTSEQ in STKMVTADJ table
+Value    Integer PVCRTYPREG
+Value    Char    PVCRNUMREG
+Value    Integer PVCRLINREG
+Value    Decimal PQTY
+Value    Decimal PAMT
+Variable Integer PRET
+
+Local Integer LTRANS : Raz LTRANS
+Local Integer ISITE, LREW
+Local Integer LNUM
+Local Char REQ(250)
+
+If !clalev ([F:SMA2]) : Local File STKMVTADJ [SMA2] : Endif
+If filinfo(filpath("FIL","ITMBOM","fde",nomap),0)>0
+    If !clalev([F:ITB]) : Local File ITMBOM [ITB] : Endif
+Endif
+
+If adxlog=0
+    LTRANS = 1
+    Trbegin [SMA2]
+Endif
+
+REQ = "SELECT max(NUM_0) From STKMVTADJ"
+LNUM=1
+For (Integer NUM) From num$(GTYPDBA*2+1) Sql REQ As [SQLX]
+    LNUM = [F:SQLX]NUM+1
+    Break
+Next
+
+Raz [F:SMA2]
+
+[F:SMA2]STOFCY = PFCY
+[F:SMA2]VCRTYP = PVCRTYP
+[F:SMA2]TRSTYP = PTRSTYP    # 118579.n
+[F:SMA2]VCRNUM = PVCRNUM
+[F:SMA2]VCRLIN = PVCRLIN
+If PVCRTYPREG=0
+    [F:SMA2]VCRTYPREG = PVCRTYP
+    [F:SMA2]VCRNUMREG = PVCRNUM
+    [F:SMA2]VCRLINREG = PVCRLIN
+Else
+    [F:SMA2]VCRTYPREG = PVCRTYPREG
+    [F:SMA2]VCRNUMREG = PVCRNUMREG
+    [F:SMA2]VCRLINREG = PVCRLINREG
+Endif
+[F:SMA2]CREMVTSEQ = PCRESEQ    # 118579.n
+
+Readlock [SMA2]SMA0=[F:SMA2]VCRNUM;[F:SMA2]VCRLIN;[F:SMA2]VCRTYP;[F:SMA2]STOFCY;[F:SMA2]VCRNUMREG;[F:SMA2]VCRLINREG;[F:SMA2]VCRTYPREG
+
+If fstat=1
+    PRET=1
+    GOK = 0
+    If LTRANS
+        Rollback
+    Endif
+    End
+Elsif !fstat
+    LREW = 1
+Else
+    LREW = 0
+Endif
+
+If !LREW
+    [F:SMA2]CREDAT = date$
+    [F:SMA2]CRETIM = mid$(time$,1,2)+mid$(time$,4,2)+mid$(time$,7,2)
+    If [F:ITM]ITMREF<>[F:STJ]ITMREF
+       Read [ITM]ITM0=[F:STJ]ITMREF
+       If fstat
+          PRET=1
+          GOK=0
+       Endif
+    Endif
+    If GOK
+        ISITE = find([F:SMA2]STOFCY,GSITE(1..GNBSITE))
+        [F:SMA2]ITMREF= [F:STJ]ITMREF
+        [F:SMA2]CPY   = GSOCSITE(ISITE)
+        [F:SMA2]TCLCOD= [F:ITM]TCLCOD
+    Endif
+Endif
+
+If GOK = 0
+    If LTRANS
+        Rollback
+    Endif
+    End
+Endif
+
+[F:SMA2]QTY += PQTY
+[F:SMA2]AMT += PAMT
+# Il faut enregistrer le PMP car pour le changement de valeur
+# le montant du mouvement a été calculé pour atteindre ce PMP
+# et donc lors de la régul de sortie, le but sera d'avoir ce PMP à la date d'imputation de ce chgt de valeur
+If clalev([F:ITV])
+    [F:SMA2]AVCQTY = [F:ITV]AVCBASQTY
+    [F:SMA2]AVCAMT = [F:ITV]AVCBASAMT
+Endif
+
+If clalev([F:ITB])
+    Raz [F:SMA2]LLC
+    For [ITB] Where ITMREF=[F:SMA2]ITMREF
+        [F:SMA2]LLC=max([F:SMA2]LLC,[F:ITB]LLC)
+    Next
+Endif
+
+If LREW
+    Rewrite [SMA2]
+Else
+    [F:SMA2]NUM=LNUM
+    Write [SMA2]
+Endif
+
+If LTRANS
+    Commit
+Endif
+
+End
+
+#####################################################################
+# Renvoie la quantité d'un lot, sous-lot et site donnés
+# Si le sous-lot n'est pas renseigné, tous les sous-lots sont pris en compte
+# Si le site n'est pas renseigné, tous les sites sont pris en compte
+#####################################################################
+Funprog QTYLOT(LITM,LLOT,LSLO,LFCY)
+Value Char LITM
+Value Char LLOT
+Value Char LSLO
+Value Char LFCY
+
+Local Decimal LQTY
+Local Char    LFIL(250)
+
+If LITM=""
+    End 0
+Endif
+
+LFIL = "ITMREF=LITM & LOT=LLOT"
+If LSLO<>""
+    LFIL+="& SLO=LSLO"
+Endif
+
+If LFCY<>""
+    LFIL+="& STOFCY=LFCY"
+Endif
+
+If !clalev([F:SLF_]) : Local File STOLOTFCY [SLF_] : Endif
+Raz LQTY
+For [SLF_] Where evalue(LFIL)
+    LQTY+=[F:SLF_]AAACUMQTY+[F:SLF_]QQQCUMQTY+[F:SLF_]RRRCUMQTY
+Next
+
+End LQTY
+
+#####################################################################
+Subprog FUNSTKACC(PFCY,PITM,PTYP, PNUM, PLIN)
+Value Char    PFCY
+Value Char    PITM
+Value Integer PTYP
+Value Char    PNUM
+Value Integer PLIN
+
+Local Char LACCIFA
+Call PARAM(PFCY,"ACCIFA",LACCIFA) From ADOVAL
+If val(LACCIFA)<>3
+    End
+Endif
+
+If find(PTYP,12,15)    # Si suivi mat ou décl. prod. on vérifie que l'interface des WIP n'est pas utilisée
+    Call PARAM(PFCY,"OPEIFA",LACCIFA) From ADOVAL
+    If val(LACCIFA)=2    # Si on utillise l'interface WIP il faut sortir
+        End
+    Endif
+Endif
+
+Local Integer LACCBKG    # Permet de forcer l'ouverture des tables
+Local Char    LABR(4) : LABR="SACC"
+Local Integer LACCBKGTYP # Permet de connaitre le type de document à comptabiliser pour limiter les ouvertures de tables
+
+LACCBKG = 1+2    # Transaction déjà ouverte + Ne pas mettre à jour date dernier trt STOACCPAR[SAC]
+LACCBKGTYP = PTYP
+
+Local Mask STKACC [SACC]
+[M:SACC]PRODAT = date$
+[M:SACC]DATSEL = 2
+
+# Issue X3-93750 - 2018-06-20 by ERMIL : See if more memory needed before assigning more.
+# If there is less than 10 mb free, allocate more to maxmem
+If freemem/1024 < 10240
+  maxmem = fix(maxmem/1000)+5000
+Endif
+adxmto = min(250,adxmto+50)
+
+Gosub INIT From FUNSTKACC
+If GERR<>0
+    Raz GMESSAGE, GERR
+    End
+Endif
+# Issue 102803 - 2015-02-06 by CCC : allow to define a wider filter especially for sub-contracting
+#CRITSUP = "STOFCY='"+PFCY+"'&ITMREF='"+PITM+"'&VCRTYP="+num$(PTYP)+"&VCRNUM='"+PNUM+"'&VCRLIN="+num$(PLIN)
+CRITSUP="1=1"
+If PFCY<>""
+    CRITSUP+="&STOFCY='"+PFCY+"'"
+Endif
+If PITM<>""
+    CRITSUP+="&ITMREF='"+PITM+"'"
+Endif
+If PTYP<>0
+    CRITSUP+="&VCRTYP="+num$(PTYP)
+Endif
+If PNUM<>""
+    CRITSUP+="&VCRNUM='"+PNUM+"'"
+Endif
+If PLIN<>0
+    CRITSUP+="&VCRLIN="+num$(PLIN)
+Endif
+Gosub EXEC From FUNSTKACC
+If GERR<>0
+    Raz GOK
+Endif
+# Issue 83801 - 2012-07-27 by SR : Possibilité de lancer  des traitements supplémentaires
+[V]GPOINT="CUSADDTRT" : Gosub ENTREE From EXEFNC
+If GOK < 0 : End : Endif
+End
+
+#--- Bug 62980
+########################################################################
+# CTLRUP     Recherche de la date du premier mouvement en attente
+#            d'un article
+########################################################################
+# Paramètres E : LFCY    = Site
+#                LITM    = Article
+#                LDAT    = Date d'imputation
+#                LAFF    = 0 : pas d'affichage du message (si AM_date)
+#                          1 : affichage du message (si AM_article)
+#            S : LDATRUP = + petite date des mouvements en attente
+#                LQTYRUP = Quantité en attente
+########################################################################
+Subprog CTLRUP(LFCY,LITM,LDAT,LAFF,LDATRUP,LQTYRUP)
+Value    Char    LFCY
+Value    Char    LITM
+Value    Date    LDAT
+Value    Integer LAFF
+Variable Date    LDATRUP
+Variable Decimal LQTYRUP
+
+LDATRUP = [0/0/0]
+LQTYRUP = 0
+
+If !clalev([F:ITM]) Local File ITMMASTER  [ITM] Endif
+If !clalev([F:ITF]) Local File ITMFACILIT [ITF] Endif
+If !clalev([F:ITG]) Local File ITMCATEG   [ITG] Endif
+If !clalev([F:STJ]) Local File STOJOU     [STJ] Endif
+If !clalev([F:TCM]) Local File TABCOSTMET [TCM] Endif
+
+# Pas de contrôle si stock négatif interdit
+If [F:ITM]ITMREF<>LITM
+   Read [ITM]ITM0=LITM
+Endif
+If [F:ITM]NEGSTO<>2 End Endif
+
+# Pas de contrôle si pas de régul des sorties
+If [F:ITF]ITMREF<>LITM | [F:ITF]STOFCY<>LFCY
+   Read [ITF]ITF0=LITM;LFCY
+   If fstat
+      End
+   Endif                          # hcb 74449
+Endif                             # hcb 74449
+If [F:ITF]VLTCOD<>""              # hcb 74449
+   Read [TCM]TCM0=[F:ITF]VLTCOD
+   If fstat | [F:TCM]PRIREGS<>2 End Endif
+#Else
+# MJH X3-102842. Do not use VLTCOD from product catagory. It is now required on product site.
+#   Read [ITG]ITG1=[F:ITM]TCLCOD;LFCY
+#   If !fstat & [F:ITG]VLTCOD<>""
+#      Read [TCM]TCM0=[F:ITG]VLTCOD
+#      If fstat | [F:TCM]PRIREGS<>2 End Endif
+#   Else
+#      Read [ITG]ITG1=[F:ITM]TCLCOD;""
+#      If !fstat & [F:ITG]VLTCOD<>""
+#         Read [TCM]TCM0=[F:ITG]VLTCOD
+#         If fstat | [F:TCM]PRIREGS<>2 End Endif
+#      Else
+#         End
+#      Endif
+#   Endif #MJH X3-102842.end
+#  Endif                          # hcb 74449
+Endif
+
+# Issue 66380 - 2010-08-18 by CCC
+#For [STJ]STJ0 Where STOFCY=LFCY & UPDCOD=1 & ITMREF=LITM & IPTDAT<LDAT
+For [STJ]STJ0 Where STOFCY=LFCY & UPDCOD=1 & ITMREF=LITM & IPTDAT<=LDAT
+   LQTYRUP += abs([F:STJ]ACTQTY)
+   If LDATRUP=[0/0/0] | [F:STJ]IPTDAT<LDATRUP
+      LDATRUP = [F:STJ]IPTDAT
+   Endif
+Next
+
+# Affichage du message d'information
+If LAFF=1
+   If LQTYRUP>0 & LDATRUP<>[0/0/0]
+      Call MESSAGE(mess(354,184,1)-":\"+
+&                  mess(355,184,1)-format$("DD2",LDATRUP)-
+&                  mess(356,184,1)-num$(LQTYRUP)-[F:STJ]STU+"\"+
+&                  mess(357,184,1)-format$("DD2",LDATRUP))
+&          From GESECRAN
+   Endif
+Endif
+
+End
+#---
+########################################################################
+# STKMAJITV     Maj stock transit  ou stock transferéla date # hcb 86563
+########################################################################
+# Paramètres E : LFCY       = Site
+#                LITM       = article
+#                LRUB       = 2 = transit 1 = transferé
+#                LQTY       = quantité
+#                LSIG       = + 1 ou -1
+#            S : LRET       = code retour
+########################################################################
+Subprog STKMAJITV(LFCY,LITM,LRUB,LQTY,LSIG,LRET)
+Value    Char     LFCY
+Value    Char     LITM
+Value    Integer  LRUB
+Value    Decimal  LQTY
+Value    Integer  LSIG
+Variable Integer  LRET
+#
+If LQTY = 0
+   End
+Endif
+If LFCY = ""
+   End
+Endif
+
+If !clalev([F:ITV])   Local File ITMMVT     [ITV]   Endif
+
+Call LECITV(LFCY,LITM,"",LRET) From STKLIB
+If LRET >1
+   End
+Endif
+Raz LRET   # hcb 88657
+
+Case LRUB
+     When 1
+       [F:ITV]TRASTO+= LQTY*LSIG
+     When 2
+       [F:ITV]TRFSTO+= LQTY*LSIG
+Endcase
+If [F:ITV]TRFSTO<0 [F:ITV]TRFSTO=0 Endif
+If [F:ITV]TRASTO<0 [F:ITV]TRASTO=0 Endif
+
+#----- Réécriture des cumuls article-site -----#
+Call REWITV From STKLIB
+If fstat
+   Call FSTA("ITV") From GLOCK
+   End
+Endif
+End
+
+########################################################################
+# CALNBDAYCLI         Calcul du nbre de jours a retrancher à la date
+#                      limite d'utilisation dans le cas d'une date limite
+#                      d'utilisation client
+########################################################################
+# Paramètres E : LCOD       = gestion peremtion   [F:ITM]EXYMGTCOD
+#                LSHL       = delai peremption    [F:ITM]SHL
+#                LUOM       = unite de tps delai peremption [F:ITM]SHLUOM
+#                LDLUITF    = coefficient de DLU de l'article site
+#                LDLUBPC    = coefficient de DLU du client
+#            S : LNBDAY      = nombre de jours
+#
+# Prérequis    : Classes [F:] doit  être chargée : ITMMASTER
+#
+########################################################################
+Subprog CALNBDAYCLI(LCOD,LSHL,LUOM,LDLUITF,LDLUBPC,LNBDAY)
+Value    Integer LCOD
+Value    Integer LSHL
+Value    Integer LUOM
+Value    Decimal LDLUITF
+Value    Decimal LDLUBPC
+Variable Char LNBDAY
+#
+Local    Decimal WJOU
+Local    Decimal NBDAY
+
+LNBDAY=""
+
+#Si pas de gestion de peremption
+If LCOD < 2 | LDLUBPC = 0 | LSHL=0
+  End
+Endif
+
+#nombre de jours du délai de péremption
+If LUOM =  1      #délai en jours
+   WJOU = LSHL
+Else              #délai en mois
+   WJOU = 30*LSHL
+Endif
+
+#Nombre de jours affecté par les coefficients de DLU
+If LDLUITF <> 0
+   NBDAY =arr((LDLUITF - LDLUBPC)*WJOU,1)
+   If NBDAY>0
+      LNBDAY='-'+num$(NBDAY)   #le nbre de jours est positif, on le retranche a la DLU du lot
+   Else
+      LNBDAY = '+'+num$(abs(NBDAY)) #le nbre de jours est négatif, on l'ajoute à la DLU du lot
+   Endif
+Endif
+
+End
+
+#                                                         # hcb 110327 deb
+###################################################################################################
+# VERIF_DESYNCHRO # verification que qty ligne de stock soit égale au nb série présents de ce stock
+###################################################################################################
+# Paramètres E : LITM       Article
+#                LCOU       STOCOU
+#            S : LRET       = code retour = 2 : STOCK/STOSER désynchronisés
+########################################################################
+Subprog VERIF_DESYNCHRO_SERIE(LITM,LCOU,LQTY,LRET)
+Value    Char    LITM
+Value    Decimal LCOU
+Value    Decimal LQTY
+Variable Integer LRET
+Local Char CRITSPE
+Raz LRET
+If !clalev([F:STS1])   Local File STOSER     [STS1]   Endif
+CRITSPE = "1=1"
+Raz GPE
+GPOINT = "VERIF_SERIE"   #CHECK IGNORE_LINE
+Gosub ENTREE From EXEFNC
+If GPE = 0
+   Filter [STS1] Where ITMREF=LITM & STOCOU=LCOU & ISSDAT=[0/0/0] & evalue(CRITSPE) Order By Key STS3
+   If LQTY <> rowcount([F:STS1])
+      LRET = 2
+   Endif
+   Filter [STS1]
+Endif
+End
+#                                                         # hcb 110327 fin
+
+# Issue X3-32344
+############################################################
+# CAL_FDMA   Calcul of first date material availability
+############################################################
+# Parameters Input  : LFCY = Site
+#                     LITM = Item
+#                     LTYP = Type pièce
+#                     LNUM = No pièce
+#                     LLIN = No ligne
+#                     LSEQ = No séquence
+#                     Ces 4 zones sont à alimentées si OF ou Cde
+#                     Elles correspondent aux identifiants du besoin
+#                     pour prendre en compte la quantité affectée
+#                     LALL = Déduction des allocations du stock départ (1:non/2:oui)
+#                     LQTY = Quantity required
+#            Output   LQTA = Quantity available at LDAT
+#                     LDAT = First date material availability
+#                         or date of last order, if quantity not available
+#                         or date of the day, if no order after
+############################################################
+Subprog CAL_FDMA(LFCY,LITM,LTYP,LNUM,LLIN,LSEQ,LALL,LQTY,LQTA,LDAT)
+Value     Char    LFCY
+Value     Char    LITM
+Value     Integer LTYP
+Value     Char    LNUM
+Value     Integer LLIN
+Value     Integer LSEQ
+Value     Integer LALL
+Value     Decimal LQTY
+Variable  Decimal LQTA
+Variable  Date    LDAT
+
+Local     Integer WNBL  : WNBL = 4 : # Nombre de lignes +1
+Local     Integer WNBT  : WNBT = 15 : # Nombre de types d'ordres +1
+Local     Integer ITYP
+Local     Integer ISTA
+Local     Integer ISIG
+Local     Decimal TCUM(WNBT,5,2)    : # Cumuls par type d'ordre, statut, signe
+Local     Decimal TLIG(WNBL)        : # Cumuls lignes
+Local     Char    TTAB(80)(WNBL)    : # Contenu des lignes
+Local     Char    WTAB(100)
+
+Local     Char    WPAR(1)
+Local     Char    WZON(5)
+Local     Integer WLIN
+Local     Integer WCOR, WSEM, WCOD
+Local     Decimal WDEL
+Local     Decimal WDMYI
+Local     Date    WDMYD
+Local     Date    WFOH
+Local     Date    WDAT, WENDDAT, WQCENDDAT      # WQCENDDAT: 2020-04-02 By ANBAB
+Local     Decimal WALL, WQTY, WCUMQTY
+Local     Integer WALLFLG, WGLOFLG, WSHRFLG
+
+Local Decimal ZSOF, ZSOS
+
+If clalev([F:ITM]) = 0 : Local File ITMMASTER  [ITM] : Endif
+If clalev([F:ITF]) = 0 : Local File ITMFACILIT [ITF] : Endif
+If clalev([F:ITV]) = 0 : Local File ITMMVT     [ITV] : Endif
+If clalev([F:TUN]) = 0 : Local File TABUNIT    [TUN] : Endif
+If clalev([F:ORD]) = 0 : Local File ORDERS     [ORD] : Endif
+If clalev([F:STA]) = 0 : Local File STOALL     [STA] : Endif
+If clalev([F:MLK]) = 0 : Local File MTOLINK    [MLK] : Endif
+
+If clalev([F:PCB]) = 0 : Local File PARMRP     [PCB] : Endif
+If dim(WHORDEM)<0        Local Integer WHORDEM       : Endif
+If dim(TALL)<0           Local Decimal TALL          : Endif
+If dim(ZALL)<0           Local Decimal ZALL          : Endif
+
+Raz LDAT, LQTA
+
+If [F:ITM]ITMREF<>LITM
+  Read [ITM]ITM0=LITM
+  If fstat
+    Raz [F:ITM] : End
+  Endif
+Endif
+If [F:ITF]ITMREF<>LITM | [F:ITF]STOFCY<>LFCY
+  Read [ITF]ITF1=LFCY;LITM
+  If fstat
+    Raz [F:ITF] : End
+  Endif
+Endif
+# Lecture cumuls stocks
+If [F:ITV]ITMREF<>LITM | [F:ITV]STOFCY<>LFCY
+  Read [ITV]ITV1=LFCY;LITM
+  If fstat
+    Raz [F:ITV] : End
+  Endif
+Endif
+# Lecture unité stock
+If [F:TUN]UOM<>[F:ITM]STU
+  Read [TUN]TUN0=[F:ITM]STU
+  If fstat
+    Raz [F:TUN]
+  Endif
+Endif
+
+WHORDEM=0
+If [F:PCB]STOFCY<>LFCY
+  Read [PCB]PCB0 = LFCY
+  If fstat : WHORDEM=1 : Endif
+Endif
+If WHORDEM=0
+  Case [F:ITF]REOMGTCOD
+    When 2       : WHORDEM = [F:PCB]MRPHORDEM
+    When 3       : WHORDEM = [F:PCB]MPSHORDEM
+    When Default : WHORDEM = 1
+  Endcase
+Endif
+
+#Call PARAM(LFCY,"FIRWRKDAY",WPAR) From ADOVAL
+
+WPAR = func ADP_TOOL.GET_PARAM(nomap,3,LFCY,"FIRWRKDAY")
+
+If val(WPAR)<1 | val(WPAR)>7
+  WSEM=1
+Else
+  WSEM=val(WPAR)
+Endif
+If WSEM=1
+  WCOR=7
+Else
+  WCOR=WSEM-1
+Endif
+# Calcul date fin horizon demande arrondi fin semaine
+If [F:ITF]FOH=0
+  WFOH=[0/0/0]
+Else
+  WCOD=[F:ITF]FOHUOT
+  WDEL=[F:ITF]FOH
+  WDAT= date$
+  Call CALDAT("+",WCOR,WDAT,WCOD,WDEL,WDMYI,WDMYD,WFOH) From CBNLIB
+Endif
+
+# Types d'ordres par ligne :
+# - Chiffres 1 et 2 = Type d'ordre (ML 306 : Cde cli, Cde fou, ..., Ordre SST)
+# - Chiffre 3       = Statut ordre (ML 317 : Ferme, Planifié, Suggéré, Clos)
+# - Chiffre 4       = Signe (0 : positif, 1 : négatif)
+TTAB(0)  = ""
+TTAB(1)  = "0110 0120 0130 0140 0310 0320 0330 0610 0620 0630 0611 0621 0631 0810 0820 0830 1230 1410 1411 1420 1421"
+TTAB(2)  = "0010 0020 0030 0040 "
+TTAB(3)  = "0210 0220 0230 0240 0510 0520 0530 0540 0710 0720 0730 0740 0910 0920 0930 0940 1310 1320 1330"
+
+
+# Déduction ou non des allocations détaillées du stock de départ
+WALLFLG=LALL
+# Déduction ou non des allocations globales du stock de départ
+WGLOFLG=LALL
+# On force la prise en compte du % de perte
+WSHRFLG=2
+
+# Stock de départ : Physique + en rangement + en transit - sorties en attente
+WCUMQTY = [F:ITV]PHYSTO+[F:ITV]PLFPHYSTO+[F:ITV]TRFSTO-[F:ITV]WAISTO
+# Déduction allocations si demandé
+If LALL=2
+  WCUMQTY -= [F:ITV]PHYALL + [F:ITV]GLOALL
+Endif
+
+# Issue X3-186543 - 2020-06-01 by ANBAB : Exclude FDMA calculation for this material
+If [F:ITF]EXCFDMA = 2
+    LQTA = WCUMQTY
+    End
+Endif
+# End issue X3-186543
+
+# X3-255665 - if stock available then set FDMA to today and no further checks needed
+If WCUMQTY>=LQTY
+  LQTA = WCUMQTY
+  LDAT=date$ : End
+Endif
+
+WQTY=0
+WENDDAT=[0/0/0]
+# Si une pièce a été renseignée, est-elle couverte en totalité par des affectations
+If LTYP<>0 & LNUM<>"" & LLIN<>0
+  Filter [MLK] Where STOFCY=LFCY & ITMREF=LITM & DEMTYP=LTYP
+&                  & DEMNUM=LNUM & DEMLIN=LLIN & DEMSEQ=LSEQ
+  For [MLK]MLK0
+    For [ORD]ORD3 Where STOFCY=LFCY & VCRTYP=[F:MLK]RESSTYP & VCRNUM=[F:MLK]RESSNUM
+&                     & VCRLIN=[F:MLK]RESSLIN & VCRSEQ=[F:MLK]RESSSEQ
+      If [F:ORD]ENDDAT>WENDDAT
+        WENDDAT=[F:ORD]ENDDAT
+      Endif
+    Next
+    WQTY += [F:MLK]LIKQTY
+  Next
+  Filter [MLK]
+  # Si quantité affectée >= quantité besoin : c'est fini, alimentation date et quantité
+  If WQTY>=LQTY & WENDDAT<>[0/0/0]
+    LQTA = WQTY
+    LDAT = WENDDAT
+    # Issue X3-182753 - 2020-04-02 by ANBAB : To include the quality lead time
+    If [F:ITF]QUALTI > 0
+        Call FDMA_QCLEAD(LDAT, LFCY, WQCENDDAT)
+        LDAT = WQCENDDAT
+    Endif
+    # End issue X3-182753
+    End
+  # Si quantité affecté < quantité besoin : on fait un calcul de dispo pour la quantité restante
+  Elsif WQTY>0
+    WCUMQTY += WQTY
+  Endif
+Endif
+
+WDAT=date$
+If LNUM=""
+  #--- Issue X3-160401 by TS (ajout de WIPSTA<4)
+  #Filter [ORD] Where STOFCY=LFCY & ITMREF=LITM & FMI<2 Order By Key ORD1
+  Filter [ORD] Where STOFCY=LFCY & ITMREF=LITM & FMI<2 & WIPSTA<4  Order By Key ORD1
+Else
+  #--- Issue X3-160401 by TS (ajout de WIPSTA<4)
+  #Filter [ORD] Where STOFCY=LFCY & ITMREF=LITM & FMI<2 &
+  Filter [ORD] Where STOFCY=LFCY & ITMREF=LITM & FMI<2 & WIPSTA<4 &
+&                    (VCRTYP<>LTYP | VCRNUM<>LNUM | VCRLIN<>LLIN | VCRSEQ<>LSEQ)
+&              Order By Key ORD1
+Endif
+For [ORD]
+  # En rupture de date, contrôle de la qté dispo
+  If [F:ORD]ENDDAT>WDAT
+    Gosub RUPT_WDAT
+
+    WCUMQTY += TLIG(2)
+    WCUMQTY -= TLIG(0)
+    WCUMQTY -= TLIG(1)
+
+    # Qté dispo > Qté besoin à WDAT --> c'est fini
+    If WCUMQTY>=LQTY
+      LDAT = WDAT
+      LQTA = WCUMQTY
+      Break
+    # Raz des tableaux pour traiter une nouvelle date
+    Else
+      Raz TCUM
+      Raz TLIG
+      Raz TALL
+    Endif
+  Endif
+  # Prise en compte de l'ordre dans le cumul qté à WDAT
+  If [F:ORD]ENDDAT<=WDAT
+    Gosub ALIM_WQTY
+  # Changement de date : alimentation de la nouvelle date dans WDAT
+  # et prise en compte de l'ordre dans le cumul qté à WDAT
+  Else
+    WDAT=[F:ORD]ENDDAT
+    Gosub ALIM_WQTY
+  Endif
+Next
+Filter [ORD]
+
+# Test final
+If LDAT=[0/0/0]
+  Gosub RUPT_WDAT
+  WCUMQTY += TLIG(2)
+  WCUMQTY -= TLIG(0)
+  WCUMQTY -= TLIG(1)
+  LDAT = WDAT
+  LQTA = WCUMQTY
+Endif
+
+# S'il y avait une affectation partielle, la FDMA est la date max entre
+# la date de dispo de la quantité restante et la date fin des affectations
+If WENDDAT<>[0/0/0]
+  LDAT=max(LDAT,WENDDAT)
+Endif
+
+# Issue X3-182753 - 2020-04-02 by ANBAB : To include the quality lead time
+If LQTA > = LQTY
+    If [F:ITF]QUALTI >0
+        Call FDMA_QCLEAD(LDAT, LFCY, WQCENDDAT)
+        LDAT= WQCENDDAT
+    Endif
+Endif
+# End issue X3-182753
+End
+
+$RUPT_WDAT
+# Traitement horizon demande : effacement SOS dans horizon / + grande valeur au delà
+If WFOH<>[0/0/0]
+  If WDAT<=WFOH
+    TCUM(1,3,0)=0
+  Else
+    If TCUM(1,3,0)>TCUM(1,1,0)
+      TCUM(1,3,0)=TCUM(1,3,0)-TCUM(1,1,0)
+    Else
+      TCUM(1,3,0)=0
+    Endif
+  Endif
+Endif
+# Préparation du tableau
+For WLIN = 0 To WNBL-1
+  WTAB = TTAB(WLIN)
+  Gosub CUM_COL
+Next WLIN
+
+Return
+
+$CUM_COL
+ZSOF = 0
+ZSOS = 0
+
+While left$(WTAB,5) <> ""
+  WZON = left$(WTAB,5)
+  ITYP = val(mid$(WZON,1,2))
+  ISTA = val(mid$(WZON,3,1))
+  ISIG = val(mid$(WZON,4,1))
+  If dim(WHORDEM)>0 & WHORDEM=2 & WLIN=1 & ITYP=1     # Requirements line, Sales order, Forecast offset
+    If ISTA<3
+      ZSOF+=TCUM(ITYP,ISTA,ISIG)        # Firm or planned
+    Else
+      ZSOS+=TCUM(ITYP,ISTA,ISIG)        # Suggested
+    Endif
+  Else
+    TLIG(WLIN-1)+=TCUM(ITYP,ISTA,ISIG)
+  Endif
+  WTAB=mid$(WTAB,6,95)
+Wend
+
+If WLIN=1 & dim(TALL)>0
+  TLIG(0)+=max((ZSOF+TALL),ZSOS)-TALL   # Add max of Firm or suggested - Allocated
+Endif
+
+Return
+
+$ALIM_WQTY
+Raz WALL, WQTY
+# Si OF correction quantité restante par % perte
+If [F:ORD]WIPTYP = 5 & find([F:ORD]WIPSTA,1,2,3) & WSHRFLG = 2 & [F:ITF]SHR > 0
+  [F:ORD]EXTQTY    = arr(([F:ORD]EXTQTY*100)/(100+[F:ITF]SHR),10^-[F:TUN]UOMDEC)
+  [F:ORD]RMNEXTQTY = arr(([F:ORD]RMNEXTQTY*100)/(100+[F:ITF]SHR),10^-[F:TUN]UOMDEC)
+Endif
+
+If [F:ORD]RMNEXTQTY>=0
+  ISIG=0
+Else
+  ISIG=1
+Endif
+
+# Calcul de la quantité à prendre en compte et de la quantité allouée
+# Doit-on ajouter le type 8 : demande inter-sites
+Case [F:ORD]WIPTYP
+  When 1,3,6,12,14 : Gosub LEC_RER From CNSSDISTD
+  When Default     : WALL=0
+                     WQTY=[F:ORD]RMNEXTQTY-[F:ORD]MTOQTY
+                     # Si ressource avec qté affectée et identifiants besoin renseignés
+                     # on rajoute la quantité affectée
+                     #If find([F:ORD]WIPTYP,2,5) & [F:ORD]MTOQTY>0 & LNUM<>""
+                     #  Filter [MLK] Where STOFCY=LFCY & ITMREF=LITM
+#&                                       & RESSTYP=[F:ORD]VCRTYP & RESSNUM=[F:ORD]VCRNUM
+#&                                       & RESSLIN=[F:ORD]VCRLIN & RESSSEQ=[F:ORD]VCRSEQ
+                     #  For [MLK]MLK1
+                     #    If [F:MLK]DEMTYP=LTYP & [F:MLK]DEMNUM=LNUM & [F:MLK]DEMLIN=LLIN & [F:MLK]DEMSEQ=LSEQ
+                     #      WQTY+=[F:MLK]LIKQTY
+                     #    Endif
+                     #  Next
+                     #  Filter [MLK]
+                     #Endif
+Endcase
+# A conserver ou non ?
+If WQTY<0 : WQTY=0 : Endif
+
+ITYP=[F:ORD]WIPTYP
+ISTA=[F:ORD]WIPSTA
+
+TCUM(ITYP,ISTA,ISIG) += WQTY
+If WALL <> 0
+  TCUM(0,ISTA,ISIG)  += WALL
+Endif
+If dim(TALL)>0 & dim(ZALL)>0
+  TALL+=ZALL
+Endif
+
+Return
+#--- End issue X3-32344
+
+# Issue X3-182753 - 2020-04-02 by ANBAB : FDMA - To include the QC lead time
+########################################################################
+# FDMA_QCLead   : Set the FDMA to include the QC lead time
+########################################################################
+# Parameters    : WQCSTARTDAT  = QC Start Date
+#                 WFCY         = Site
+#                 WQCENDDAT    = QC End Date
+########################################################################
+Subprog FDMA_QCLEAD(WQCSTARTDAT, WFCY,WQCENDDAT)
+Value       Date    WQCSTARTDAT
+Value       Char    WFCY
+Variable    Date    WQCENDDAT
+
+Local       Char    WPAR(3)
+
+    WPAR = func ADP_TOOL.GET_PARAM(nomap, 3, WFCY, "PLNTWD")
+    Call CALCUL_DATE_PLN(WQCSTARTDAT, [F:ITF]QUALTI, WFCY, 0, WPAR, WQCENDDAT) From MFGLIB_SYRA
+End
+# End issue X3-182753
