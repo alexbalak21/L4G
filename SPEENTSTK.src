@@ -1,0 +1,14 @@
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+Case ACTION
+    When "CALPER" Gosub CALPER
+Endcase
+Return
+
+$CALPER
+Infbox "CALPER"
+Return
+
+
+
+

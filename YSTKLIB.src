@@ -1,42 +1,42 @@
-# LCOD = Code Gestion Peromption
-# LREF = Date reference peremptiont
-# LPER = Date de peromtion calculé (Variable de sortie)
-Subprog YCALPER()
-Value    Integer YSHL # MULTIPLYER OF UNIT
-Value    Integer YUOM # UNIT OF TIME
+$CALPER
+Local Shortint YSHL : YSHL = 0 # MULTIPLE DE L'UNITE DE TEMPS
+Local Integer YUOM # UNITE DE TEMPS
+If GFONCTION = "FUNBENCHI"
+  If !clalev ([F:MFI]) : Local File MFGITM [MFI] :  Endif
+  #SI Type OF different de "Client"
+  If [MFI]BPCTYPDEN <> 2 : Return : Endif
+  #PLACE LA TABLE CLIENT A LA BONNE LIGNE
+  If !clalev ([F:BPC]) : Local File BPCUSTOMER [BPC] :  Endif
+  Read [BPC]BPC0 = [MFI]BPCNUM
+  If !fstat
+      #RECUPERE LES DONNES DE PEREMTION
+      YSHL = [BPC]YSHL
+      YUOM = [BPC]YSHLUOM
+      Infbox "Peremption Client:" - num$(YSHL) + chr$(10) + num$(YUOM)
+      #SI MULTIPLE = 0 NE FAIT RIEN
+      If YSHL = 0  : Return : Endif
+      # YUOM = 1 : Unité Temps : Jour
+      If YUOM =  1
+         WJOU =  nday(LREF)
+         WJOU += YSHL
+         LPER =  nday$(WJOU)
+      Else
+         # YUOM = 2 : Unité Temps : Mois
+         LPER = addmonth(LREF, YSHL)
+      Endif
 
-# RECUPERER LE CLIENT 
-If !clalev ([F:BPC]) : Local File BPCUSTOMER [BPC] :  Endif
-
-#Si pas de gestion de peremption
-If LCOD < 2
-   LPER = [31/12/2999]
-  End
+      # Si arrondi fin de mois
+      If LCOD = 3
+         LPER = eomonth(LPER)
+      Endif
+      # Si arrondi debut mois suivant
+      If LCOD =  4
+         LPER =  eomonth(LPER)
+         WJOU =  nday(LPER)
+         WJOU += 1
+         LPER  = nday$(WJOU)
+      Endif
+  Endif
 Endif
-
-#Si saisie manuelle
-If LCOD = 6 & !GIMPORT              # hcb typ6
-   End
-Endif
-
-# YUOM = 1 : Unité Temps : Jour
-If YUOM =  1
-   WJOU =  nday(LREF)
-   WJOU += YSHL
-   LPER =  nday$(WJOU)
-Else
-    # YUOM = 2 : Unité Temps : Mois
-    LPER = addmonth(LREF,YSHL )
-Endif
-
-# Si arrondi fin de mois
-If LCOD = 3
-   LPER = eomonth(LPER)
-Endif
-# Si arrondi debut mois suivant
-If LCOD =  4
-   LPER =  eomonth(LPER)
-   WJOU =  nday(LPER)
-   WJOU += 1
-   LPER  = nday$(WJOU)
-Endif
+ # Infbox GACTION
+Return
