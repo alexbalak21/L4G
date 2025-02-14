@@ -14,13 +14,14 @@ $ISSQLYCTL
  [M:ALP]PECQLYCTL =  2
 Return
 
-#########################
-#ABKV - 13/02/25 - 4869SSTO007
+##########################
+#ABKV - 13/02/25 - 4869SSTO007  #
+##########################
 $CALPER
 Local Shortint YSHL : YSHL = 0 # MULTIPLE DE L'UNITE DE TEMPS
 Local Integer YUOM # UNITE DE TEMPS
-If GFONCTION = "FUNBENCHI"
-  If !clalev ([F:MFI]) : Local File MFGITM [MFI] :  Endif
+If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK"
+#La table Ordres fabrication - articles (MFI) est déjà ouverte à la ligne de L'OF
   #SI Type OF different de "Client"
   If [MFI]BPCTYPDEN <> 2 : Return : Endif
   #PLACE LA TABLE CLIENT A LA BONNE LIGNE
@@ -30,7 +31,6 @@ If GFONCTION = "FUNBENCHI"
       #RECUPERE LES DONNES DE PEREMTION
       YSHL = [BPC]YSHL
       YUOM = [BPC]YSHLUOM
-      Infbox "Peremption Client:" - num$(YSHL) + chr$(10) + num$(YUOM)
       #SI MULTIPLE = 0 NE FAIT RIEN
       If YSHL = 0  : Return : Endif
       # YUOM = 1 : Unité Temps : Jour
@@ -54,9 +54,8 @@ If GFONCTION = "FUNBENCHI"
          WJOU += 1
          LPER  = nday$(WJOU)
       Endif
+      Infbox "péremption Client:" - num$(LPER)
   Endif
 Endif
-Infbox num$(LPER)
- # Infbox GACTION
 Return
 ########################
