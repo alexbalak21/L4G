@@ -1,20 +1,19 @@
 $CALPER
-Local Shortint YSHL : YSHL = 0 # MULTIPLE DE L'UNITE DE TEMPS
-Local Integer YUOM # UNITE DE TEMPS
+Local Char BPCNUM(15) 
+Local Shortint YSHL : YSHL = 0 # MULTIPLYER OF UNIT
+Local Integer YUOM # UNIT OF TIME
 If GFONCTION = "FUNBENCHI"
   If !clalev ([F:MFI]) : Local File MFGITM [MFI] :  Endif
   #SI Type OF different de "Client"
   If [MFI]BPCTYPDEN <> 2 : Return : Endif
-  #PLACE LA TABLE CLIENT A LA BONNE LIGNE
+  [L]BPCNUM = [MFI]BPCNUM
   If !clalev ([F:BPC]) : Local File BPCUSTOMER [BPC] :  Endif
-  Read [BPC]BPC0 = [MFI]BPCNUM
+  Read [BPC]BPC0 = [L]BPCNUM
   If !fstat
-      #RECUPERE LES DONNES DE PEREMTION
       YSHL = [BPC]YSHL
       YUOM = [BPC]YSHLUOM
       Infbox "Peremption Client:" - num$(YSHL) + chr$(10) + num$(YUOM)
-      #SI MULTIPLE = 0 NE FAIT RIEN
-      If YSHL = 0  : Return : Endif
+      If YSHL = 0 : Return : Endif
       # YUOM = 1 : Unité Temps : Jour
       If YUOM =  1
          WJOU =  nday(LREF)
