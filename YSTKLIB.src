@@ -1,19 +1,38 @@
+#LCA - 26/06/2024 - 275402
+#ABKV - 13/02/25 - 4869SSTO007
+$ACTION
+ Case ACTION
+  When 'ISSQLYCTL' : Gosub ISSQLYCTL
+#########################
+#ABKV - 13/02/25 - 4869SSTO007
+  When "CALPER" : Gosub CALPER
+########################
+Endcase
+Return
+
+$ISSQLYCTL
+ [M:ALP]PECQLYCTL =  2
+Return
+
+###########################
+# ABKV - 13/02/25 - 4869SSTO007    #
+###########################
 $CALPER
-Local Char BPCNUM(15) 
-Local Shortint YSHL : YSHL = 0 # MULTIPLYER OF UNIT
-Local Integer YUOM # UNIT OF TIME
-If GFONCTION = "FUNBENCHI"
-  If !clalev ([F:MFI]) : Local File MFGITM [MFI] :  Endif
+Local Shortint YSHL : YSHL = 0 # MULTIPLE DE L'UNITE DE TEMPS
+Local Integer YUOM # UNITE DE TEMPS
+If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK"
+#La table Ordres fabrication - articles (MFI) est déjà ouverte à la ligne de L'OF
   #SI Type OF different de "Client"
   If [MFI]BPCTYPDEN <> 2 : Return : Endif
-  [L]BPCNUM = [MFI]BPCNUM
+  #PLACE LA TABLE CLIENT A LA BONNE LIGNE
   If !clalev ([F:BPC]) : Local File BPCUSTOMER [BPC] :  Endif
-  Read [BPC]BPC0 = [L]BPCNUM
+  Read [BPC]BPC0 = [MFI]BPCNUM
   If !fstat
+      #RECUPERE LES DONNES DE PEREMTION
       YSHL = [BPC]YSHL
       YUOM = [BPC]YSHLUOM
-      Infbox "Peremption Client:" - num$(YSHL) + chr$(10) + num$(YUOM)
-      If YSHL = 0 : Return : Endif
+      #SI MULTIPLE = 0 NE FAIT RIEN
+      If YSHL = 0  : Return : Endif
       # YUOM = 1 : Unité Temps : Jour
       If YUOM =  1
          WJOU =  nday(LREF)
@@ -37,5 +56,5 @@ If GFONCTION = "FUNBENCHI"
       Endif
   Endif
 Endif
- # Infbox GACTION
 Return
+########################
