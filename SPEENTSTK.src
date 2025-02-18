@@ -20,6 +20,7 @@ Return
 $CALPER
 Local Shortint YSHL : YSHL = 0 # MULTIPLE DE L'UNITE DE TEMPS
 Local Integer YUOM # UNITE DE TEMPS
+If GPE : Return : Endif
 If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK"
 #La table Ordres fabrication - articles (MFI) est déjà ouverte à la ligne de L'OF
   #SI Type OF different de "Client"
