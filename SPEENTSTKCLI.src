@@ -21,7 +21,7 @@ $CALPER
 Local Shortint YSHL : YSHL = 0 # MULTIPLE DE L'UNITE DE TEMPS
 Local Integer YUOM # UNITE DE TEMPS
 If GPE : Return : Endif
-If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK"
+If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK" or GFONCTION="FUNSFTVAL"
 #La table Ordres fabrication - articles (MFI) est déjà ouverte à la ligne de L'OF
   #SI Type OF different de "Client"
   If [MFI]BPCTYPDEN <> 2 : Return : Endif
@@ -61,7 +61,7 @@ If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK"
 Endif
 Return
 ########################
-
+Mermoz Pinel, 69008 Lyon
 
 $RECALPER
 #SI MULTIPLE = 0 NE FAIT RIEN

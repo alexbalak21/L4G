@@ -1,0 +1,1067 @@
+﻿#<AdxTL>@(#)0.0.0.0 $Revision$  #!!!!DISCLAIMER V12P21 P Base DO NOT COPY OR USE THIS FILE IN ANY X3 FOLDER OR SUB FOLDER!!!!
+# Mask Management LABVAL
+# Issue X3-129694 - 2019-04-24 by BAKHA : If running in batch mode, then does not use selected entry transaction
+# Issue X3-138635 - 2019-06-07 by BAKHA : If site entered, only select transaction for site
+# Issue X3-134292 - 2019-06-28 by BAKHA : Machine time is invalid if there is labour factor
+# Issue X3-165761 - 2019-10-25 by BAKHA : Reject WO if not allocated, has material lines and MTKALLMGT is Yes
+
+$ACTION
+
+Case ACTION
+  When "INIT"          : Gosub INIT
+  When "OUVRE_BATCH"   : Gosub INIT
+  When "EXEC"          : Gosub EXEC
+  When "TERMINE"       : Gosub TERMINE
+  When "SORTIE"        : Gosub SORTIE
+  When "INIT_DIA"      : Gosub INIT_DIA
+Endcase
+Return
+
+####################################################################################
+
+$INIT
+
+  Local File SFTTXN     [SFTX]  #Shop Floor Transactions
+  Local File SFTTXN     [SFTX2] #Shop Floor Transactions
+  Local File SFTTXNH    [SFTH]  #Shop Floor Transaction History
+  Local File WORKSTATIO [MWS]   #Work centers
+  Local File MFGHEAD    [MFG]   #Work order - header
+  Local File MFGMATTRK  [MKM]   #Manufacture tracking - materia
+  Local File MFGOPETRK  [MKO]   #Manufacture tracking - operati
+  Local File TABMAT     [TMA]   #Employee IDs
+  Local File SFTTEM     [SFTTM] #Teams
+
+  Local Integer ERR
+  Local Integer KOUNT
+  Local Char MESSAGE(250)
+
+  Global Char   GMOLNUM(GLONTRS)
+
+  If GSERVEUR : Onerrgo ERRBATCH : Endif
+
+Return
+
+####################################################################################
+$INIT_DIA
+  GMOLNUM = func ENVADC.SETMFGTRANS(60)
+  [M:LEV]MOLNUM = GMOLNUM
+  Affzo [M:LEV]MOLNUM
+Return
+
+####################################################################################
+$SORTIE
+  Raz [M:LEV]
+  Affzo [M:LEV]
+Return
+####################################################################################
+
+$EXEC
+  Local Char CRIT(250),CRIT2(250),CRIT3(250)
+  Local Char CRIT4(250)
+  Local Char UOR(250)
+  Local Uuident TXNUUIDS(0..)
+
+  #Creating log header
+  If !GSERVEUR
+      Call OUVRE_TRACE(mess(42,2422,1)) From LECFIC     # Labor entry validation
+  Endif
+
+  Call ECR_TRACE(" ",0) From GESECRAN
+  Call ECR_TRACE(string$(70,"-"),0) From GESECRAN
+  Call PRTSCR("SFTLABVAL","LEV","",0,1) From ATRTX3
+  Call ECR_TRACE(string$(70,"-"),0) From GESECRAN
+  Call ECR_TRACE(" ",0) From GESECRAN
+
+  #Build search criteria
+  CRIT = "1=1"
+
+
+  #Team
+  If [M:LEV]TEAMNUM>0
+    CRIT -= '& TEAMNUM=' + num$([M:LEV]TEAMNUM)
+  Endif
+
+  #Employee
+  If [M:LEV]EMPNUMSTR>0
+      CRIT -= '& EMPNUM>=' + num$([M:LEV]EMPNUMSTR)
+  Endif
+  If [M:LEV]EMPNUMEND>0
+      CRIT -= '& EMPNUM<=' + num$([M:LEV]EMPNUMEND)
+  Endif
+
+
+  #Document
+  If [M:LEV]VCRNUMSTR<>""
+      CRIT -= '& VCRNUM>="' + [M:LEV]VCRNUMSTR +'"'
+  Endif
+  If [M:LEV]VCRNUMEND<>""
+      CRIT -= '& VCRNUM<="' + [M:LEV]VCRNUMEND +'"'
+  Endif
+
+  #Operation
+  If [M:LEV]OPENUMSTR>0
+      CRIT -= "& OPENUM>=" + num$([M:LEV]OPENUMSTR)
+  Endif
+  If [M:LEV]OPENUMEND>0
+      CRIT -= "& OPENUM<=" + num$([M:LEV]OPENUMEND)
+  Endif
+
+  #End date must be set
+   CRIT2 = "UTCENDDATTIM<>gdatetime$('')"
+
+  #Dates
+  If [M:LEV]SHFDATSTR<>[0/0/0]
+     CRIT2 -= "& SHIFTDAT>=[" + format$(GFMD,[M:LEV]SHFDATSTR ) + "]"
+  Endif
+  If [M:LEV]SHFDATEND<>[0/0/0]
+     CRIT2 -= "& SHIFTDAT<=[" + format$(GFMD,[M:LEV]SHFDATEND) + "]"
+  Endif
+
+  #SFT type filters
+  If [M:LEV]TYPTA <> 2 & [M:LEV]TYPID <> 2 & [M:LEV]TYPSU <> 2 & [M:LEV]TYPRU <> 2
+      Call ECR_TRACE(mess(72,7777,1),1) From GESECRAN   # No record selected
+      Return
+  Endif
+
+  Raz CRIT3
+  Raz UOR
+
+  If [M:LEV]TYPTA=2
+      CRIT3 -= "SFTTYP=1"#Timeclock
+      UOR = "Or"
+  Endif
+  If [M:LEV]TYPID=2
+      CRIT3-= UOR - "SFTTYP=2 Or SFTTYP=3"#Indirect or Break
+      UOR = "Or"
+  Endif
+  If [M:LEV]TYPSU=2
+      CRIT3-= UOR - "SFTTYP=4"#Setup
+      UOR = "Or"
+  Endif
+  If [M:LEV]TYPRU=2
+      CRIT3-= UOR - "SFTTYP=5"#Run
+  Endif
+
+  CRIT4 = "1=1"
+
+  If [M:LEV]FCY <>""
+    CRIT4 -= '& FCY = "' + [M:LEV]FCY +'"'  # X3-138635 - only select for entered site
+  Endif
+
+  #Work center
+  If [M:LEV]CPLWSTSTR<>""
+      CRIT4 -= '& WCENTER >="' + [M:LEV]CPLWSTSTR +'"'
+  Endif
+  If [M:LEV]CPLWSTEND<>""
+      CRIT4 -= '& WCENTER <="' + [M:LEV]CPLWSTEND +'"'
+  Endif
+
+  #Used to skip failed Operations.
+  Local Integer BADOPE # Bad operation Number
+  Local Char    BADVCR(20) #Work order for failed operation
+  KOUNT = 0
+
+  #Combine criteria and filter SFT table
+  Filter [SFTX2] Where evalue(CRIT) & evalue(CRIT2) & evalue(CRIT3) & evalue(CRIT4)
+&                Order By [F:SFTX2]SFTTYP; [F:SFTX2]VCRNUM; [F:SFTX2]OPENUM; [F:SFTX2]UTCENDDATTIM; [F:SFTX2]CLEFLG; [F:SFTX2]EMPNUM
+#                               Type             Number        Operation           Time                   Close           Employee
+
+  For [SFTX2]
+    Read [TMA]TMA0 = [F:SFTX2]EMPNUM
+    If [F:TMA]EMPTYP = 2 #Jira 53701.n
+      #For detailed team, if they didn't put in a team and EMPNUM = TEAMNUM then skip
+      If [M:LEV]TEAMNUM = 0 and [F:SFTX2]EMPNUM = [F:SFTX2]TEAMNUM
+        Goto SKIP_RECORD
+      Endif
+    Endif
+
+    #If there is a transaction ID and we dont already have it, store it for later
+    If [SFTX2]TXNUUID <> AVOID.AUUID and !find([SFTX2]TXNUUID,TXNUUIDS)
+      TXNUUIDS(maxtab(TXNUUIDS)+1) = [SFTX2]TXNUUID
+    Endif
+
+    #Start the validation process
+    Gosub PRE_VALIDATION
+    SKIP_RECORD:
+  Next
+  Filter [SFTX2]
+
+  #Loop through all closed machine records associated with this transaction ID
+  Filter [SFTX2] Where MACFLG = [V]CST_AYES and find([F]TXNUUID,TXNUUIDS) and [F:SFTX2]UTCENDDATTIM <> AVOID.ADATTIM and TXNUUID <> AVOID.AUUID
+  For [SFTX2]
+    #These records dont care if its not the specified team number
+    [M:LEV]TEAMNUM = [SFTX2]TEAMNUM
+    #Start the validation process
+    Gosub PRE_VALIDATION
+  Next
+
+Return # End EXEC
+
+####################################################################################
+$PRE_VALIDATION
+
+  #Write to log
+  Call ECR_TRACE(mess(1,20,1) - "--" - mess(2,975,1) + ":" - num$([F:SFTX2]EMPNUM) + "." - mess(59,100,1) + ":" -
+&   mess([F:SFTX2]SFTTYP,2416,1)  + "." - mess(12,107,1) + ":" - [F:SFTX2]VCRNUM + "." - mess(8,47,1) + ":" -
+&   num$([F:SFTX2]SFTSEQ),0) From GESECRAN
+
+  If [F:SFTX2]BRKTXN <> NullUuid #Skip when on break
+      Call ECR_TRACE( mess(19,2422,1) - num$([F:SFTX2]BRKTXN) ,1) From GESECRAN
+  Else #Validate record and move it to history table
+    If [F:SFTX2]VCRNUM = BADVCR & [F:SFTX2]OPENUM = BADOPE & [F:SFTX2]SFTTYP>3 #Skip Operation if previous one failed
+      Call ECR_TRACE(mess(43,2422,1),1) From GESECRAN   # Record skipped due to a previous failure.
+    Else
+      #X3-116425 17/01/2019 by GEBIL : Request of ENTRY POINT
+      GPE=0
+      GPOINT="BEFVAL" : Gosub ENTREE From EXEFNC
+
+      #Validation Shop floor tracking
+      If !GPE
+        Call VALIDATE_SFT([F:SFTX2]EMPNUM,[F:SFTX2]SFTTYP,[F:SFTX2]VCRNUM,[F:SFTX2]SFTSEQ, ERR,MESSAGE)
+        If ERR
+           Call ECR_TRACE(mess(20,2422,1) - MESSAGE, 1) From GESECRAN
+           #Need to skip this combination if it comes up again.
+           BADVCR = [F:SFTX2]VCRNUM
+           BADOPE = [F:SFTX2]OPENUM
+        Else
+           KOUNT += 1
+        Endif
+      Endif
+    Endif #end skip if bad operation
+  Endif#end skip if break
+
+Return
+
+####################################################################################
+Subprog VALIDATE_SFT(IEMPNUM,ISFTTYP,IVCRNUM,ISFTSEQ,OERRFLG,OERRMSG)
+Value    Integer IEMPNUM
+Value    Integer ISFTTYP
+Value    Char    IVCRNUM
+Value    Integer ISFTSEQ
+Variable Integer OERRFLG
+Variable Char    OERRMSG
+
+Local Char    SAVGTRACE(250)
+Local Integer SAVGLTRACE
+Local Integer SAVGSERVEUR
+
+Local Char    OMFGTRKNUM(20)
+Local Integer OMATTRKLIN
+Local Integer OOPETRKLIN
+Local Integer NUMJOB
+Local Integer MULTIPLIER
+
+Local Decimal IHOUR
+Local Decimal IMINUTE
+
+Local File MFGMATTRK  [MKM]
+Local File MFGOPETRK  [MKO]
+Local File TABMAT     [TMA]
+Local File MFGOPE     [MFO]
+Local File WORKSTATIO [MWS]
+Local File TABSCA     [TSR]
+Local File WORKCOST   [MWC]
+
+Raz OMFGTRKNUM,OERRFLG,OERRMSG
+
+#Read current transaction
+Read [SFTX]SFT0=IEMPNUM;ISFTTYP;IVCRNUM;ISFTSEQ
+If fstat
+    OERRFLG = 1
+    OERRMSG = mess(21,2422,1) - "SFTX" - num$(IEMPNUM) - "~" - num$(ISFTTYP) - "~" - IVCRNUM - "~" - num$(ISFTSEQ)
+    Goto READ_ERR
+Endif
+
+#If a setup or run record, create tracking record. Otherwise simply move to history and delete
+#We also want to skip any record that either has no time or no quantity, becuase those records do nothing.
+
+If [F:SFTX]SFTTYP>3 and ([F:SFTX]DURATION <> 0 or [F:SFTX]CPLQTY <> 0)
+
+    #Make sure WO is firm
+    Read [MFG]MFG0 = [F:SFTX]VCRNUM
+    If fstat
+        OERRFLG = 1 : OERRMSG = mess(21,2422,1) - "MFG" - [F:SFTX]VCRNUM
+        Goto READ_ERR
+    Else
+        If [F:MFG]MFGSTA<>1 #Work order status
+            OERRFLG = 1 : OERRMSG = mess(22,2422,1)
+            Goto READ_ERR
+    		Endif
+    Endif
+    # X3-165761 - Reject WO if not allocated, has material lines and MTKALLMGT is Yes
+    If (GMTKALLMGT = [V]CST_AYES & !find([F:MFG]ALLSTA,3,5) & [F:MFG]MATLINNBR <> 0)
+        OERRFLG = 1 : OERRMSG = mess(18,190,1)
+        Goto READ_ERR
+    Endif
+
+    #Read Employee table
+    Read [F:TMA]TMA0 = [F:SFTX]EMPNUM
+    If fstat
+      OERRMSG = mess(21,2422,1) - "TMA" - num$([F:SFTX]EMPNUM)
+      OERRFLG = 1
+      Goto READ_ERR
+    Endif
+
+    #If no errors, start creating entries to Work order - operations table
+    If !OERRFLG
+        SAVGSERVEUR = GSERVEUR
+        If !GSERVEUR : SAVGLTRACE = GLTRACE : SAVGTRACE = GTRACE : Endif
+        Call OPERATION_TRACKING([F:SFTX]SFTTYP,[F:SFTX]VCRNUM,[F:SFTX]OPENUM,[F:SFTX]CPLQTY,[F:SFTX]REJCPLQTY,
+&        [F:SFTX]SCANUM,[F:SFTX]NUMJOBS,[F:SFTX]NUMMAC,[F:SFTX]WCENTER ,[F:SFTX]LCENTER ,
+&        [F:SFTX]CLEFLG,[F:SFTX]EMPNUM,[F:SFTX]UTCENDDATTIM, [F:SFTX]DURATION ,OMFGTRKNUM,OMATTRKLIN,OOPETRKLIN,
+&        OERRFLG,OERRMSG)
+        GSERVEUR = SAVGSERVEUR
+        If !GSERVEUR : GLTRACE = SAVGLTRACE : GTRACE = SAVGTRACE : Endif
+    Endif
+
+Endif
+
+READ_ERR:
+Trbegin [SFTX],[SFTH]
+
+If OERRFLG=0
+    # move to history
+    Raz [F:SFTH]
+
+    [F:SFTH] = [F:SFTX]
+    [F:SFTH]MFGFCY = [F:SFTX]FCY #Production site
+
+    #We want to skip any record that either has no time or no quantity, becuase those records do nothing.
+    If [F:SFTX]SFTTYP>3 and ([F:SFTX]DURATION <> 0 or [F:SFTX]CPLQTY <> 0)
+
+        [F:SFTH]MFGTRKNUM = OMFGTRKNUM #Tracking number
+
+        #READ: Manufacture tracking - operation
+        Read [MKO]MKO0 = [F:SFTH]MFGTRKNUM;OOPETRKLIN
+        If fstat
+            OERRMSG = mess(21,2422,1) - "MKO" - [F:SFTH]MFGTRKNUM - "~" - num$(OOPETRKLIN)
+            OERRFLG = 1 : Goto VALIDATE_SFC_ERR
+        Endif
+
+        #READ: Employee IDs
+        If [F:TMA]EMPNUM<>[F:SFTH]EMPNUM  #test if already read
+          Read [TMA]TMA0 = [F:SFTH]EMPNUM
+          If fstat
+              OERRMSG = mess(21,2422,1) - "TMA" - [F:SFTH]EMPNUM
+              OERRFLG = 1 : Goto VALIDATE_SFC_ERR
+          Endif
+        Endif
+
+        #READ: Work order - operations
+        Read [MFO]MFO0 = [F:MFG]MFGNUM;[F:MKO]OPENUM;[F:MKO]OPESPLNUM
+        If fstat
+            OERRMSG = mess(21,2422,1) - "MFO" - [F:MFG]MFGNUM - "~" - num$([F:MKO]OPENUM) - "~" - num$([F:MKO]OPESPLNUM)
+            OERRFLG = 1 : Goto VALIDATE_SFC_ERR
+        Endif
+
+        #Time code
+        If [F:MFO]TIMUOMCOD=1
+            MULTIPLIER = 60
+        Else
+            MULTIPLIER = 1
+        Endif
+
+        #Jira 46517.sn 07/06/17 by CATUA
+        #[F:SFTH]LABCOE = [F:MKO]OPELABCOE #Labor Factor
+        #Set up labor factor
+        If [F:SFTX]SFTTYP=4 : [F:SFTH]LABCOE = [F:MKO]SETLABCOE : Endif
+        #Run labor factor
+        If [F:SFTX]SFTTYP=5 : [F:SFTH]LABCOE = [F:MKO]OPELABCOE : Endif
+        #Jira 46517.en
+
+        [F:SFTH]MFGCREDAT = [F:MKO]CREDAT    #Date created
+
+        #READ: Work centers
+        Read [MWS]WST0 =[F:SFTH]CPLWST;[F:SFTH]MFGFCY
+        If fstat : Raz [F:MWS] : Endif
+
+        #READ: Costing dimension (If applicable)
+        If [F:MWS]VLTCCE <> ""
+          Read [MWC]WCT0 = [F:MWS]VLTCCE;[F:MWS]WCRFCY
+
+          If fstat
+              OERRMSG = mess(21,2422,1) - "MWC" - [F:MWS]VLTCCE - "~" - [F:MWS]WCRFCY
+              OERRFLG = 1 : Goto VALIDATE_SFC_ERR
+          Endif
+        Endif
+
+        #Actual PC dim rate selection
+        Case GMFCRATCPL
+          When 1 : [F:SFTH]CHGRAT = [F:MWC]STDOPECST #Standard operating rate
+          When 2 : [F:SFTH]CHGRAT = [F:MWC]CUTOPECST #Actual operating rate
+          When 3 : [F:SFTH]CHGRAT = [F:MWC]BUDOPECST #Budget operating rate
+          When 4 : [F:SFTH]CHGRAT = [F:MWC]SIMOPECST #Operation rate simulation
+        Endcase
+
+        #Labor rate selection
+        Case GOPRRATE
+          When 2 : [F:SFTH]CHGRAT = [F:TMA]CHGRAT #Operator rate
+          When 3 : If [F:TMA]CHGRAT>0 : [F:SFTH]CHGRAT = [F:TMA]CHGRAT : Endif #Operator else Work center
+        Endcase
+
+        #Labor only workcenter
+        If [F:MWS]WSTTYP=2
+            [F:SFTH]SFTWSTTYP = 1
+        Endif
+
+        #Machine work center
+        If [F:MWS]WSTTYP=1
+            If [F:SFTH]CPLLAB=""
+                [F:SFTH]SFTWSTTYP = 2  # Machine only
+            Else
+                [F:SFTH]SFTWSTTYP = 3  # Machine and labor
+            Endif
+        Endif
+    Endif
+
+    Call NEXT_HISTSEQ([F:SFTH]EMPNUM,[F:SFTH]SFTTYP,[F:SFTH]VCRNUM,[F:SFTH]SFTSEQ,[F:SFTH]HISSEQ)
+
+    Write [SFTH]
+    If fstat
+        OERRMSG = mess(23,2422,1) - "SFTH" - num$([F:SFTH]EMPNUM) - "~" - num$([F:SFTH]SFTTYP) - "~" - [F:SFTH]VCRNUM -
+&        num$([F:SFTH]SFTSEQ) - num$([F:SFTH]HISSEQ)
+        OERRFLG = 1 : Goto VALIDATE_SFC_END
+    Endif
+
+    Delete [SFTX] Curr
+
+Else  #An error occured
+VALIDATE_SFC_ERR:
+
+    [F:SFTX]ERRFLG = 2
+    [F:SFTX]ERRMSG = OERRMSG
+
+    Call CREUPD([F:SFTX]UPDDATTIM,[F:SFTX]UPDUSR)
+
+    Rewrite [SFTX]
+    If fstat
+        OERRMSG = mess(24,2422,1) - "SFTX" - num$([F:SFTX]EMPNUM) - "~" - num$([F:SFTX]SFTTYP) - "~" -
+&        [F:SFTX]VCRNUM - "~" - num$([F:SFTX]SFTSEQ)
+        OERRFLG = 1 : Goto VALIDATE_SFC_END
+    Endif
+
+    # Re-write OK - OERRFLG still shows failed.
+    # Do a commit here
+    Commit : Goto VALIDATE_SFC_FAILED
+Endif
+
+
+VALIDATE_SFC_END:
+If OERRFLG
+    Rollback
+Else
+    Commit
+Endif
+
+VALIDATE_SFC_FAILED:
+#Close opened files
+LogicClose File [MKM], [MKO], [TMA], [MFO], [MWS], [TSR], [MWC]
+
+End
+
+####################################################################################
+# Subprogram : NEXT_HISTSEQ
+#
+# Description :Generates next sequence for a SFTH for uniqueness
+#
+####################################################################################
+####################################################################################
+Subprog NEXT_HISTSEQ(IEMPNUM,ISFCTYP,IVCRNUM,ISFCSEQ,OSEQ)
+Value    Integer IEMPNUM
+Value    Integer ISFCTYP
+Value    Char IVCRNUM
+Value    Integer ISFCSEQ
+Variable Integer OSEQ
+
+# Open a new copy so we aren't messing up the copy being written to above
+If !clalev([F:SFTHS]) : Local File SFTTXNH  [SFTHS]  : Endif
+
+Filter [SFTHS] Where EMPNUM=IEMPNUM & SFTTYP=ISFCTYP & VCRNUM=IVCRNUM &
+&                    SFTSEQ=ISFCSEQ Order By HISSEQ
+Read [SFTHS] Last
+Filter [SFTHS]
+If fstat
+    OSEQ = 1
+Else
+    OSEQ = [F:SFTHS]HISSEQ + 1
+Endif
+
+End
+
+####################################################################################
+# Subprogram : CREUPD
+# Description : Used to update the CRE*/UPD* fields
+#
+####################################################################################
+####################################################################################
+Subprog CREUPD(IDAT,IUSR)
+Variable Datetime IDAT
+Variable Char IUSR
+
+IDAT = datetime$
+IUSR = GUSER
+End
+
+####################################################################################
+# Subprogram : OPERATION_TRACKING
+#
+# Description : ADC Operation tracking (for shop floor and labor entry)
+#
+# NOTE: Calls trbegin and commit
+####################################################################################
+Subprog OPERATION_TRACKING(ISFCTYP,IMFGNUM,IOPENUM,ICPLQTY,IREJCPLQTY,ISCANUM,INUMJOBS,INUMMACH,
+& ICPLWST,ICPLLAB,ICLOSE,IEMPNUM,IENDDAT, IDURATION, OMFGTRKNUM,OMATTRKLIN,OOPETRKLIN,OERR,OERRMSG)
+Value    Integer  ISFCTYP # 3 = setup,4 = run
+Value    Char     IMFGNUM
+Value    Integer  IOPENUM
+Value    Decimal  ICPLQTY
+Value    Decimal  IREJCPLQTY
+Value    Integer  ISCANUM
+Value    Integer  INUMJOBS
+Value    Integer  INUMMACH
+Value    Char     ICPLWST
+Value    Char     ICPLLAB
+Value    Integer  ICLOSE
+Value    Integer  IEMPNUM
+Value    Datetime IENDDAT
+Value    Decimal  IDURATION
+Variable Char     OMFGTRKNUM
+Variable Integer  OMATTRKLIN
+Variable Integer  OOPETRKLIN
+Variable Integer  OERR
+Variable Char     OERRMSG
+
+
+  Global Integer   FICTECOK
+
+  Local Mask       VXAOT [VAOT]
+  Local Char       WINPROG(20)
+  Local Char       BOITE(20)
+
+  Local Decimal    TRKTIME
+
+  #Jira 46517.sn 07/06/17 by CATUA
+  Local Decimal   TRKLABTIME      #Total Labor time
+  Local Decimal   TRKEMPTIME      #Employee max Labor time
+  Local Decimal   TRKMACTIME      #Machine time
+  Local Decimal   LABCOE          #Labor factor
+  Local Integer   EMPNUM          #Employee number
+  Local Integer   EMPDURATION     #Employee duration
+  Local Integer   SUMEMP          #Number of employees for summary teams
+  Local Uuident   TRKTXNUUID(0..)
+  Local Integer   TRKEMPNUM(1..)
+
+  Local File ROUOPE [ROO]         #Routing operations table
+  Local File SFTTXN  [SFTX5]
+  Local File SFTTXNH [SFTXH5]
+  #Jira 46517.en
+
+  Local File BENCHTRS [BTS]
+  Local File MFGHEAD  [MFG]
+  Local File ACTIV    [ACV]
+
+  If INUMJOBS=0 : INUMJOBS = 1 : Endif
+
+  GSERVEUR = 1
+  GVTMOD = 1
+
+  #This should never be called, but just in case
+  If !find(ISFCTYP,4,5)
+      OERR = 1
+      OERRMSG = mess(1178,196,1)
+      Goto OPERATION_TRACKING_END
+  Endif
+
+  #READ: Work order - header
+  Read [MFG]MFG0=IMFGNUM
+  If fstat
+      OERR = 1
+      OERRMSG = mess(21,2422,1) - "MFGHEAD" - IMFGNUM
+      Goto OPERATION_TRACKING_END
+  Endif
+
+  #Opens necessary screens and tables
+
+  # X3-129694 - set entry transaction
+  If (GSERVEUR)
+    GMOLNUM = [M:LEV]MOLNUM
+  Endif
+  Gosub OUVRE_MBO From ENVADC
+
+  GFCY = [F:MFG]MFGFCY #Production site
+
+  #Initializes variables
+  Gosub DEBUT_MBO From ENVADC
+
+  # RAZ screen
+  Default Mask [MBO]
+  Gosub RAZ_MBO From ENVADC
+  Raz [M:VAOT]
+  [M:VAOT]IPTDAT = date$
+  Affzo [VAOT]1-99
+  nolign = 0
+
+
+  Default Mask [VAOT]
+  [M:VAOT]MFGNUM = IMFGNUM #Work order number
+  [M:VAOT]OPENUM = IOPENUM #Operation number
+  [M:VAOT]EMPNUM = IEMPNUM #Employee number
+
+  Raz mkstat
+
+  # needed for AM_OPENUM_MBO call
+  VALEUR = [M:VAOT]OPENUM
+
+  # Reads workorder operations table MFGOPE [F:MFO]
+  # AM_OPENUM_MBO sets the following: FCY,OPENUM,OPESPLNUM,TIMUOMCOD,OPEUOM,OPEWORCOE,CPLUNTTIM,ROOTIMCOD
+  Gosub AM_OPENUM_MBO From ENVADC
+
+  If mkstat
+      OERR = 1
+      If GMESSAGE <> ""
+        OERRMSG = GMESSAGE
+      Else
+        OERRMSG = func AFNC.MES1(mess(31,2422,1), num$([M:VAOT]OPENUM) )
+      Endif
+      Goto OPERATION_TRACKING_END
+  Endif
+
+  #If Workcenter type is not Labor or Machine, get out.
+  If [F:MWS]WSTTYP>2
+      OERR = 1
+      OERRMSG = mess(29,2422,1)
+      Goto OPERATION_TRACKING_END
+  Endif
+
+  #Completed quantity
+  [M:VAOT]FCY    = [F:SFTX]FCY
+  [M:VAOT]CPLQTY = ICPLQTY
+  Call AM_CPLQTY([M:VAOT]CPLQTY) From VXAOT
+
+  If mkstat : OERR = 1 : OERRMSG = GMESSAGE : Goto OPERATION_TRACKING_END : Endif
+
+  #Rejected quantity
+  [M:VAOT]REJCPLQTY = IREJCPLQTY
+  Call C_REJCPLQTY([M:VAOT]REJCPLQTY) From VXAOT
+  If mkstat : OERR = 1 : OERRMSG = GMESSAGE : Goto OPERATION_TRACKING_END : Endif
+
+  #Jira 46517.sn 07/06/17 by CATUA
+  #Determine which time unit to use - hours or minutes
+#  If [F:MFO]TIMUOMCOD=1
+#      TRKTIME = IDURATION / 60
+#  Else
+#      TRKTIME = IDURATION
+#  Endif
+  TRKTIME = IDURATION
+  #Jira 46517.en
+
+  [M:VAOT]CPLWST = ICPLWST
+  [M:VAOT]CPLLAB = ICPLLAB
+
+  #Jira 46517.sn 07/06/17 by CATUA
+  #Labor coeficient factor is defined at the routing. SETLABCOE is the coeffient used for set up and OPELABCOE for run.
+  #In SFT for Machine-Labor, two records are created - one record for machine and a separate record for labor.
+  #Actual labor time is recorded and the machine time is calculated using the labor coefficient for Employees only (see equations below)
+
+  #For Employee with run during break = No
+  #(MachineTime / Coefficient)
+
+  #For Employee with run during break = Yes
+  #(((LaborTime1 * NumJob1) + (LaborTime2 * NumJob2)) / Coefficient) + (MachineTime - ((LaborTime1 * NumJob1) + (LaborTime2 * NumJob2)))
+
+  If [F:MFO]EXTLAB<>""
+    Raz LABCOE
+    #Jira 53701.sn 08/31/17 by CATUA  Retrieve coefficient from Work Order operations table MFGOPE instead of routing operations table
+#    Filter [ROO] Where FCY = [F:MFG]MFGFCY & ITMREF = [MFG]ROUNUM & ROUALT = [MFG]ROUALT & OPENUM = IOPENUM
+#    Read [ROO]ROO0 First
+#    Filter [ROO]
+#    If !fstat
+#      #Apply Labor factor for setup
+#      If ISFCTYP = 4 : LABCOE = [ROO]SETLABCOE : Endif
+#      #Apply Labor factor for run
+#      If ISFCTYP = 5 : LABCOE = [ROO]OPELABCOE : [M:VAOT]OPELABCOE = [ROO]OPELABCOE : Endif
+#    Endif
+    If ISFCTYP = 4 : LABCOE = [F:MFO]SETLABCOE : Endif
+    If ISFCTYP = 5 : LABCOE = [F:MFO]OPELABCOE : [M:VAOT]OPELABCOE = [F:MFO]OPELABCOE : Endif
+    #Jira 53701.en
+
+    If LABCOE <> 0 & INUMMACH = [V]CST_AYES
+      Raz TRKLABTIME, TRKMACTIME, TRKEMPTIME
+      TRKMACTIME = IDURATION
+      #Jira 53333.sn 08/18/17 by CATUA Apply labor coefficient for Employee only (remove all logic for summary team)
+      If find([TMA]EMPTYP,0,1) #Employee
+      #If [TMA]EMPTYP <> 2
+      #Jira 53333.en
+        If [MWS]RUNBRKFLG <> [V]CST_AYES or [SFTX]UTCSTRDATTIM = AVOID.ADATTIM
+          #Jira 53333.sn 08/18/17 by CATUA Apply labor coefficient for Employee only (remove all logic for summary team)
+#          If [TMA]EMPTYP = 3 #Summary team
+#            TRKTIME = (TRKMACTIME/LABCOE) * [TMA]SUMEMP
+#          Else
+#            TRKTIME = TRKMACTIME/LABCOE
+             TRKTIME = TRKMACTIME           # X3-134292 - do not use Labour factor
+
+#          Endif
+        Else
+          #Loop through SFT transaction records
+          #Jira 53701.sn 08/25/17 by CATUA Apply labor coefficient for Employee only (Add EMPNUM to the filter since transfer of machine from one emp to another is not allowed)
+          Filter [SFTX5] Where EMPNUM = [SFTX]EMPNUM & STRTXNUUID = [SFTX]STRTXNUUID & MACFLG <> [V]CST_AYES & UTCENDDATTIM <> AVOID.ADATTIM
+          For [SFTX5]
+            TRKLABTIME = TRKLABTIME + ([SFTX5]DURATION * [SFTX5]NUMJOBS)
+            #Jira 53333.sn 08/18/17 by CATUA Apply labor coefficient for Employee only (remove all logic for summary team)
+#            If [TMA]EMPTYP = 3 #Summary team
+#              Raz SUMEMP
+#              SUMEMP = [SFTX5]SUMEMP
+#              If SUMEMP = 0 : SUMEMP = 1 : Endif
+#              TRKEMPTIME = TRKEMPTIME + (([SFTX5]DURATION * [SFTX5]NUMJOBS) / SUMEMP)
+#            Endif
+          Next
+          Filter [SFTX5]
+
+          #Loop through SFT transaction history records
+          #Jira 53701.sn 08/25/17 by CATUA Apply labor coefficient for Employee only (Add EMPNUM to the filter since transfer of machine from one emp to another is not allowed)
+          Filter [SFTXH5] Where EMPNUM = [SFTX]EMPNUM & STRTXNUUID = [F:SFTX]STRTXNUUID & MACFLG <> [V]CST_AYES
+          For [SFTXH5]
+            TRKLABTIME = TRKLABTIME + ([SFTXH5]DURATION * [SFTXH5]NUMJOBS)
+            #Jira 53333.sn 08/18/17 by CATUA Apply labor coefficient for Employee only (remove all logic for summary team)
+#            If [TMA]EMPTYP = 3 #Summary team
+#              Raz SUMEMP
+#              SUMEMP = [SFTXH5]SUMEMP
+#              If SUMEMP = 0 : SUMEMP = 1 : Endif
+#              TRKEMPTIME = TRKEMPTIME + (([SFTXH5]DURATION * [SFTXH5]NUMJOBS) / SUMEMP)
+#            Endif
+          Next
+          Filter [SFTXH5]
+
+          #Jira 53333.sn 08/18/17 by CATUA Apply labor coefficient for Employee only (remove all logic for summary team)
+#          If find([TMA]EMPTYP,0,1) #Employee
+#            TRKEMPTIME = TRKLABTIME
+#          Endif
+
+#          If TRKMACTIME > TRKEMPTIME
+#            TRKTIME = (TRKLABTIME / LABCOE) + (TRKMACTIME - TRKEMPTIME)
+#          Else
+#            TRKTIME = (TRKLABTIME / LABCOE)
+#          Endif
+          If TRKMACTIME > TRKLABTIME
+            TRKTIME = (TRKLABTIME / LABCOE) + (TRKMACTIME - TRKLABTIME)
+          Else
+            TRKTIME = (TRKLABTIME / LABCOE)
+          Endif
+          #Jira 53333.en
+
+        Endif
+      Endif
+
+      #Jira 53333.sn 08/18/17 by CATUA Apply labor coefficient for Employee only (remove all logic for detailed team)
+#      Else #Detailed team
+#        If [MWS]RUNBRKFLG <> [V]CST_AYES or [SFTX]UTCSTRDATTIM = AVOID.ADATTIM
+#          #Jira 50317.n 08/03/17 by CATUA Add UTCENDDATTIM to the filter to properly handle autobreaks
+#          #Loop through SFT transaction records
+#          Filter [SFTX5] Where TXNUUID = [F:SFTX]TXNUUID & MACFLG <> [V]CST_AYES & UTCENDDATTIM <> AVOID.ADATTIM & UTCENDDATTIM = [SFTX]UTCENDDATTIM
+#          For [SFTX5]
+#            TRKLABTIME = TRKLABTIME + ([SFTX5]DURATION * [SFTX5]NUMJOBS)
+#          Next
+#          Filter [SFTX5]
+#
+#          If [SFTX]UTCSTRDATTIM <> AVOID.ADATTIM #Do not include elapsed
+#            Filter [SFTX5] Where STRTXNUUID = [SFTX]STRTXNUUID & TXNUUID <> [F:SFTX]TXNUUID & MACFLG <> [V]CST_AYES &
+#&                                SFTTYP = [SFTX]SFTTYP & VCRNUM = [SFTX]VCRNUM & OPENUM = [SFTX]OPENUM &
+#&                                UTCSTRDATTIM >= [SFTX]UTCSTRDATTIM & UTCENDDATTIM <= [SFTX]UTCENDDATTIM
+#            For [SFTX5]
+#              TRKLABTIME = TRKLABTIME + ([SFTX5]DURATION * [SFTX5]NUMJOBS)
+#            Next
+#            Filter [SFTX5]
+#          Endif
+#          #Jira 50317.n 08/03/17 by CATUA Add UTCENDDATTIM to the filter to properly handle autobreaks
+#          #Loop through SFT transaction history records
+#          Filter [SFTXH5] Where TXNUUID = [F:SFTX]TXNUUID & MACFLG <> [V]CST_AYES & UTCENDDATTIM = [SFTX]UTCENDDATTIM
+#          For [SFTXH5]
+#            TRKLABTIME = TRKLABTIME + ([SFTXH5]DURATION * [SFTXH5]NUMJOBS)
+#          Next
+#          Filter [SFTXH5]
+#
+#          If [SFTX]UTCSTRDATTIM <> AVOID.ADATTIM #Do not include elapsed
+#            Filter [SFTXH5] Where STRTXNUUID = [SFTX]STRTXNUUID & TXNUUID <> [F:SFTX]TXNUUID & MACFLG <> [V]CST_AYES &
+#&                                 SFTTYP = [SFTX]SFTTYP & VCRNUM = [SFTX]VCRNUM & OPENUM = [SFTX]OPENUM &
+#&                                 UTCSTRDATTIM >= [SFTX]UTCSTRDATTIM & UTCENDDATTIM <= [SFTX]UTCENDDATTIM
+#            For [SFTXH5]
+#              TRKLABTIME = TRKLABTIME + ([SFTXH5]DURATION * [SFTXH5]NUMJOBS)
+#            Next
+#            Filter [SFTXH5]
+#          Endif
+#
+#          TRKTIME = TRKLABTIME/LABCOE
+#        Else
+#          Raz TRKEMPNUM, TRKTXNUUID
+#
+#          #Loop through SFT transaction records
+#          Filter [SFTX5] Where STRTXNUUID = [SFTX]STRTXNUUID & MACFLG <> [V]CST_AYES & UTCENDDATTIM <> AVOID.ADATTIM
+#          For [SFTX5]
+#            #Jira 50317.n 08/08/17 by CATUA use STRTXNUUID to fill TRKTXNUUID collection
+#            #Collect all uuids
+#            If !find([SFTX5]STRTXNUUID,TRKTXNUUID)
+#              TRKTXNUUID(maxtab(TRKTXNUUID)+1) = [SFTX5]STRTXNUUID
+#            Endif
+#            #Collect all employees
+#            If !find([SFTX5]EMPNUM,TRKEMPNUM)
+#              TRKEMPNUM(maxtab(TRKEMPNUM)+1) = [SFTX5]EMPNUM
+#            Endif
+#
+#            TRKLABTIME = TRKLABTIME + ([SFTX5]DURATION * [SFTX5]NUMJOBS)
+#          Next
+#          Filter [SFTX5]
+#
+#          #Loop through SFT transaction history records
+#          Filter [SFTXH5] Where STRTXNUUID = [F:SFTX]STRTXNUUID & MACFLG <> [V]CST_AYES
+#          For [SFTXH5]
+#            #Jira 50317.n 08/08/17 by CATUA use STRTXNUUID to fill TRKTXNUUID collection
+#            #Collect all uuids
+#            If !find([SFTXH5]STRTXNUUID,TRKTXNUUID)
+#              TRKTXNUUID(maxtab(TRKTXNUUID)+1) = [SFTXH5]STRTXNUUID
+#            Endif
+#            #Collect all employees
+#            If !find([SFTXH5]EMPNUM,TRKEMPNUM)
+#              TRKEMPNUM(maxtab(TRKEMPNUM)+1) = [SFTXH5]EMPNUM
+#            Endif
+#
+#            TRKLABTIME = TRKLABTIME + ([SFTXH5]DURATION * [SFTXH5]NUMJOBS)
+#          Next
+#          Filter [SFTXH5]
+#
+#          For I = 1 To maxtab(TRKEMPNUM)
+#            Raz EMPDURATION
+#            #Jira 50317.n 08/08/17 by CATUA use STRTXNUUID to fill TRKTXNUUID collection
+#            #Loop through SFT transaction records
+#            Filter [SFTX5] Where MACFLG <> [V]CST_AYES and EMPNUM = TRKEMPNUM(I) and find(STRTXNUUID,TRKTXNUUID)
+#            For [SFTX5]
+#              EMPDURATION = EMPDURATION + ([SFTX5]DURATION * [SFTX5]NUMJOBS)
+#            Next
+#            Filter [SFTX5]
+#            #Jira 50317.n 08/08/17 by CATUA use STRTXNUUID to fill TRKTXNUUID collection
+#            #Loop through SFT transaction history records
+#            Filter [SFTXH5] Where MACFLG <> [V]CST_AYES and EMPNUM = TRKEMPNUM(I) and find(STRTXNUUID,TRKTXNUUID)
+#            For [SFTXH5]
+#              EMPDURATION = EMPDURATION + ([SFTXH5]DURATION * [SFTXH5]NUMJOBS)
+#            Next
+#            Filter [SFTXH5]
+#
+#            If TRKEMPTIME < EMPDURATION
+#              TRKEMPTIME = EMPDURATION
+#            Endif
+#          Next
+#
+#          If TRKMACTIME > TRKEMPTIME
+#            TRKTIME = (TRKLABTIME / LABCOE) + (TRKMACTIME - TRKEMPTIME)
+#          Else
+#            TRKTIME = (TRKLABTIME / LABCOE)
+#          Endif
+#        Endif
+
+    Endif
+  Endif
+
+  #Determine which time unit to use - hours or minutes
+  If [F:MFO]TIMUOMCOD=1
+      TRKTIME = TRKTIME / 60
+  Endif
+  #Jira 46517.en
+
+  [M:VAOT]SCANUM1 = ISCANUM
+
+  Case ISFCTYP
+    When 4  # setup
+      [M:VAOT]CPLSETTIM = TRKTIME
+      Raz [M:VAOT]CPLOPETIM
+    When 5  # run
+      [M:VAOT]CPLOPETIM = TRKTIME
+      Raz  [M:VAOT]CPLSETTIM
+  Endcase
+
+  Call AM_CPLOPETIM([M:VAOT]CPLOPETIM) From VXAOT
+
+  #Checks if operation is complete
+  [M:VAOT]CLEFLG = ICLOSE
+
+  #Check how things are going
+  If [M]MFGNUM="" |  [M]OPENUM=0
+     OERR = 1 : OERRMSG = mess(17,7750,1) : Goto OPERATION_TRACKING_END
+  Endif
+
+  BOITE = "VXAOT"
+
+  #Initializes data to be entered into Manufacture tracking - operations table
+  Gosub OK_MBO From ENVADC
+
+  #If there is nothing to post, get out
+  If [M:MBO]NBLIG=0
+    OERR=1 : OERRMSG=mess(17,106,1) : Goto OPERATION_TRACKING_END
+  Endif
+
+  #Creates tracking record for Manufacture tracking - operations table
+  Gosub CRE_MBO From ENVADC
+
+  #Error in tracking generation
+  If !FICTECOK
+      OERR = 1 : OERRMSG = mess(32,2422,1)
+  Endif
+
+  #Tracking record not generated
+  If [M:MTOK]MFGTRKNUM=""
+      OERR = 1 : OERRMSG = mess(33,2422,1)
+  Else
+      OMFGTRKNUM = [M:MTOK]MFGTRKNUM #Tracking number
+      OMATTRKLIN = [M:MTMK]MATTRKLIN #Work order line
+      OOPETRKLIN = [M:MTOK]OPETRKLIN #Operation line
+  Endif
+
+  #Closes global variables for MBO
+  Gosub FIN_MBO From ENVADC
+
+  #Close all tables opened in this Gosub
+  LogicClose File [MFG], [ACV], [ROO], [SFTX5], [SFTXH5] #Jira 46517.n 07/06/17 by CATUA
+  Raz [M:MTOK]
+
+  OPERATION_TRACKING_END:
+  GVTMOD=0
+End
+
+####################################################################################
+$TERMINE
+If !GSERVEUR
+    Call ECR_TRACE(num$(KOUNT) - mess(103,141,1),0) From GESECRAN
+    Call FERME_TRACE From LECFIC
+    TRA = 1 # display trace file
+Endif
+
+  Raz [M:LEV]
+  Affzo [M:LEV]
+Return
+
+####################################################################################
+$ERRBATCH
+Call ECR_TRACE(errmes$(errn)-num$(errl)-errm,1) From GESECRAN
+End
+
+####################################################################################
+# Screen Field Actions
+####################################################################################
+
+Subprog C_CPLWSTSTR(VALEUR)
+Variable Char    VALEUR()
+If VALEUR="" : End : Endif
+Read [MWS]WST0=VALEUR
+If fstat
+    GMESSAGE= mess(133,193,1)
+    mkstat=2
+Endif
+End
+
+####################################################################################
+Subprog C_CPLWSTEND(VALEUR)
+Variable Char    VALEUR()
+If VALEUR="" : End : Endif
+Read [MWS]WST0=VALEUR
+If fstat
+    GMESSAGE= mess(133,193,1)
+    mkstat=2
+Endif
+End
+
+####################################################################################
+Subprog AM_EMPNUMSTR(VALEUR)
+Variable Decimal VALEUR
+[M]EMPNUMEND = VALEUR
+End
+
+####################################################################################
+Subprog AM_SHFDATSTR(VALEUR)
+Variable Date    VALEUR
+[M]SHFDATEND = VALEUR
+End
+
+####################################################################################
+Subprog AM_VCRNUMSTR(VALEUR)
+Variable Char    VALEUR()
+[M]VCRNUMEND = VALEUR
+End
+
+####################################################################################
+Subprog AM_OPENUMSTR(VALEUR)
+Variable Decimal VALEUR
+[M]OPENUMEND = VALEUR
+End
+
+####################################################################################
+Subprog AM_CPLWSTSTR(VALEUR)
+Variable Char    VALEUR()
+[M]CPLWSTEND = VALEUR
+End
+
+######################################################################################
+
+Subprog AM_MOLNUM(VALEUR)
+Variable Char    VALEUR()
+GMOLNUM = VALEUR
+End
+
+
+######################################################################################
+Subprog C_TEAMNUM(VALEUR)
+Variable Decimal VALEUR
+If VALEUR=0 : End : Endif
+
+  Read [TMA]TMA0=VALEUR
+  If !find([TMA]EMPTYP,2,3) #Jira 53701.n possibility EMPTYP can be 0 or 1 for employee
+  #If [F:TMA]EMPTYP = 1
+    GMESSAGE= func AFNC.MES1(mess(119,2422,1), num$(VALEUR))
+    mkstat=2
+  Endif
+End
+
+
+######################################################################################
+Subprog C_EMPNUMSTR(VALEUR)
+Variable Decimal VALEUR
+  If VALEUR = 0 : End : Endif
+
+  Read [TMA]TMA0=VALEUR
+  If find([TMA]EMPTYP,2,3) #Jira 53701.n possibility EMPTYP can be 0 or 1 for employee
+  #If [F:TMA]EMPTYP <> 1
+    GMESSAGE= func AFNC.MES1(mess(97,2422,1), num$(VALEUR))
+    mkstat=2
+    End
+  Endif
+
+  If [M]TEAMNUM <> 0
+    Read [SFTTM]SFTTM1 = [M]TEAMNUM;VALEUR
+    If fstat
+      GMESSAGE= func AFNC.MES2(mess(118,2422,1), num$(VALEUR), num$([M]TEAMNUM))
+      mkstat=2
+      End
+    Endif
+  Endif
+End
+
+######################################################################################
+Subprog C_EMPNUMEND(VALEUR)
+Variable Decimal VALEUR
+
+  If VALEUR = 0 : End : Endif
+
+  Read [TMA]TMA0=VALEUR
+  If find([TMA]EMPTYP,2,3) #Jira 53701.n possibility EMPTYP can be 0 or 1 for employee
+  #If [F:TMA]EMPTYP <> 1
+    GMESSAGE= func AFNC.MES1(mess(97,2422,1), num$(VALEUR))
+    mkstat=2
+    End
+  Endif
+
+  If [M]TEAMNUM <> 0
+    Read [SFTTM]SFTTM1 = [M]TEAMNUM;VALEUR
+    If fstat
+      GMESSAGE= func AFNC.MES2(mess(118,2422,1), num$(VALEUR), num$([M]TEAMNUM))
+      mkstat=2
+      End
+    Endif
+  Endif
+End

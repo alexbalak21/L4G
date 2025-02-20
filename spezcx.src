@@ -1,0 +1,7 @@
+$ACTION
+If ACTION = "AVANT_CHOI" : Gosub ZEXETEST : Endif
+Return
+
+$ZEXETEST
+If !clalev ([F:BPA]) : Local File BPADDRESS [BPA] :  Endif
+Return
