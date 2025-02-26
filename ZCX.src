@@ -1,2 +1,5 @@
 if
 endif
+
+If !clalev ([F:BOM]) : Local File BOM [BOM] :  Endif
+If !clalev ([F:ZATX]) : Local File ATEXTRA [ZATX] :  Endif

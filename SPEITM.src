@@ -1,0 +1,54 @@
+#ABKV - 21/02/25 - 3005884 : MAJ auto de la designation Article dans la table BOM à la modification de celle-ci sur GESITM
+#FBO le 24/11/2022
+#Routine init nb étiquette pour l'ensemble des articles de la base SBM
+#N.B. : il faut avoir chargé par SQL au préalable la table ITMMASTER avec le nbr d'étiquette qui correspond.
+Infbox 'Start'
+Local File ZNBETIQ [ZNE]
+Local File ITMMASTER [ZITM]
+Local Integer ZCOUNT : ZCOUNT=0
+Trbegin [F:ZNE]
+Delete [F:ZNE] Where [F:ZNE]ZITMREF<>' '
+Commit
+For [F:ZITM]
+  If [F:ZITM]ZNBE>0
+    Call MAJ_ZNBETIQ("C",[F:ZITM]ITMREF,[F:ZITM]ZNBE)
+    ZCOUNT+=1
+  Endif
+Next
+Infbox 'Terminé : nb articles traités='-num$(ZCOUNT)
+End
+####################################
+
+#FBO03062022 : gestion spécifique du nombre d'étiquettes pour Karma WMS
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+
+Case ACTION
+ When "RAZCRE"        : Gosub RAZCRE    #FBO03062022.n
+ When "RAZDUP"        : Gosub RAZDUP    #FBO03062022.n
+ When "APRES_MOD"     : Gosub APRES_MOD    #FBO03062022.n
+ When "APRES_CRE"     : Gosub APRES_CRE    #FBO03062022.n
+ When "AP_ANNULE"     : Gosub AP_ANNULE    #FBO03062022.n
+ When "MODIF"         : Gosub MODIF        #ABKV:3005884
+ When Default
+Endcase
+Return
+
+
+###############################################################################################################
+#ABKV - 3005884 : MAJ auto de la designation Article dans la table BOM à la modification de celle-ci sur GESITM
+$MODIF
+If !clalev ([F:ZBOH]) : Local File BOM [ZBOH] :  Endif #Entetes de nomencaltures
+If !clalev ([F:ZAXX]) : Local File ATEXTRA [ZAXX] :  Endif #Traductions
+Filter [ZBOH] Where ITMREF = [M:ITM0]ITMREF
+For [ZBOH]
+# Selectionne le bon texte Traduisible
+  Read [ZAXX]AXX0 = 'BOM'; "BOMDESAXX" ; GLANGUE ; [ZBOH]IDENT1 ; num$([ZBOH]USESTA)
+  If fstat : Raz [ZAXX] : Return Endif
+  [ZAXX]TEXTE = [M:ITM0]DES1AXX
+  Rewrite [ZAXX]
+Next
+Close Local File [F:ZBOH]
+Close Local File [F:ZAXX]
+Return
+###############################################################################################################
