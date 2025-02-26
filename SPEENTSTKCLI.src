@@ -14,14 +14,17 @@ $ISSQLYCTL
  [M:ALP]PECQLYCTL =  2
 Return
 
-###########################
+##################################################################################
 # ABKV - 13/02/25 - 4869SSTO007    #
-###########################
 $CALPER
 Local Shortint YSHL : YSHL = 0 # MULTIPLE DE L'UNITE DE TEMPS
 Local Integer YUOM # UNITE DE TEMPS
-If GPE : Return : Endif
-If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK" or GFONCTION="FUNSFTVAL"
+#Sur l'écran "Saisie complément lot" permet de desactiver le calcul et de recalculer en fonction des valeurs modifiées à l'écran
+If GPE
+#  Infbox "Péremption Standard:" - num$(LPER)
+  Return
+Endif
+If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK" or GFONCTION="FUNSFTVAL" or GFONCTION="FUNBENCHO"
 #La table Ordres fabrication - articles (MFI) est déjà ouverte à la ligne de L'OF
   #SI Type OF different de "Client"
   If [MFI]BPCTYPDEN <> 2 : Return : Endif
@@ -57,37 +60,7 @@ If GFONCTION = "FUNBENCHI" or GFONCTION = "GESMTK" or GFONCTION="FUNSFTVAL"
          LPER  = nday$(WJOU)
       Endif
   Endif
-  Infbox "Péremption Client:" - num$(LPER) 
+  Infbox "Péremption Client:" - num$(LPER)
 Endif
 Return
-########################
-Mermoz Pinel, 69008 Lyon
-
-$RECALPER
-#SI MULTIPLE = 0 NE FAIT RIEN
-      If YSHL = 0  : Return : Endif
-      # YUOM = 1 : Unité Temps : Jour
-      If YUOM =  1
-         WJOU =  nday(LREF)
-         WJOU += YSHL
-         LPER =  nday$(WJOU)
-      Else
-         # YUOM = 2 : Unité Temps : Mois
-         LPER = addmonth(LREF, YSHL)
-      Endif
-
-      # Si arrondi fin de mois
-      If LCOD = 3
-         LPER = eomonth(LPER)
-      Endif
-      # Si arrondi debut mois suivant
-      If LCOD =  4
-         LPER =  eomonth(LPER)
-         WJOU =  nday(LPER)
-         WJOU += 1
-         LPER  = nday$(WJOU)
-      Endif
-  Endif
-  Infbox "Péremption Client:" - num$(LPER) 
-Endif
-Return
+###########################################################

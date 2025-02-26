@@ -1,0 +1,1150 @@
+
+# L'ouverture de la fenêtre ne se fera que si:
+#  - le premier bit de GOUVENT =1
+#  - Quantité en US de la ligne >0
+#  - GOUVLOT <> 1  (=ouverture auto avec rien à renseigner)
+
+# Paramètres action SAIENTLO
+# param 1  = code ecran
+# param 2  = code fichier transaction
+
+$ACTION
+Case ACTION
+  When "INIT"     : Gosub INIT_ENTL
+  When "OUVRE"    : Gosub OUVRE_ENTL
+  When "SETBOUT"  : Gosub SETBOUT_ENTL
+  When "DEBUT"    : Gosub DEBUT_ENTL
+  When "OK"       : Gosub OK_ENTL
+  When "END"      : Gosub END_ENTL
+Endcase
+Return
+############################################################
+$INIT_ENTL
+GPOINT = "OPENENTL"                              # hcb X3-93050
+Gosub  ENTREE From EXEFNC                        # hcb X3-93050
+If (mod(GOUVENT,2)=0 | GOUVLOT = 1)
+   LQTE = 0
+   FIN  = 1
+   Return
+Endif
+
+Return
+############################################################
+$OUVRE_ENTL
+If clalev([M:ENTL])=0 Local Mask STOENTLOT [ENTL] Endif  #  ecran saisie complement lot
+If !clalev([ECS]) : Local File ECCSTA [ECS] : Endif   # hcb 71276
+If !clalev([EVL]) : Local File ECCVAL [EVL] : Endif   # hcb 71276
+
+Raz [M:ENTL]
+#-- recuperation des elements parametres action
+#-- recuperation ecran
+Local    Char     LABR : LABR    =      PARAM(1)
+#recuperation Fichier parametre transaction document
+#Local    Char    LFIC  : LFIC    =      PARAM(2)
+#recuperation numero de ligne
+Local Integer    LLIG  : LLIG    =  val(PARAM(3))
+
+Local     Char    LABRMSK
+LABRMSK  = "[M:"+LABR+"]"
+
+Local Char    LABRDOC(5) # Abréviation de l'écran du document (document d'entrée ou STOENT ou STOENTM)
+Local Char    LABRDOC1 # Abréviation de l'écran du document (document d'entrée ou STOENT ou STOENTM)   # hcb 110836
+Local Integer LLIGDOC    # Indice de la ligne du document (document d'entrée ou STOENT ou STOENTM)
+Local Integer LLIGCPT    # Indice de la ligne qui contient les champs complément lot
+Local Decimal LQTE       # Le complément lot ne peut être ouvert que si la quantité est >0
+Local Integer LORI       # Origine de l'appel de la fenêtre complément lot (1=STOENT, 2=document d'entrée, 3=STOENTM)
+Local Integer LWSTOSEQ   # Permet de repérer la ligne dans STOENTW, quand on vient du document d'entrée
+
+Global Integer GWFEALOTLEV                          # hcb 71276
+GWFEALOTLEV  = GFEALOTLEV                           # hcb 71276
+
+LQTE =0
+Case LABR
+    When "ENT"   : LORI   =  1
+    When "ENM"   : LORI   =  3
+    When "STQ1"  : LORI   =  4
+    When "SQD"   : LORI   =  5
+    When "SMP"   : LORI   =  6                      # hcb V6CQ
+    When Default : LORI   =  2
+Endcase
+If evalue("dim("+LABRMSK+"WSTOSEQ(LLIG))")>0
+    If evalue("dim("+LABRMSK+"WSTOSEQ(LLIG))")=1
+        LWSTOSEQ = evalue(LABRMSK+"WSTOSEQ")
+    Else
+        LWSTOSEQ = evalue(LABRMSK+"WSTOSEQ(LLIG)")
+    Endif
+Else
+    LWSTOSEQ = 0
+Endif
+# Si l'origine est le document, la référence est STOENTW
+If find(LORI,2,4)
+    LLIGDOC = LLIG
+    LABRDOC = LABR
+    Case LORI
+        When 2 : LABR = "ENTW"
+                 LABRMSK  = "[M:ENTW]"
+                 LZONQUS = [M:ENTW]WZONQUS
+        When 4 : LABR = "SGW"
+                 LABRMSK  = "[M:SGW]"
+                 LZONQUS = "QTYSTU"
+    Endcase
+    LLIG    =  evalue("find ( LWSTOSEQ, "+LABRMSK+"WSTOSEQ(0.."+LABRMSK+"NBLIG))-1")
+    If LLIG>=0
+        LQTE =  evalue("[M:"+LABRDOC+"]"+LZONQUS+"(LLIGDOC)")
+        LLIGCPT = evalue(LABRMSK+"NUMLIGLOT( LLIG )")
+    Else
+        FIN = 1
+        Return
+    Endif
+Elsif LORI=5
+    LQTE    = evalue(LABRMSK+"QTYSTU(LLIG)")
+    LLIGCPT = 0
+Elsif LORI=6                                        # hcb V6CQ
+    LQTE    = evalue(LABRMSK+"QTYSTU(LLIG)")        # hcb V6CQ
+    LLIGDOC = LLIG                                  # hcb V6CQ
+    LABRDOC = LABR                                  # hcb V6CQ
+    LLIGCPT = LLIGDOC                               # hcb V6CQ
+Else
+    LQTE    = evalue(LABRMSK+"QTYSTU(LLIG)")
+    LLIGCPT = evalue(LABRMSK+"NUMLIGLOT(LLIG)")
+Endif
+
+If mod(GOUVENT,2)=0 | LQTE=0 | LLIGCPT<0
+   LQTE = 0
+   FIN  = 1
+   Return
+Endif
+
+LABRDOC1  = "[M:"+LABRDOC+"]"                  # hcb 110836
+
+Gosub CHARGE_ENTL
+
+Return
+
+############################################################
+$CHARGE_ENTL
+Case LORI
+   When 2       : [M:ENTL]ITMREF = evalue("[M:"+LABRDOC+"]ITMREF(LLIGDOC)")
+   When 4       : [M:ENTL]ITMREF = evalue("[M:"+LABRDOC+"]ITMREF")
+   When Default : [M:ENTL]ITMREF = evalue(LABRMSK+"ITMREF")
+Endcase
+If [F:ITM]ITMREF<>[M:ENTL]ITMREF
+    Read [ITM]ITM0=[M:ENTL]ITMREF
+Endif
+If dim([F:ITM]ECCSTO) > 0 & [F:ITM]ECCSTO >1      # hcb 71276
+   GFEALOTLEV = 2                                 # hcb 71276
+Endif                                             # hcb 71276
+
+If dim([M:ENTL]LOT)>0
+   [M:ENTL]LOT     =  evalue(LABRMSK+"LOT(LLIGCPT)")
+   [M:ENTL]BPSLOT  =  evalue(LABRMSK+"BPSLOT(LLIGCPT)")
+Endif
+If dim([M:ENTL]SLO)>0 & [F:ITM]LOTMGTCOD=4
+   [M:ENTL]SLO     =  evalue(LABRMSK+"SLO(LLIGCPT)")
+   If LORI=2
+      [M:ENTL]SLOF =  evalue("[M:"+LABRDOC+"]SLOF(LLIGDOC)")
+   Else
+      [M:ENTL]SLOF =  [M:ENTL]SLO
+   Endif
+Endif
+If dim([M:ENTL]POT)>0
+   [M:ENTL]POT     =  evalue(LABRMSK+"POT    (LLIGCPT)")
+Endif
+#                                                           # Hcb 71276 deb
+
+If dim([M:ENTL]ECCVALMAJ)>0
+   If LABR = "ENTW" | LABR = "SGW"                                                        # hcb 111781
+      If evalue("dim([M:"+LABRDOC+"]ECCVALMAJ)") > 0
+         [M:ENTL]ECCVALMAJ     =  evalue("[M:"+LABRDOC+"]ECCVALMAJ(LLIGDOC)")
+         [M:ENTL]ECCVALMIN     =  evalue("[M:"+LABRDOC+"]ECCVALMIN(LLIGDOC)")
+         [M:ENTL]ECCSAIFLG     =  evalue("[M:"+LABRDOC+"]ECCSAIFLG(LLIGDOC)")
+      Endif
+   Else
+#                                                                                         # hcb 111781 deb
+      If LABR = "SQD"
+         If evalue("dim("+LABRMSK+"ECCVALMAJ)") > 0
+            [M:ENTL]ECCVALMAJ     =  evalue(LABRMSK+"ECCVALMAJ")
+            [M:ENTL]ECCVALMIN     =  evalue(LABRMSK+"ECCVALMIN")
+            [M:ENTL]ECCSAIFLG     =  evalue(LABRMSK+"ECCSAIFLG")
+         Endif
+#                                                                                         # hcb 111781 fin
+      Else
+         If evalue("dim("+LABRMSK+"ECCVALMAJAFF)") > 0
+            [M:ENTL]ECCVALMAJ     =  evalue(LABRMSK+"ECCVALMAJAFF (LLIG)")
+            [M:ENTL]ECCVALMIN     =  evalue(LABRMSK+"ECCVALMINAFF (LLIG)")
+            [M:ENTL]ECCSAIFLG     =  evalue(LABRMSK+"ECCSAIFLG    (LLIG)")
+         Endif
+      Endif                                                                               # hcb 111781
+   Endif
+   If [M:ENTL]ECCVALMAJ <> ""
+      Read [ECS]ECS0=[M:ENTL]ITMREF;[M:ENTL]ECCVALMAJ
+      If fstat
+         Raz [F:ECS]
+      Endif
+      [M:ENTL]ECCSTA = [F:ECS]ECCSTA
+   Endif
+#                                                           # Hcb 71276 fin
+
+Endif
+[M:ENTL]ACT        =  evalue(LABRMSK+"ACT    (LLIGCPT)")
+If dim([M:ENTL]SHLDAT)>0
+   [M:ENTL]REFPER     =  evalue(LABRMSK+"REFPER    (LLIGCPT)")
+   [M:ENTL]SHL        =  evalue(LABRMSK+"SHL       (LLIGCPT)")
+   [M:ENTL]SHLDAT     =  evalue(LABRMSK+"SHLDAT    (LLIGCPT)")
+   [M:ENTL]SHLUOM     =  evalue(LABRMSK+"SHLUOM    (LLIGCPT)")              # hcb V6PER
+   [M:ENTL]SHLLTI     =  evalue(LABRMSK+"SHLLTI    (LLIGCPT)")              # hcb V6PER
+   [M:ENTL]SHLLTIUOM  =  evalue(LABRMSK+"SHLLTIUOM (LLIGCPT)")              # hcb V6PER
+   [M:ENTL]NEWLTIDAT  =  evalue(LABRMSK+"NEWLTIDAT (LLIGCPT)")              # hcb V6PER
+   [M:ENTL]DLU        =  evalue(LABRMSK+"DLU       (LLIGCPT)")              # hcb V6PER
+   [M:ENTL]DLUDAT     =  evalue(LABRMSK+"DLUDAT    (LLIGCPT)")              # hcb V6PER
+   If [M:ENTL]DLUDAT <> [0/0/0] & [M:ENTL]REFPER <> [0/0/0]
+#                                                                           # hcb dlu deb
+      If [F:ITM]EXYMGTCOD = 1 | [F:ITM]EXYMGTCOD= 3 | [F:ITM]EXYMGTCOD= 4
+         Raz [M:ENTL]DLULTI
+      Else
+         [M:ENTL]DLULTI     =  nday([M:ENTL]DLUDAT) -nday([M:ENTL]REFPER)
+      Endif
+#                                                                           # hcb dlu fin
+   Endif
+Endif
+[M:ENTL]USRFLD1       =  evalue(LABRMSK+"USRFLD1   (LLIGCPT)")
+[M:ENTL]USRFLD2       =  evalue(LABRMSK+"USRFLD2   (LLIGCPT)")
+[M:ENTL]USRFLD3       =  evalue(LABRMSK+"USRFLD3   (LLIGCPT)")
+[M:ENTL]USRFLD4       =  evalue(LABRMSK+"USRFLD4   (LLIGCPT)")
+
+
+Raz [M:ENTL]WFEALOTLEV                                                   # hcb unicite
+If [F:ITM]LOTMGTCOD=4                                                    # hcb unicite
+   [M:ENTL]WFEALOTLEV = mess(90,187,1) + " : " + mess(GFEALOTLEV,2773,1) # hcb unicite
+Endif                                                                    # hcb unicite
+
+# hcb 101017 deb
+GPOINT = "MOD_ENTL"
+Gosub  ENTREE From EXEFNC
+# hcb 101017 end
+
+Return
+
+############################################################
+$SETBOUT_ENTL
+If GCONSULT
+  ETABOU(GVALI) = 0
+Endif
+Return
+############################################################
+$DEBUT_ENTL
+#
+If GCONSULT
+  Diszo [ENTL]1-99
+Else
+  Actzo [ENTL]1-99
+  #--- Bug 63129
+  #-- si pas appel depuis contrôle qualité
+  #If !find(LORI,4,5)
+    Diszo [M:ENTL]BPSLOT
+  #Endif
+  #---
+  Gosub GRISAGE_ENTL
+Endif
+
+Affzo [ENTL]1-99
+
+If dim([M:ENTL]SLO)>0                           # hcb unicite
+   If GFEALOTLEV = 2 | [F:ITM]LOTMGTCOD <> 4    # hcb unicite
+      Local Char WINVSLO                        # hcb unicite
+      WINVSLO="-K:"+num$(GLONSLO)+"X"           # hcb unicite
+      Chgfmt [M:ENTL]SLO  With WINVSLO          # hcb unicite
+      Chgfmt [M:ENTL]SLOF With WINVSLO          # hcb unicite
+   Endif                                        # hcb unicite
+Endif
+
+#                                                           # Hcb 71276 deb
+If dim([M:ENTL]ECCVALMAJ)>0
+   Local Char WINVECC
+   WINVECC="-K:"+num$(GLONECS)+"X"
+   If [F:ITM]ECCSTO < 2
+      Chgfmt [M:ENTL]ECCVALMAJ  With WINVECC
+      Chgfmt [M:ENTL]ECCVALMIN  With WINVECC
+      Chgfmt [M:ENTL]ECCSTA     With WINVECC
+   Endif
+   If [F:ITM]ECCSTO = 2
+      Chgfmt [M:ENTL]ECCVALMIN  With WINVECC
+   Endif
+Endif
+#                                                           # Hcb 71276 fin
+
+
+
+Return
+
+############################################################
+# Validation
+$OK_ENTL
+
+#                                                               hcb 112262 deb
+If [F:ITM]EXYMGTCOD > 1
+   If [M:ENTL]SHLDAT=[0/0/0]
+      GERR=1 : GMESSAGE=mess(382,184,1)
+      FIN=0  : Return
+   Endif
+Endif
+#                                                               hcb 112262 fin
+
+Local Integer LSUITE
+Local Integer I
+Local Integer NBL
+Local Integer WOK
+Gosub STOCKAGE_LOT
+
+# Si ligne de contrôle qualité, màj des zones péremption
+If LORI=4 | LORI = 5    # hcb 76220
+   If dim([M:STQ1]REFPER)>0
+      [M:STQ1]REFPER(LLIGDOC) = [M:ENTL]REFPER
+      Affzo [M:STQ1]REFPER(LLIGDOC)
+   Endif
+   If dim([M:STQ1]SHLDAT)>0
+      [M:STQ1]SHLDAT(LLIGDOC) = [M:ENTL]SHLDAT
+      Affzo [M:STQ1]SHLDAT(LLIGDOC)
+   Endif
+Endif
+
+
+Local Integer LMOD
+Raz LMOD
+#                                                           # Hcb 71276 deb
+
+If LABR = "ENTW"
+   Default Mask "["+LABRDOC+"]"
+   If evalue("dim([M:"+LABRDOC+"]ECCVALMAJ)") > 0
+      If [M]ECCVALMAJ(LLIGDOC) <> [M:ENTL]ECCVALMAJ
+         Assign "[M:"+LABRDOC+"]ECCVALMAJ(LLIGDOC)" With [M:ENTL]ECCVALMAJ
+         Affzo ECCVALMAJ (LLIGDOC)
+         LMOD = 1
+      Endif
+   Endif
+   If evalue("dim([M:"+LABRDOC+"]ECCVALMIN)") > 0
+      If [M]ECCVALMIN(LLIGDOC) <> [M:ENTL]ECCVALMIN
+         Assign "[M:"+LABRDOC+"]ECCVALMIN(LLIGDOC)" With [M:ENTL]ECCVALMIN
+         Affzo ECCVALMIN (LLIGDOC)
+         LMOD = 1
+      Endif
+   Endif
+Else
+    Default Mask "["+LABR+"]"
+    If evalue("dim([M:"+LABR+"]ECCVALMAJAFF)") > 0
+       If GFEALOTLEV = 2 & [F:ITM]LOTMGTCOD = 4
+          If find (LABR,"ENT","ENM")
+             Local Integer WI
+             For WI = 0 To [M]NBLIG-1
+                 If [M]ECCVALMAJAFF(WI) <> [M:ENTL]ECCVALMAJ
+                    Assign "[M:"+LABR+"]ECCVALMAJAFF(WI)" With [M:ENTL]ECCVALMAJ
+                    Affzo ECCVALMAJAFF (WI)
+                    LMOD = 1
+                 Endif
+                 If evalue("dim([M:"+LABR+"]ECCVALMIN)") > 0
+                    If [M]ECCVALMINAFF(WI) <> [M:ENTL]ECCVALMIN
+                       Assign "[M:"+LABR+"]ECCVALMINAFF(WI)" With [M:ENTL]ECCVALMIN
+                       Affzo ECCVALMINAFF (WI)
+                      LMOD = 1
+                    Endif
+                 Endif
+             Next WI
+          Endif
+       Else
+          If [M]ECCVALMAJAFF(LLIG) <> [M:ENTL]ECCVALMAJ
+             Assign "[M:"+LABR+"]ECCVALMAJAFF(LLIG)" With [M:ENTL]ECCVALMAJ
+             Affzo ECCVALMAJAFF (LLIG)
+             LMOD = 1
+          Endif
+          If evalue("dim([M:"+LABR+"]ECCVALMIN)") > 0
+             If [M]ECCVALMINAFF(LLIG) <> [M:ENTL]ECCVALMIN
+                Assign "[M:"+LABR+"]ECCVALMINAFF(LLIG)" With [M:ENTL]ECCVALMIN
+                Affzo ECCVALMINAFF (LLIG)
+                LMOD = 1
+             Endif
+          Endif
+       Endif
+    Endif
+Endif
+
+If dim([M:ENTL]ECCVALMAJ)>0
+   Local Char LMABR(10)
+   If LABR = "ENTW"
+      LMABR = "[M:"+LABRDOC+"]"
+   Else
+      LMABR = "[M:"+LABR+"]"
+      LABRDOC = LABR
+   Endif
+   Local Integer LRET
+   Raz LRET
+   If evalue("dim([M:"+LABRDOC+"]ECCSAIFLG)") > 0 & evalue("[M:"+LABRDOC+"]ECCSAIFLG(LLIGDOC)") = 3 & LMOD =1
+      NBL =  evalue(LMABR+"NBLIG")
+      LSUITE = 1
+      For I=0 To NBL-1
+          If I <> LLIGDOC
+             If evalue("dim([M:"+LABRDOC+"]ITMREF)") > 1
+                If evalue(LMABR+"ITMREF(I)")  <> [M:ENTL]ITMREF
+                   LSUITE = 0
+                Endif
+             Endif
+             If LSUITE
+                If evalue(LMABR+"LOT(I)") = [M:ENTL]LOT
+                   LRET = 1
+                   Break
+               Endif
+             Else
+               LSUITE = 1
+             Endif
+          Endif
+      Next I
+      If LRET = 1
+# le lot est deja renseigne avec une version differente
+         Call OUINON(mess(399,184,1),WOK) From GESECRAN
+         If WOK <> 2
+            Return
+         Else
+            NBL =  evalue(LMABR+"NBLIG")
+            LSUITE = 1
+            For I=0 To NBL-1
+                If I <> LLIGDOC
+                   If evalue("dim([M:"+LABRDOC+"]ITMREF)") > 1
+                      If evalue(LMABR+"ITMREF(I)") <> [M:ENTL]ITMREF
+                         LSUITE = 0
+                      Endif
+                   Endif
+                   If LSUITE
+                      If evalue(LMABR+"LOT(I)") = [M:ENTL]LOT
+                         If evalue("dim([M:"+LABRDOC+"]ECCVALMAJ)") > 0
+                            Assign "[M:"+LABRDOC+"]ECCVALMAJ(I)" With [M:ENTL]ECCVALMAJ
+                            Affzo ECCVALMAJ (I)
+                         Endif
+                         If evalue("dim([M:"+LABRDOC+"]ECCVALMIN)") > 0
+                            Assign "[M:"+LABRDOC+"]ECCVALMIN(I)" With [M:ENTL]ECCVALMIN
+                            Affzo ECCVALMIN (I)
+                         Endif
+                      Endif
+                   Else
+                      LSUITE = 1
+                   Endif
+                Endif
+            Next I
+         Endif
+      Endif
+   Endif
+Endif
+#                                                           # Hcb 71276 fin
+
+Return
+
+############################################################
+$END_ENTL
+
+#--- Bug 76480
+If [F:ITM]EXYMGTCOD > 1
+   If [M:ENTL]SHLDAT=[0/0/0]
+      GERR=1 : GMESSAGE=mess(382,184,1)
+      FIN=0  : Return
+   Endif
+Endif
+#---
+
+If mod(GOUVLOT,2)=1
+   Gosub STOCKAGE_LOT
+Endif
+GFEALOTLEV  = GWFEALOTLEV                           # hcb 71276
+
+Return
+############################################################
+# Chargement ecran  à partir de STOENTLOT (complement lot)
+############################################################
+$STOCKAGE_LOT
+Local Integer LOK
+Local Integer LMODIF     # Indique si le complément lot est modifiable (1=non, 2=oui)
+Local Char    WSLO(GLONSLO)
+Local Decimal WPOT
+Local Date    WSHLDAT, WREFPER
+Local Integer WSHL
+Local Integer WSHLUOM              # hcb V6per
+Local Integer WSHLLTI              # hcb V6per
+Local Integer WSHLLTIUOM           # hcb V6per
+Local Date    WNEWLTIDAT           # hcb V6per
+Local Decimal WDLU                 # hcb V6per
+Local Date    WDLUDAT              # hcb V6per
+Local Char    WMAJ
+Local Char    WMIN
+Local Integer WECC
+WPOT = 100 # hcb 106424
+
+Local Integer WVALIDE    # hcb 71276
+
+
+If LQTE = 0
+   Return
+Endif
+
+Local Integer WNUMLIGLOT           # hcb unicite
+
+LMODIF = evalue(LABRMSK+"MODIF(LLIGCPT)")
+
+# on vérifie que le complément est modifiable
+If LMODIF = 1
+    Return
+Endif
+
+#                                       # Hcb 71276 deb
+
+WVALIDE = 2
+If dim([M:ENTL]ECCVALMAJ)>0
+   WMAJ   =[M:ENTL]ECCVALMAJ
+   WMIN   =[M:ENTL]ECCVALMIN
+   WECC   =[M:ENTL]ECCSAIFLG
+   If  [F:ITM]ECCSTO > 1 & [M:ENTL]ECCVALMAJ = ""
+       WVALIDE = 1
+   Endif
+   If  [F:ITM]ECCSTO > 2 & [M:ENTL]ECCVALMIN = ""
+       WVALIDE = 1
+   Endif
+Endif
+#                                                           # Hcb 71276 fin
+
+If dim([M:ENTL]SLO)>0    WSLO   =[M:ENTL]SLO    Endif
+If dim([M:ENTL]POT)>0    WPOT   =[M:ENTL]POT    Endif
+If dim([M:ENTL]SHLDAT)>0
+   WSHLDAT    =[M:ENTL]SHLDAT
+   WSHL       =[M:ENTL]SHL
+   WREFPER    =[M:ENTL]REFPER
+   WSHLUOM    =[M:ENTL]SHLUOM      # hcb V6per
+   WSHLLTI    =[M:ENTL]SHLLTI      # hcb V6per
+   WSHLLTIUOM =[M:ENTL]SHLLTIUOM   # hcb V6per
+   WNEWLTIDAT =[M:ENTL]NEWLTIDAT   # hcb V6per
+   WDLU       =[M:ENTL]DLU         # hcb V6per
+   WDLUDAT    =[M:ENTL]DLUDAT      # hcb V6per
+Endif
+
+
+Call SETCPTLOT( LABR, LLIGCPT, [M:ENTL]LOT, WSLO, [M:ENTL]BPSLOT, evalue(LABRMSK+"GESLOT(LLIGCPT)"),
+&               WPOT,
+&               [M:ENTL]ACT,
+&               WREFPER,
+&               WSHL,
+&               WSHLDAT,
+&               WSHLUOM,
+&               WSHLLTI,
+&               WSHLLTIUOM,
+&               WNEWLTIDAT,
+&               WDLU,
+&               WDLUDAT,
+&               [M:ENTL]USRFLD1,
+&               [M:ENTL]USRFLD2,
+&               [M:ENTL]USRFLD3,
+&               [M:ENTL]USRFLD4,
+&               LMODIF,
+&               WMAJ,
+&               WMIN,
+&               WECC,
+&               WVALIDE ) From STKENT              # hcb 71276
+
+If dim([M:ENTL]SLO)>0
+    # Dans le cas où des lignes ont été générées, il faut copier le complément lot
+    # sur toutes les lignes dont le lot est identique et le sous lot renseigné
+    # Cela ne se fait que sur les lignes dont le complément n'est pas encore validé.
+    If LORI=1 & sigma(0, evalue(LABRMSK+"NBLIG")-1, evalue(LABRMSK+"LOTAFF(indcum)")    = [M:ENTL]LOT &
+&                                                   evalue(LABRMSK+"BPSLOTAFF(indcum)") = [M:ENTL]BPSLOT &
+&                                                   evalue(LABRMSK+"SLOAFF(indcum)")   <> "" &
+&                                                   evalue(LABRMSK+"SLOAFF(indcum)")   <> [M:ENTL]SLO)
+        LOK=2
+        If GFEALOTLEV <> 2          # hcb unicite   si niveau lot on recopier d office sinon on demande
+           # hcb 36949
+           GPOINT = "PEMODSLO"
+           GPE    = 0
+           Gosub  ENTREE From EXEFNC
+           If GPE = 0
+              Call OUINON(mess(118,184,1),LOK) From GESECRAN
+           Endif
+        Endif                      # hcb unicite
+        # hcb 36949
+        If LOK=2
+            For I=0 To evalue(LABRMSK+"NBLIG")-1
+                If evalue(LABRMSK+"LOTAFF(I)")    = [M:ENTL]LOT &
+&                  evalue(LABRMSK+"BPSLOTAFF(I)") = [M:ENTL]BPSLOT &
+&                  evalue(LABRMSK+"SLOAFF(I)")   <> "" &
+&                  ((dim([M:ENTL]SLO)>0 & evalue(LABRMSK+"SLOAFF(I)")<>[M:ENTL]SLO) | dim([M:ENTL]SLO)<0)
+
+                   Call SETCPTLOT( LABR, evalue(LABRMSK+"NUMLIGLOT(I)"), [M:ENTL]LOT, evalue(LABRMSK+"SLOAFF(I)"),
+&                                  evalue(LABRMSK+"BPSLOTAFF(I)"), evalue(LABRMSK+"GESLOTAFF(I)"),
+&                                  WPOT,
+&                                  [M:ENTL]ACT,
+&                                  WREFPER,
+&                                  WSHL,
+&                                  WSHLDAT,
+&                                  WSHLUOM,
+&                                  WSHLLTI,
+&                                  WSHLLTIUOM,
+&                                  WNEWLTIDAT,
+&                                  WDLU,
+&                                  WDLUDAT,
+&                                  [M:ENTL]USRFLD1,
+&                                  [M:ENTL]USRFLD2,
+&                                  [M:ENTL]USRFLD3,
+&                                  [M:ENTL]USRFLD4,
+&                                  LMODIF,
+&                                  WMAJ,
+&                                  WMIN,
+&                                  WECC,
+&                                  WVALIDE ) From STKENT                    # hcb 71276
+                Endif
+            Next
+        Endif
+    Endif
+#                                                                                       hcb unicite deb
+    If GFEALOTLEV = 2
+       If LORI <> 4 & LORI <> 5      # on recopier sur lot existant dans entw       # hcb 76220
+          Call SEARCHLOTENTW ( [M:ENTL]ITMREF, [M:ENTL]LOT, "", -1, WNUMLIGLOT) From STKENTA
+       # Lot trouvé dans stoentw
+          If WNUMLIGLOT>=0
+             For I=0 To [M:ENTW]NBLIG-1
+                 If [M:ENTW]ITMREF (I) = [M:ENTL]ITMREF &
+&                   [M:ENTW]WSTOSEQ(I)  <>  0   &
+&                   [M:ENTW]NUMLIGLOT(I)<> -1   &
+&                   [M:ENTW]LOT        ([M:ENTW]NUMLIGLOT(I)) =  [M:ENTL]LOT &
+&                   [M:ENTW]SLO        ([M:ENTW]NUMLIGLOT(I))    <> ""
+
+                    [M:ENTW]POT        ([M:ENTW]NUMLIGLOT(I)) = WPOT
+                    [M:ENTW]ACT        ([M:ENTW]NUMLIGLOT(I)) = [M:ENTL]ACT
+                    [M:ENTW]REFPER     ([M:ENTW]NUMLIGLOT(I)) = WREFPER
+                    [M:ENTW]SHL        ([M:ENTW]NUMLIGLOT(I)) = WSHL
+                    [M:ENTW]SHLDAT     ([M:ENTW]NUMLIGLOT(I)) = WSHLDAT
+                    [M:ENTW]SHLUOM     ([M:ENTW]NUMLIGLOT(I)) = WSHLUOM
+                    [M:ENTW]SHLLTI     ([M:ENTW]NUMLIGLOT(I)) = WSHLLTI
+                    [M:ENTW]SHLLTIUOM  ([M:ENTW]NUMLIGLOT(I)) = WSHLLTIUOM
+                    [M:ENTW]NEWLTIDAT  ([M:ENTW]NUMLIGLOT(I)) = WNEWLTIDAT
+                    [M:ENTW]DLU        ([M:ENTW]NUMLIGLOT(I)) = WDLU
+                    [M:ENTW]DLUDAT     ([M:ENTW]NUMLIGLOT(I)) = WDLUDAT
+                    [M:ENTW]USRFLD1    ([M:ENTW]NUMLIGLOT(I)) = [M:ENTL]USRFLD1
+                    [M:ENTW]USRFLD2    ([M:ENTW]NUMLIGLOT(I)) = [M:ENTL]USRFLD2
+                    [M:ENTW]USRFLD3    ([M:ENTW]NUMLIGLOT(I)) = [M:ENTL]USRFLD3
+                    [M:ENTW]USRFLD4    ([M:ENTW]NUMLIGLOT(I)) = [M:ENTL]USRFLD4
+                    [M:ENTW]MODIF      ([M:ENTW]NUMLIGLOT(I)) = LMODIF
+                    [M:ENTW]ECCVALMAJ  ([M:ENTW]NUMLIGLOT(I)) = WMAJ
+                    [M:ENTW]ECCVALMIN  ([M:ENTW]NUMLIGLOT(I)) = WMIN
+                    [M:ENTW]ECCSAIFLG  ([M:ENTW]NUMLIGLOT(I)) = WECC
+                    [M:ENTW]VALIDE     ([M:ENTW]NUMLIGLOT(I)) = WVALIDE              # hcb 71276
+                 Endif
+             Next
+          Endif
+       Else
+          For I=0 To [M:SGW]NBLIG-1
+              If [M:SGW]WSTOSEQ    (I)  <> 0        &
+&                [M:SGW]LOT        (I)  = [M:ENTL]LOT &
+&                [M:SGW]SLO        (I)  <> ""
+
+                 [M:SGW]POT        (I) = WPOT
+                 [M:SGW]ACT        (I) = [M:ENTL]ACT
+                 [M:SGW]REFPER     (I) = WREFPER
+                 [M:SGW]SHL        (I) = WSHL
+                 [M:SGW]SHLDAT     (I) = WSHLDAT
+                 [M:SGW]SHLUOM     (I) = WSHLUOM
+                 [M:SGW]SHLLTI     (I) = WSHLLTI
+                 [M:SGW]SHLLTIUOM  (I) = WSHLLTIUOM
+                 [M:SGW]NEWLTIDAT  (I) = WNEWLTIDAT
+                 [M:SGW]DLU        (I) = WDLU
+                 [M:SGW]DLUDAT     (I) = WDLUDAT
+                 [M:SGW]USRFLD1    (I) = [M:ENTL]USRFLD1
+                 [M:SGW]USRFLD2    (I) = [M:ENTL]USRFLD2
+                 [M:SGW]USRFLD3    (I) = [M:ENTL]USRFLD3
+                 [M:SGW]USRFLD4    (I) = [M:ENTL]USRFLD4
+                 [M:SGW]MODIF      (I) = LMODIF
+                 [M:SGW]VALIDE     (I) = WVALIDE                                  # hcb 71276
+              Endif
+          Next
+       Endif
+    Endif
+#                                                                                       hcb unicite fin
+Endif
+Return
+
+############################################################
+# desactivation rubrique suivant article/parametrage/origine
+############################################################
+$GRISAGE_ENTL
+# desactivation suivant parametrage document des rubriques utilisateurs
+If mod(GOUVLOT,4) >= 2
+    If evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+        Diszo [M:ENTL]USRFLD1
+    Else
+        Actzo [M:ENTL]USRFLD1
+    Endif
+Else
+    Grizo [M:ENTL]USRFLD1
+Endif
+If mod(GOUVLOT,8) >= 4
+    If evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+        Diszo [M:ENTL]USRFLD2
+    Else
+        Actzo [M:ENTL]USRFLD2
+    Endif
+Else
+    Grizo [M:ENTL]USRFLD2
+Endif
+If mod(GOUVLOT,16) >= 8
+    If evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+        Diszo [M:ENTL]USRFLD3
+    Else
+        Actzo [M:ENTL]USRFLD3
+    Endif
+Else
+    Grizo [M:ENTL]USRFLD3
+Endif
+If mod(GOUVLOT,32) >= 16
+    If evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+        Diszo [M:ENTL]USRFLD4
+    Else
+        Actzo [M:ENTL]USRFLD4
+    Endif
+Else
+    Grizo [M:ENTL]USRFLD4
+Endif
+
+# desactivation suivant l article  des rubriques titre
+If dim([M:ENTL]POT)>0
+   If mod(GOUVLOT,64) >= 32
+      If evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+         Diszo [M:ENTL]POT
+      Else
+         Actzo [M:ENTL]POT
+      Endif
+   Else
+      Grizo [M:ENTL]POT
+   Endif
+Endif
+If mod(GOUVLOT,128) >= 64
+    If evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+        Diszo [M:ENTL]ACT
+    Else
+        Actzo [M:ENTL]ACT
+    Endif
+Else
+    Grizo [M:ENTL]ACT
+Endif
+
+# desactivation suivant l article  des rubriques peremption
+If dim([M:ENTL]SHLDAT)>0
+   If mod(GOUVLOT,256) >= 128
+      If evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+         Diszo [M:ENTL]REFPER
+         Diszo [M:ENTL]SHL
+         Diszo [M:ENTL]SHLDAT
+         Diszo [M:ENTL]SHLUOM      # hcb V6per
+         Diszo [M:ENTL]SHLLTI      # hcb V6per
+         Diszo [M:ENTL]SHLLTIUOM   # hcb V6per
+         Diszo [M:ENTL]NEWLTIDAT   # hcb V6per
+         Diszo [M:ENTL]DLU         # hcb V6per
+         Diszo [M:ENTL]DLUDAT      # hcb V6per
+      Else
+         Actzo [M:ENTL]REFPER
+         Actzo [M:ENTL]SHL
+         Actzo [M:ENTL]SHLDAT
+         Actzo [M:ENTL]SHLUOM      # hcb V6per
+         Actzo [M:ENTL]SHLLTI      # hcb V6per
+         Actzo [M:ENTL]SHLLTIUOM   # hcb V6per
+         Actzo [M:ENTL]NEWLTIDAT   # hcb V6per
+         Actzo [M:ENTL]DLU         # hcb V6per
+         Actzo [M:ENTL]DLUDAT      # hcb V6per
+      Endif
+   Else
+      Grizo [M:ENTL]REFPER
+      Grizo [M:ENTL]SHL
+      Grizo [M:ENTL]SHLDAT
+      Grizo [M:ENTL]SHLUOM      # hcb V6per
+      Grizo [M:ENTL]SHLLTI      # hcb V6per
+      Grizo [M:ENTL]SHLLTIUOM   # hcb V6per
+      Grizo [M:ENTL]NEWLTIDAT   # hcb V6per
+      Grizo [M:ENTL]DLU         # hcb V6per
+      Grizo [M:ENTL]DLUDAT      # hcb V6per
+
+   Endif
+Endif
+
+If [F:ITM]EXYMGTCOD = 6               # hcb typ6
+   Grizo [M:ENTL]REFPER
+Endif
+# hcb dlu deb
+If ([F:ITM]EXYMGTCOD = 1 | [F:ITM]EXYMGTCOD= 3 | [F:ITM]EXYMGTCOD= 4) & dim([M:ENTL]DLU)>0   # hcb 114192
+   Diszo [M:ENTL]DLU
+   Diszo [M:ENTL]DLUDAT
+Endif
+# hcb dlu fin
+                                                 # hcb 71276 deb
+If dim([M:ENTL]ECCVALMAJ)>0
+   If LABR = "ENTW"
+      If evalue("dim("+LABRDOC1+"ECCSAIFLG)") > 0       # hcb 110836
+         If evalue("dim([M:"+LABRDOC+"]ECCSAIFLG)") > 0 &
+&           evalue("[M:"+LABRDOC+"]ECCSAIFLG(LLIGDOC)") = 1 | evalue("[M:"+LABRDOC+"]ECCSAIFLG(LLIGDOC)") = 9 | evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+            Grizo [M:ENTL]ECCVALMAJ
+            Grizo [M:ENTL]ECCVALMIN
+         Endif                                          # hcb 110836
+      Else
+         If [F:ITM]ECCSTO >1
+            Actzo [M:ENTL]ECCVALMAJ
+         Else
+            Grizo [M:ENTL]ECCVALMAJ
+            Grizo [M:ENTL]ECCVALMIN
+         Endif
+         If [F:ITM]ECCSTO = 3
+            Actzo [M:ENTL]ECCVALMIN
+         Endif
+      Endif
+   Else
+      If evalue("dim([M:"+LABR+"]ECCSAIFLG)") > 0 &
+&        evalue("[M:"+LABR+"]ECCSAIFLG(LLIG)") = 1 | evalue("[M:"+LABR+"]ECCSAIFLG(LLIG)") = 9 | evalue(LABRMSK+"MODIF(LLIGCPT)")=1
+         Grizo [M:ENTL]ECCVALMAJ
+         Grizo [M:ENTL]ECCVALMIN
+Else
+        If [F:ITM]ECCSTO >1
+            Actzo [M:ENTL]ECCVALMAJ
+        Else
+            Grizo [M:ENTL]ECCVALMAJ
+            Grizo [M:ENTL]ECCVALMIN
+        Endif
+        If [F:ITM]ECCSTO = 3
+            Actzo [M:ENTL]ECCVALMIN
+        Endif
+      Endif
+   Endif
+Endif
+# hcb dlu fin
+
+Return
+
+
+#################################################################
+#  Actions champs                                               #
+#################################################################
+
+Subprog C_REFPER(VALEUR)
+Variable Date    VALEUR
+If VALEUR > [31/12/2999]
+  mkstat = 2
+Endif
+End
+
+Subprog AM_REFPER(VALEUR)
+Variable Date    VALEUR
+Local    Integer  WCOD : WCOD = [F:ITM]EXYMGTCOD
+Local    Date     WREF : WREF = VALEUR
+Local    Integer  WSHL : WSHL = [M:ENTL]SHL
+Local    Integer  WUOM : WUOM = [M:ENTL]SHLUOM
+Local    Decimal  WDLU : WDLU = [M:ENTL]DLU
+Local    Date     WPER
+Local    Date     WEXY
+Local    Integer  WLTI
+
+Call CALPER(WCOD,WREF,WSHL,WUOM,"",WPER) From STKLIB
+[M:ENTL]SHLDAT = WPER
+Affzo [M:ENTL]SHLDAT
+
+WEXY = [M:ENTL]SHLDAT
+Call CALDLU(WCOD,WREF,WEXY,WDLU,"",WPER,WLTI) From STKLIB
+[M:ENTL]DLUDAT = WPER
+[M:ENTL]DLULTI = WLTI
+Affzo [M:ENTL]DLUDAT
+Affzo [M:ENTL]DLULTI
+
+WSHL = [M:ENTL]SHLLTI
+WUOM = [M:ENTL]SHLLTIUOM
+Call CALLTI(WCOD,WREF,WSHL,WUOM,"",WPER) From STKLIB
+[M:ENTL]NEWLTIDAT = WPER
+#       si date recontrole > date limite utilisation : date recontrole = date limite utilisation
+If [M:ENTL]NEWLTIDAT <> [31/12/2999]     # date recontrole
+   If [M:ENTL]NEWLTIDAT  > [M:ENTL]DLUDAT
+      [M:ENTL]NEWLTIDAT  = [M:ENTL]DLUDAT
+   Endif
+Endif
+
+Affzo [M:ENTL]NEWLTIDAT
+
+
+End
+
+########################################
+Subprog AM_SHL(VALEUR)
+Variable Decimal VALEUR
+Local    Integer  WCOD : WCOD = [F:ITM]EXYMGTCOD
+Local    Date     WREF : WREF = [M:ENTL]REFPER
+Local    Integer  WSHL : WSHL = VALEUR
+Local    Integer  WUOM : WUOM = [M:ENTL]SHLUOM
+Local    Decimal  WDLU : WDLU = [M:ENTL]DLU
+Local    Date     WPER
+Local    Date     WEXY
+Local    Integer  WLTI
+
+Call CALPER(WCOD,WREF,WSHL,WUOM,"",WPER) From STKLIB
+[M:ENTL]SHLDAT = WPER
+Affzo [M:ENTL]SHLDAT
+
+WEXY = [M:ENTL]SHLDAT
+Call CALDLU(WCOD,WREF,WEXY,WDLU,"",WPER,WLTI) From STKLIB
+[M:ENTL]DLUDAT = WPER
+Affzo [M:ENTL]DLUDAT
+[M:ENTL]DLULTI = WLTI
+Affzo [M:ENTL]DLULTI
+
+
+
+End
+
+########################################
+Subprog C_SHLDAT(VALEUR)
+Variable Date    VALEUR
+If VALEUR > [31/12/2999]
+  mkstat = 2
+Endif
+If [F:ITM]EXYMGTCOD > 1 & VALEUR = [0/0/0]   # hcb typ6
+   mkstat = 2
+Endif
+End
+
+########################################
+Subprog C_POT(VALEUR)
+Variable Decimal VALEUR
+If VALEUR = 0
+   mkstat = 2
+Endif
+#--- Issue X3-221936 by TS
+# Issue X3-308844 - 2024-02-13 by SR : Negative potency remains forbidden, but potency greater than 100 must be authorised.
+#If (VALEUR<0 | VALEUR>100) & [F:ITM]STOMGTCOD=3
+If VALEUR<0  & [F:ITM]STOMGTCOD=3
+    mkstat = 2
+    GMESSAGE = mess(83,123,1)
+Endif
+#---
+End
+
+########################################
+Subprog C_ACT(VALEUR)
+Variable Decimal VALEUR
+If VALEUR = 0
+   mkstat = 2
+Endif
+
+End
+
+Subprog AM_SHLUOM(VALEUR)
+Variable Integer VALEUR
+Local    Integer  WCOD : WCOD = [F:ITM]EXYMGTCOD
+Local    Date     WREF : WREF = [M:ENTL]REFPER
+Local    Integer  WSHL : WSHL = [M:ENTL]SHL
+Local    Decimal  WDLU : WDLU = [M:ENTL]DLU
+Local    Integer  WUOM : WUOM = VALEUR
+Local    Date     WPER
+Local    Date     WEXY
+Local    Integer  WLTI
+
+
+Call CALPER(WCOD,WREF,WSHL,WUOM,"",WPER) From STKLIB
+[M:ENTL]SHLDAT = WPER
+Affzo [M:ENTL]SHLDAT
+
+WEXY = [M:ENTL]SHLDAT
+Call CALDLU(WCOD,WREF,WEXY,WDLU,"",WPER,WLTI) From STKLIB
+[M:ENTL]DLUDAT = WPER
+Affzo [M:ENTL]DLUDAT
+[M:ENTL]DLULTI = WLTI
+Affzo [M:ENTL]DLULTI
+
+WSHL = [M:ENTL]SHLLTI
+WUOM = [M:ENTL]SHLLTIUOM
+Call CALLTI(WCOD,WREF,WSHL,WUOM,"",WPER) From STKLIB
+[M:ENTL]NEWLTIDAT = WPER
+#       si date recontrole > date limite utilisation : date recontrole = date limite utilisation
+If [M:ENTL]NEWLTIDAT <> [31/12/2999]     # date recontrole
+    If [M:ENTL]NEWLTIDAT  > [M:ENTL]DLUDAT
+       [M:ENTL]NEWLTIDAT  = [M:ENTL]DLUDAT
+    Endif
+Endif
+
+Affzo [M:ENTL]NEWLTIDAT
+
+
+End
+
+Subprog AM_DLU(VALEUR)
+Variable Decimal VALEUR
+Local    Integer  WCOD : WCOD = [F:ITM]EXYMGTCOD
+Local    Date     WREF : WREF = [M:ENTL]REFPER
+Local    Decimal  WDLU : WDLU = VALEUR
+Local    Date     WPER
+Local    Date     WEXY : WEXY = [M:ENTL]SHLDAT
+Local    Integer  WLTI
+
+
+Call CALDLU(WCOD,WREF,WEXY,WDLU,"",WPER,WLTI) From STKLIB
+[M:ENTL]DLUDAT = WPER
+Affzo [M:ENTL]DLUDAT
+[M:ENTL]DLULTI = WLTI
+Affzo [M:ENTL]DLULTI
+
+#       si date recontrole > date limite utilisation : date recontrole = date limite utilisation
+If [M:ENTL]NEWLTIDAT <> [31/12/2999]     # date recontrole
+   If [M:ENTL]NEWLTIDAT  > [M:ENTL]DLUDAT
+      [M:ENTL]NEWLTIDAT  = [M:ENTL]DLUDAT
+      Affzo [M:ENTL]NEWLTIDAT
+   Endif
+Endif
+End
+
+Subprog AM_DLUDAT(VALEUR)
+Variable Date    VALEUR
+If [M:ENTL]NEWLTIDAT <> [31/12/2999]     # date recontrole
+   If [M:ENTL]NEWLTIDAT  > VALEUR
+      [M:ENTL]NEWLTIDAT  = VALEUR
+      Affzo [M:ENTL]NEWLTIDAT
+   Endif
+Endif
+[M:ENTL]DLULTI     =  nday(VALEUR) -nday([M:ENTL]REFPER)
+Affzo [M:ENTL]DLULTI
+End
+
+Subprog AM_SHLLTI(VALEUR)
+Variable Decimal VALEUR
+Local    Integer  WCOD : WCOD = [F:ITM]EXYMGTCOD
+Local    Date     WREF : WREF = [M:ENTL]REFPER
+Local    Integer  WSHL : WSHL = VALEUR
+Local    Date     WPER
+Local    Integer  WUOM : WUOM = [M:ENTL]SHLLTIUOM
+Local Integer OK
+
+Call CALLTI(WCOD,WREF,WSHL,WUOM,"",WPER) From STKLIB
+[M:ENTL]NEWLTIDAT = WPER
+#       si date recontrole > date limite utilisation : date recontrole = date limite utilisation
+If [M:ENTL]NEWLTIDAT <> [31/12/2999]     # date recontrole
+   If [M:ENTL]NEWLTIDAT  > [M:ENTL]DLUDAT
+      Call AVERTIR(mess(309,184,1),OK) From GESECRAN  # Date re-contrôle  > date limite utilisation !
+      [M:ENTL]NEWLTIDAT  = [M:ENTL]DLUDAT
+   Endif
+Endif
+Affzo [M:ENTL]NEWLTIDAT
+
+End
+
+Subprog AM_SHLLTIUOM(VALEUR)
+Variable Integer VALEUR
+Local    Integer  WCOD : WCOD = [F:ITM]EXYMGTCOD
+Local    Date     WREF : WREF = [M:ENTL]REFPER
+Local    Integer  WSHL : WSHL = [M:ENTL]SHLLTI
+Local    Date     WPER
+Local    Integer  WUOM : WUOM = VALEUR
+Local Integer OK
+Call CALLTI(WCOD,WREF,WSHL,WUOM,"",WPER) From STKLIB
+[M:ENTL]NEWLTIDAT = WPER
+#       si date recontrole > date limite utilisation : date recontrole = date limite utilisation
+If [M:ENTL]NEWLTIDAT <> [31/12/2999]     # date recontrole
+   If [M:ENTL]NEWLTIDAT  > [M:ENTL]DLUDAT
+      Call AVERTIR(mess(309,184,1),OK) From GESECRAN  # Date re-contrôle  > date limite utilisation !
+      [M:ENTL]NEWLTIDAT  = [M:ENTL]DLUDAT
+   Endif
+Endif
+Affzo [M:ENTL]NEWLTIDAT
+End
+
+Subprog C_NEWLTIDAT(VALEUR)
+Variable Date    VALEUR
+If VALEUR <> [31/12/2999]     # date recontrole
+   If VALEUR > [M:ENTL]DLUDAT
+      GMESSAGE=mess(309,184,1)  # Date re-contrôle  > date limite utilisation !
+      mkstat = 2
+   Endif
+Endif
+End
+
+
+Subprog C_DLU(VALEUR)
+Variable Decimal VALEUR
+If VALEUR > 1 | VALEUR < 0 | VALEUR = 0
+   GMESSAGE = mess(83,123,1) #"valeur incorrecte"
+   mkstat = 2
+Endif
+End
+
+
+Subprog C_DLUDAT(VALEUR)
+Variable Date    VALEUR
+If VALEUR > [M:ENTL]SHLDAT
+   GMESSAGE=mess(313,184,1)  # Date re-contrôle  > date peremption !
+   mkstat = 2
+Endif
+
+End
+
+Subprog AM_SHLDAT(VALEUR)
+Variable Date    VALEUR
+
+Local    Integer  WCOD : WCOD = [F:ITM]EXYMGTCOD
+Local    Decimal  WDLU : WDLU = [M:ENTL]DLU
+Local    Date     WREF : WREF = [M:ENTL]REFPER
+Local    Date     WPER
+Local    Date     WEXY : WEXY = VALEUR
+Local    Integer  WSHL : WSHL = [M:ENTL]SHL
+Local    Integer  WUOM : WUOM = [M:ENTL]SHLUOM
+Local    Integer  WLTI
+
+If [F:ITM]EXYMGTCOD = 6
+   # recalcul reference date peremption
+   Call CALREF(WCOD,WEXY,WSHL,WUOM,"",WPER) From STKLIB
+   [M:ENTL]REFPER = WPER
+   WREF           = [M:ENTL]REFPER
+   Affzo [M:ENTL]REFPER
+Endif
+
+# recalcul date limite utilisation
+Call CALDLU(WCOD,WREF,WEXY,WDLU,"",WPER,WLTI) From STKLIB
+[M:ENTL]DLUDAT = WPER
+Affzo [M:ENTL]DLUDAT
+[M:ENTL]DLULTI = WLTI
+Affzo [M:ENTL]DLULTI
+
+If [F:ITM]EXYMGTCOD = 6
+   # recalcul date recontrôle
+   WUOM = [M:ENTL]SHLLTIUOM
+   WSHL = [M:ENTL]SHLLTI
+   Call CALLTI(WCOD,WREF,WSHL,WUOM,"",WPER) From STKLIB
+   [M:ENTL]NEWLTIDAT = WPER
+   # si date recontrole > date limite utilisation : date recontrole = date limite utilisation
+   If [M:ENTL]NEWLTIDAT <> [31/12/2999]     # date recontrole
+      If [M:ENTL]NEWLTIDAT  > [M:ENTL]DLUDAT
+         [M:ENTL]NEWLTIDAT  = [M:ENTL]DLUDAT
+      Endif
+   Endif
+   Affzo [M:ENTL]NEWLTIDAT
+Endif
+
+End
+
+#                                                                                             # hcb 71276 deb
+Subprog AM_ECCVALMAJ(VALEUR)
+Variable Char    VALEUR()
+Local Char    WECCVALMAJ(GLONECS)
+Local Char    WECCVALMIN(GLONEVL)
+Local Char    PITM(GLONITM)
+Raz WECCVALMAJ
+Raz WECCVALMIN
+Raz PITM
+
+# si version majeure trouvée et si article gere la version mineure : recherche derniere version mineure
+If VALEUR  <> "" & [F:ITM]ECCSTO = 3
+   WECCVALMAJ = VALEUR
+   PITM = [F:ITM]ITMREF
+   Gosub READECCMIN From STKACT
+   [M:ENTL]ECCVALMIN = WECCVALMIN
+   Affzo [M:ENTL]ECCVALMIN
+Elsif VALEUR = "" & [M:ENTL]ECCVALMIN <> ""
+      Raz   [M:ENTL]ECCVALMIN
+      Affzo [M:ENTL]ECCVALMIN
+Endif
+[M:ENTL]ECCSTA = [F:ECS]ECCSTA
+Affzo [M:ENTL]ECCSTA
+
+End
+
+
+######################################################################################

@@ -1,0 +1,41 @@
+#ABKV - 13/02/25 - 4869SSTO007
+# Gestion du masque STOENT
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran STOENT) 09/02/2005 16:25:09 (GDV)
+######################################################################################
+$ACTION
+Gosub KARDOL_DEV From SPEUTIL
+Case ACTION
+  When "AV_CHOIX" : Gosub AV_CHOI
+Endcase
+Return
+
+
+Subprog C_SERNUM(VALEUR)
+Variable Char    VALEUR()
+End
+
+######################################################################################
+#ABKV - 13/02/25 - 4869SSTO007
+$AV_CHOI
+Infbox "MODIF PER ECRAN"
+If [MFI]BPCTYPDEN <> 2 : Return : Endif
+If !clalev ([F:BPC]) : Local File BPCUSTOMER [BPC] :  Endif
+Read [BPC]BPC0 = [MFI]BPCNUM
+If fstat <> 0 : Return : Endif
+[M:ENTL]SHL = [BPC]YSHL
+[M:ENTL]SHLUOM = [BPC]YSHLUOM
+Affzo [M:ENTL]SHL
+Affzo [M:ENTL]SHLUOM
+GPE = 1
+Return
+######################################################################################
+If !clalev ([F:ITM]) : Local File ITMMASTER [ITM] :  Endif
+
+#SLOTMH  SLH
+#STOLOT  SLT
+
+VCRNUM
+
+RS23689E
