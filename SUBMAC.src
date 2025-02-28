@@ -1,0 +1,72 @@
+######################################################################################
+# Gestion de l'objet des parcs clients (MAC)
+# SPEMAC
+######################################################################################
+## création le 17/05/2021 16:30:27 par (SDB)
+#  03-06-2024 NCA IT-15388: Add Address Type field to [M:MAC3]
+######################################################################################
+# Ajout d'un nouveau champ pour activation ou non de la machines ; ticket 7 750 ; SEDEB 22/07/21
+
+Call OBJET ("MAC", GBIDC1, GBIDC2) From GOBJET
+End
+
+##########################################################################################################
+
+##########################################################################################################
+$ACTION
+# SSW le 15/04/22 : Migration V12
+Gosub KARDOL_DEV from SPEUTIL
+
+Case ACTION
+ When "OUVRE"  : Gosub OUVRE
+ When "STYLE"  : Gosub ZSTYLE
+ When default
+Endcase
+Return
+
+######################################################################################
+## Open procedure
+######################################################################################
+$OUVRE
+  # Open used TABLES
+  If clalev([F:BPA]) = 0 : Local File BPADDRESS [BPA] Endif
+  If clalev([F:AST]) = 0 : Local File APLSTD [AST] Endif
+  If clalev([F:MAI]) = 0 : Local File MACITN [MAI] Endif   # NCA 21/02/2025 : Ticket IT-2501
+Return
+
+######################################################################################
+# 03-06-2024 NCA IT-15388: Add Address Type field to [M:MAC3]
+######################################################################################
+$ZSTYLE
+Variable Integer I
+Local Char OUTPUT : OUTPUT = ''
+For I = 0 To [M:MAC3]NBLIG - 1
+  IF [M:MAC3]MACADDCOD <> ""
+	Read [F:BPA]BPA0 = 1;[M:MAC1]MACCUTBPC;[M:MAC3]MACADDCOD(I)
+	##Infbox "..."-[M:MAC3]MACADDCOD(I)+" ... "-[M:MAC1]MACCUTBPC
+	If !fstat
+		If [F:BPA]ZADDRESSTYPE > 0
+			Read [F:AST]CLE = 6110;[F:BPA]ZADDRESSTYPE;"ENG"
+			If !fstat
+				OUTPUT=NUM$([F:AST]LANMES)
+			Endif
+		Endif
+	Endif
+    [M:MAC3]ZADDTYPEDES(I) = OUTPUT
+  ENDIF
+Next I
+Affzo [M:MAC3]ZADDTYPEDES
+Return
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran MAC1) 25/05/2021 12:44:34 (ADMIN)
+######################################################################################
+Subprog AM_MACITNTYP(VALEUR)
+Variable Integer VALEUR
+# Mise au rebus
+If VALEUR = 5
+    [M:MAC1]ZMACENAFLG = 2 : Affzo [M:MAC1]ZMACENAFLG
+Endif
+End
+
+######################################################################################
