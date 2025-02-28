@@ -1,0 +1,186 @@
+# Superviseur
+# Gestion du masque WH1ALL4 
+
+$_AFF
+If GIMPORT
+ Gosub AFF From GSAISIE
+Else
+ If GMESSAGE <>""
+  Gosub ERR From GSAISIE
+ Else
+  Raz GERR , GZNUM
+ Endif
+Endif
+Return
+
+$HORODAT
+Local Date    A_DATE
+Local Char    A_HEURE(10) , A_USER(10)
+Local Char    A_STAMP(15)
+A_DATE  = [28/02/2025]
+A_HEURE = "15:29:59"
+A_USER  = "ADMIN"
+A_STAMP = "20250228152959"
+Return
+
+$TITRES
+Return
+
+$CHG_FMT
+Case zoncou
+ When "NBLIG"
+  If [M]NBLIG=0
+  Endif
+Endcase
+Return
+
+$VISU
+Local Integer A_REPONSE
+Global Integer GPRE_VIEW
+If dim(A_WINDPREV)<=0 : Local Char A_WINDPREV(30) : Endif
+Local Mask WH1ALL4 [MAC4]
+Gosub HORODAT
+Local Inpbox "WH1ALL4" From GFONCTION At A_STAMP With A_WINDPREV Mask [MAC4] As [SIM_]
+Grizo [MAC4]5
+Boxact [SIM_]
+Gosub TITRES
+Boxinp [SIM_] Using A_REPONSE
+Close Local Inpbox [SIM_]
+Close Local Mask [MAC4]
+Kill GPRE_VIEW
+Return
+
+$HARDCOP
+Local Integer X1(0..14),X2(0..14),Y1(0..14),Y2(0..14)
+X1(0)=1 : X2(0)=74 : Y1(0)=1 : Y2(0)=24
+Return
+
+$ON_NBLIG
+Onevent BEFORE_INPUT Call AS_NBLIG From W1WH1ALL4
+Return
+
+Subprog IB_NBLIG
+Local Decimal BASPAG
+If !GWEBSERV
+ ## Action STD
+ Call IB_NBLIG From SUBMAC
+Endif
+Gosub _AFF
+End
+
+Subprog AS_NBLIG
+Local Decimal BASPAG
+Local Integer INDIC : INDIC = indice
+Raz mkstat
+Call TEXTE(735,GBOUT1) From OBJDIV
+Call TEXTE(735,GBOUT2) From OBJDIV
+Call IB_NBLIG
+Onkey 129 Titled GBOUT1 Call B1_NBLIG From W1WH1ALL4
+Onkey 130 Titled GBOUT2 Call B2_NBLIG From W1WH1ALL4
+Gosub _AFF
+End
+
+Subprog B1_NBLIG
+Local Decimal BASPAG
+If !GWEBSERV
+ ## Action GOBJETC1
+ Local Char    PARMSK(250)(1..20) , SAVACT(20)
+ SAVACT = GACTION : GACTION = "GOBJETC1"
+ Call OBJET_CHAR([M:MAC4]ORIVCR(nolign - 1),[M:MAC4]VCRTYP(nolign - 1),"") From GOBJET
+ GACTION = SAVACT
+Endif
+If mkstat=99 : mkstat = 0 : Elsif mkstat=0 : mkstat = 2 : Endif
+Gosub _AFF
+End
+
+Subprog B2_NBLIG
+Local Decimal BASPAG
+If !GWEBSERV
+ ## Action STD
+ Call B2_NBLIG From SUBMAC
+Endif
+If mkstat=99 : mkstat = 0 : Elsif mkstat=0 : mkstat = 2 : Endif
+Gosub _AFF
+End
+
+$ON_ITNTYP
+Onevent INIT_AREA Call D_ITNTYP(zc) From W1WH1ALL4
+Return
+
+Subprog D_ITNTYP(VALEUR)
+Variable Integer VALEUR
+If varinit([M]ITNTYP,indice)=0
+ VALEUR = 1
+Endif
+Gosub _AFF
+End
+
+$ON_ITNFCY
+Return
+
+$ON_LND
+Onevent INIT_AREA Call D_LND(zc) From W1WH1ALL4
+Return
+
+Subprog D_LND(VALEUR)
+Variable Integer VALEUR
+If varinit([M]LND,indice)=0
+ VALEUR = 1
+Endif
+Gosub _AFF
+End
+
+$ON_ITNDAT
+Onevent BEFORE_AREA Gosub AV_ITNDAT From W1WH1ALL4
+Return
+
+$AV_ITNDAT
+Chgfmt [M]ITNDAT(indice) With "DPZ:"+GFMDAT
+Gosub _AFF
+Return
+
+$ON_ENDITN
+Onevent BEFORE_AREA Gosub AV_ENDITN From W1WH1ALL4
+Return
+
+$AV_ENDITN
+Chgfmt [M]ENDITN(indice) With "DZ:"+GFMDAT
+Gosub _AFF
+Return
+
+$ON_SECPRI
+Onevent BEFORE_AREA Gosub AV_SECPRI From W1WH1ALL4
+Return
+
+$AV_SECPRI
+## Action INIDEV
+GDEVFMT="11.2" : GDEVFMT = GDEVFMT1(max(find([F]SECCUR,GDEVISE(1..GNBDEV)),1))
+Chgfmt [M]SECPRI(indice) With "NPz3:"+GDEVFMT
+Gosub _AFF
+Return
+
+$ON_SECCUR
+Return
+
+$ON_ORI
+Onevent INIT_AREA Call D_ORI(zc) From W1WH1ALL4
+Return
+
+Subprog D_ORI(VALEUR)
+Variable Integer VALEUR
+If varinit([M]ORI,indice)=0
+ VALEUR = 1
+Endif
+Gosub _AFF
+End
+
+$ON_ORIVCR
+Return
+
+$ON_VCRTYP
+Return
+
+$CHG_STY
+Return
+
+
