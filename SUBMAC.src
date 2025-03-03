@@ -1,72 +1,1979 @@
-######################################################################################
-# Gestion de l'objet des parcs clients (MAC)
-# SPEMAC
-######################################################################################
-## création le 17/05/2021 16:30:27 par (SDB)
-#  03-06-2024 NCA IT-15388: Add Address Type field to [M:MAC3]
-######################################################################################
-# Ajout d'un nouveau champ pour activation ou non de la machines ; ticket 7 750 ; SEDEB 22/07/21
-
 Call OBJET ("MAC", GBIDC1, GBIDC2) From GOBJET
 End
 
 ##########################################################################################################
-
+# SUBMAC
 ##########################################################################################################
 $ACTION
-# SSW le 15/04/22 : Migration V12
-Gosub KARDOL_DEV from SPEUTIL
-
-Case ACTION
- When "OUVRE"  : Gosub OUVRE
- When "STYLE"  : Gosub ZSTYLE
- When default
-Endcase
+  Case ACTION
+    When "DEFTRANS"     : Gosub DEFTRANS
+    When "VARIANTE"     : Gosub VARIANTE
+    When "SETTRANS"     : Gosub SETTRANS
+    When "AVANT_OUVRE"  : Gosub AVANT_OUVRE
+    When "OUVRE_BOITE"  : Gosub OUVRE_BOITE
+    When "OUVRE"        : Gosub OUVRE
+    When "FERME"        : Gosub FERME
+    When "SETBOUT"      : Gosub SETBOUT
+    When "AVANTBOUT"    : Gosub AVANTBOUT
+    When "AVANT_CHOI"   : Gosub AVANT_CHOI
+    When "LIENS"        : Gosub LIENS
+    When "RAZCRE"       : Gosub RAZCRE
+    When "RAZDUP"       : Gosub RAZDUP   # FGR 16/12/2013 : X3SUIVI95267
+    When "INICRE"       : Gosub INICRE
+    When "VERIF_CRE"    : Gosub VERIF_CRE
+    When "VERIF_MOD"    : Gosub VERIF_MOD
+    When "CREATION"     : Gosub CREATION
+    When "MODIF"        : Gosub MODIF
+    When "ABANDON"      : Gosub ABANDON
+    When "APRES_CRE"    : Gosub APRES_CRE
+    When "APRES_MOD"    : Gosub APRES_MOD
+    When "ANNULE"       : Gosub ANNULE
+    When "VERF_ANU"     : Gosub VERF_ANU
+    When "FILTRE"       : Gosub FILTRE
+    When "FILGAUCHE"    : Gosub FILGAUCHE
+    When Default
+  Endcase
 Return
 
-######################################################################################
-## Open procedure
-######################################################################################
+##########################################################################################################
+$RAZDUP
+  # FGR 16/12/2013 : X3SUIVI95267
+  [M:MAC1]MACORI = 1
+  Raz [M:MAC1]MACORIVCR
+  Raz [M:MAC1]MACORIVCRL
+  Raz [M:MAC1]ORITYP
+  Raz [M:MAC1]PREORI
+  Raz [M:MAC1]PREORIVCR
+  Raz [M:MAC1]PREORIVCRL
+Return
+
+##########################################################################################################
+$AVANT_OUVRE
+Return
+
+##########################################################################################################
+$DEFTRANS
+#--------------------------------------------------------#
+# Avant lecture des transactions de saisie disponibles : #
+# Si GFLAG est renseigné la transaction est déja choisie #
+# par le menu. Vérifier si elle est valide               #
+#--------------------------------------------------------#
+Local Integer OUVFICFLG
+
+  If !clalev([F:HTR]) Local File HDKTRS [HTR] : Endif
+  If !clalev([F:ACC]) Local File ACCES  [ACC] : OUVFICFLG = 1 : Endif
+  If GFLAG <> "" Then
+    Read [HTR]HTR0=1;GFLAG
+    If fstat or [F:HTR]ENAFLG = 1 Then
+      Raz GFLAG
+      Goto FIN_DEFTRANS
+    Endif
+    If [F:HTR]ACSCOD <> "" and GPROFIL <> GSUPER Then
+      Read [ACC]CODACC=GUSER;[F:HTR]ACSCOD
+      If fstat or [F:ACC]EXEC <> 2 Then
+        Raz GFLAG
+        Goto FIN_DEFTRANS
+      Endif
+    Endif
+  Endif
+  Goto FIN_DEFTRANS # FGR 03/12/2008 on va toujours à FIN_DEFTRANS mais c'était pas propre
+Return
+
+##########################################################################################################
+$FIN_DEFTRANS
+  If OUVFICFLG = 1 Then
+    Close Local File [ACC]
+    Raz OUVFICFLG
+  Endif
+Return
+
+##########################################################################################################
+$VARIANTE
+  #---------------------------------------#
+  # Après lecture de chaque transaction : #
+  # La transaction est-elle valide ?      #
+  # VARCOD contient le code transaction.  #
+  # Mettre OK à zéro si non valide.       #
+  #---------------------------------------#
+  Read [HTR]HTR0=1;VARCOD
+  If fstat or [F:HTR]ENAFLG = 1 Then
+    OK = 0
+  Endif
+Return
+
+##########################################################################################################
+$SETTRANS
+  #-------------------------------------#
+  # Après sélection de la transaction : #
+  # GFLAG = code transaction choisie    #
+  #-------------------------------------#
+  Read [HTR] HTR0=1;GFLAG
+  If fstat Then
+    Raz [F:HTR]
+  Endif
+  #MAE, le 31/01/08, GRP_SITE
+  GGRPFCY = [F:HTR]GFY
+Return
+
+##########################################################################################################
+$OUVRE_BOITE
+  #---------------------------------------------------#
+  #Chargement des noms des cuurbox de chaque tiroir
+  If OBJLIS(0) = "MAC" Then
+    GBOXMAC= "GAU_CHE"
+  Else
+    GBOXMAC = "GAU_CHE" + num$(find("MAC",OBJLIS(1..8))) : #Parc client
+  Endif
+  If GSMACNAMESPE(0) <> "" Then
+    If OBJLIS(0) = GSMACNAMESPE(0) Then
+      GBOXMACSP1 = "GAU_CHE"
+    Else
+      GBOXMACSP1 = "GAU_CHE" + num$(find(GSMACNAMESPE(0),OBJLIS(1..8))) : #Liste spécifique 1
+    Endif
+  Endif
+  If GSMACNAMESPE(1) <> "" Then
+    If OBJLIS(0) = GSMACNAMESPE(1) Then
+      GBOXMACSP2 = "GAU_CHE"
+    Else
+      GBOXMACSP2 = "GAU_CHE" + num$(find(GSMACNAMESPE(1),OBJLIS(1..8))) : #Liste spécifique 2
+    Endif
+  Endif
+  If GSMACNAMESPE(2) <> "" Then
+    If OBJLIS(0) = GSMACNAMESPE(2) Then
+      GBOXMACSP3= "GAU_CHE"
+    Else
+      GBOXMACSP3 = "GAU_CHE" + num$(find(GSMACNAMESPE(2),OBJLIS(1..8))) : #Liste spécifique 3
+    Endif
+  Endif
+  If GSMACNAMESPE(3) <> "" Then
+    If OBJLIS(0) = GSMACNAMESPE(3) Then
+      GBOXMACSP4 = "GAU_CHE"
+    Else
+      GBOXMACSP4 = "GAU_CHE" + num$(find(GSMACNAMESPE(3),OBJLIS(1..8))) : #Liste spécifique 4
+    Endif
+  Endif
+  If GSMACNAMESPE(4) <> "" Then
+    If OBJLIS(0) = GSMACNAMESPE(4) Then
+      GBOXMACSP5 = "GAU_CHE"
+    Else
+      GBOXMACSP5 = "GAU_CHE" + num$(find(GSMACNAMESPE(4),OBJLIS(1..8))) : #Liste spécifique 5
+    Endif
+  Endif
+  If GSMACNAMESPE(5) <> "" Then
+    If OBJLIS(0) = GSMACNAMESPE(5) Then
+      GBOXMACSP6 = "GAU_CHE"
+    Else
+      GBOXMACSP6 = "GAU_CHE" + num$(find(GSMACNAMESPE(5),OBJLIS(1..8))) : #Liste spécifique 6
+    Endif
+  Endif
+  If GSMACNAMESPE(6) <> "" Then
+    If OBJLIS(0) = GSMACNAMESPE(6) Then
+      GBOXMACSP7 = "GAU_CHE"
+    Else
+      GBOXMACSP7 = "GAU_CHE" + num$(find(GSMACNAMESPE(6),OBJLIS(1..8))) : #Liste spécifique 7
+    Endif
+  Endif
+  If GSMACNAMESPE(7) <> "" Then
+    If OBJLIS(0) = GSMACNAMESPE(7) Then
+      GBOXMACSP8 = "GAU_CHE"
+    Else
+      GBOXMACSP8 = "GAU_CHE" + num$(find(GSMACNAMESPE(7),OBJLIS(1..8))) : #Liste spécifique 8
+    Endif
+  Endif
+Return
+
+##########################################################################################################
 $OUVRE
-  # Open used TABLES
-  If clalev([F:BPA]) = 0 : Local File BPADDRESS [BPA] Endif
-  If clalev([F:AST]) = 0 : Local File APLSTD [AST] Endif
-  If clalev([F:MAI]) = 0 : Local File MACITN [MAI] Endif   # NCA 21/02/2025 : Ticket IT-2501
+
+# Bug 63578
+#----- Faire une sauvegarde systématique à cause du navigateur v5 -----#
+Gosub SAUV_GLOB From TRTX3GLOB
+# Bug 63578
+
+Global Char GCMACCPT(GLONANM)   # Code compteur pour parc client
+Global Integer GIAFTERECLATE    # Flag de gestion du contenu de la liste gauche après éclatement.
+Global Char GSZCUTBPCTYP        # Gestion du type de sélection d'utilisateur final
+Global Char GSZPREITN           # Implantation courante
+Global Char GSZPREBPCNUM
+Global Char GSZPREFCYITN(GLONADR)        # FGR 04/11/2015 : X3SUIVI111913
+Global Char GSZPREPLE(250)
+Global Char GSZPRECCNNUM
+Global Integer GIITNTYP
+Global Integer GIITNLND
+Global Char GMACHTRNUM
+Global Integer GCMAMACCONFLG
+
+Global Char GSZMACFILGAUFLT(250)(8)
+Global Char GSMACNAMESPE(10)(8)
+Global Integer GIMACFILGAUCOU(8)
+
+Global Char GBOXMAC(10)
+Global Char GBOXMACSP1(10)
+Global Char GBOXMACSP2(10)
+Global Char GBOXMACSP3(10)
+Global Char GBOXMACSP4(10)
+Global Char GBOXMACSP5(10)
+Global Char GBOXMACSP6(10)
+Global Char GBOXMACSP7(10)
+Global Char GBOXMACSP8(10)
+
+Global Char GSZTOTFLTMAC(50)
+Global Char GSZMACFOLDTIT1
+
+Local Char SZSITE(GLONFCY)
+Local Char SZTXTNUM
+Local Integer ITERFLT
+Local Char SZBRACLATXT        # Intitulé évalué de la marque
+
+  If !clalev([F:CCV2]) : Local File CONTCOV [CCV2] : Endif
+  If !clalev([F:CCV8]) : Local File CONTCOV [CCV8] : Endif
+  If !clalev([F:TCA]) : Local File TABCOUAFF [TCA] : Endif
+  If !clalev([F:TBO]) : Local File TABBOMALT [TBO] : Endif  # FGR 30/04/2009 : X3SUIVI18919
+  If clalev([F:MAI]) = 0 : Local File MACITN [MAI] Endif   # NCA 21/02/2025 : Ticket IT-25013
+  #
+  If !clalev([M:MAC7]) : Local Mask MAC7 [MAC7] : Endif
+  GSZMACFOLDTIT1 = ""
+  GSZTOTFLTMAC = ""
+  Raz GIMACFILGAUCOU
+  Raz GSZMACFILGAUFLT
+  Raz GSMACNAMESPE
+  GSZPREBPCNUM = ""
+  GSZPREFCYITN = ""
+  GSZPREPLE = ""
+  GSZPRECCNNUM = ""
+  GIITNTYP = 0
+  GIITNLND = 0
+  Call RAZ_MAC7 From SUBMACB
+  GIAFTERECLATE = 0
+  GSZCUTBPCTYP = ""
+  GSZPREITN = ""
+  SZBRACLATXT = ""
+  GMACHTRNUM = ""
+  GCMAMACCONFLG = 1
+  SZSITE = ""
+  Call SITECRMDEF ("HDK", SZSITE) From CRM_UTIL
+  GFCY = SZSITE
+  Call GETDEV(GFCY) From DEVSUB
+  #------------------------------------------------------------#
+  # --> Récupération du code compteur                          #
+  #------------------------------------------------------------#
+  # ----------------------------------------------------------
+  # FGR 20/12/2012 : X3SUIVI71937 (début) : c'est plus là
+  #  Read [TCA]TCA0=12
+  #  If fstat Then
+  #    GERR = 1
+  #    GMESSAGE = mess(64,199,1)
+  #    OK = 0
+  #    Return
+  #  Endif
+  #  GMANCOU = [F:TCA]MANCOU(2)
+  #  GCMACCPT = [F:TCA]CODNUM(2)
+  # FGR 20/12/2012 : X3SUIVI71937 (fin)
+  # ----------------------------------------------------------
+  #Obtention du libellé du champ Marque
+  Call PARAML("", "MACBRAUSE", SZTXTNUM) From ADOVAL      # FGR 28/07/2015 : X3SUIVI108078 : Plus Call PARAM (performances)
+  Call TEXTE(val(SZTXTNUM), SZBRACLATXT) From OBJDIV
+  If SZBRACLATXT = "" Then
+    Call TEXTE(14543, SZBRACLATXT) From OBJDIV
+  Endif
+  # FGR 14/08/2015 : X3SUIVI110349 (début)
+  If dim(GSZBRACLATXT) < 0 Then
+    Global Char GSZBRACLATXT(type(SZBRACLATXT)-10)
+  Endif
+  GSZBRACLATXT = SZBRACLATXT
+  # FGR 14/08/2015 : X3SUIVI110349 (fin)
+  #Transaction de saisie
+  GMACHTRNUM = [F:HTR]HTRNUM
+  GCMAMACCONFLG = [F:HTR]MACCONFLG
+  For ITERFLT = 0 To dim(GSMACNAMESPE)-1
+    GSMACNAMESPE(ITERFLT) = [F:HTR]OBJLIS(ITERFLT)
+    GSZMACFILGAUFLT(ITERFLT) = [F:HTR]FLTLIS(ITERFLT)
+    GIMACFILGAUCOU(ITERFLT) = [F:HTR]COULIS(ITERFLT)
+  Next
+  #Titre de l'onglet Contrat de service
+  If [F:HTR]MACCONFLG = 2 Then
+    Call TEXTE(14596, GSZMACFOLDTIT1) From OBJDIV      #Contrats de service
+  Else
+    Call TEXTE(20572, GSZMACFOLDTIT1) From OBJDIV      #Demandes de garantie
+  Endif
 Return
 
-######################################################################################
-# 03-06-2024 NCA IT-15388: Add Address Type field to [M:MAC3]
-######################################################################################
-$ZSTYLE
-Variable Integer I
-Local Char OUTPUT : OUTPUT = ''
-For I = 0 To [M:MAC3]NBLIG - 1
-  IF [M:MAC3]MACADDCOD <> ""
-	Read [F:BPA]BPA0 = 1;[M:MAC1]MACCUTBPC;[M:MAC3]MACADDCOD(I)
-	##Infbox "..."-[M:MAC3]MACADDCOD(I)+" ... "-[M:MAC1]MACCUTBPC
-	If !fstat
-		If [F:BPA]ZADDRESSTYPE > 0
-			Read [F:AST]CLE = 6110;[F:BPA]ZADDRESSTYPE;"ENG"
-			If !fstat
-				OUTPUT=NUM$([F:AST]LANMES)
-			Endif
-		Endif
-	Endif
-    [M:MAC3]ZADDTYPEDES(I) = OUTPUT
-  ENDIF
-Next I
-Affzo [M:MAC3]ZADDTYPEDES
+##########################################################################################################
+$FERME
+
+# Bug 63578
+#--------------------------------------------------------------------#
+# Si on vient par tunnel il faut restaurer les variables globales    #
+# autrement suppression variables globales spécifiques au traitement #
+#--------------------------------------------------------------------#
+#----- Faire une restitution systématique à cause du navigateur v5 -----#
+Gosub REST_GLOB From TRTX3GLOB
+# Bug 63578
+
+  Kill GCMACCPT
+  Kill GIAFTERECLATE
+  Kill GSZPREITN
+  Kill GSZCUTBPCTYP
+  Kill GSZPREBPCNUM
+  Kill GSZPREFCYITN
+  Kill GSZPREPLE
+  Kill GSZPRECCNNUM
+  Kill GIITNTYP
+  Kill GIITNLND
+  Kill GMACHTRNUM
+  Kill GCMAMACCONFLG
+  Kill GSZMACFILGAUFLT
+  Kill GSMACNAMESPE
+  Kill GIMACFILGAUCOU
+  If dim(GBOXMAC) > 0 Then
+    Kill GBOXMAC
+    Kill GBOXMACSP1
+    Kill GBOXMACSP2
+    Kill GBOXMACSP3
+    Kill GBOXMACSP4
+    Kill GBOXMACSP5
+    Kill GBOXMACSP6
+    Kill GBOXMACSP7
+    Kill GBOXMACSP8
+  Endif
+  Kill GSZTOTFLTMAC
+  Kill GSZMACFOLDTIT1
+  # FGR 14/08/2015 : X3SUIVI110349 (début)
+  If dim(GSZBRACLATXT) >= 0 Then
+    Kill GSZBRACLATXT
+  Endif
+  # FGR 14/08/2015 : X3SUIVI110349 (fin)
 Return
 
-######################################################################################
-## Etiquette ajoutée par le superviseur (écran MAC1) 25/05/2021 12:44:34 (ADMIN)
-######################################################################################
+##########################################################################################################
+$SETBOUT
+Local Integer ISSREOPEN
+
+  ISSREOPEN = 0
+  If REP = "" Then
+    CHMEN += "P"  # FGR 17/10/2011 : X3SUIVI71278 : Traçabilité pièces "P"
+    #
+    If [M:MAC1]MACCUTBPC <> "" Then
+      If [M:MAC1]BPCNUM <> "" Then
+        If GCMAMACCONFLG = 2 Then
+          CHMEN += "I"
+        Endif
+      Endif
+    Endif
+    If [M:MAC0]MACNUM <> "" Then
+      If [M:MAC1]MACPDTCOD <> "" Then
+        Read [ITM]ITM0=[M:MAC1]MACPDTCOD
+        If !fstat Then
+          If [F:ITM]ALTBOMHDK > 0 Then
+            CHMEN += "N"
+          Endif
+        Endif
+      Endif
+    Endif
+  Endif
+  #Menu Actions   Module Action Co
+  # % : Enregistrer une demande de service.
+  If REP = "" Then
+    If [M:MAC0]MACNUM <> "" Then
+      If [M:MAC1]MACPDTCOD <> "" Then
+        If [M:MAC1]MACITNTYP = 1 Then
+          If [M:MAC1]BPCNUM <> "" Then
+            Call ISFUNOPEN("GESSRE", ISSREOPEN) From CRMUTIL140
+            If ISSREOPEN = 0 Then
+              CHMEN += "%"
+            Endif
+          Endif
+        Endif
+      Endif
+    Endif
+  Endif
+  If [M:MAC1]MACQTY < 2 Then
+    Call VIREBOUT(CHAINE,"B") From GOBJET
+  Endif
+  #Option / Transaction de saisie.
+  CHMEN += "2"
+  Call VIREBOUT(CHAINE,"H") From GOBJET
+Return
+
+##########################################################################################################
+$AVANTBOUT
+Local Integer IERRECL
+Local Integer IASKECL
+Local Char SZMESSAGE
+
+  IASKECL = 0
+  #Bouton Eclater
+  If BOUT = "B" Then
+    #Confirmez-vous l'éclatement de cette fiche parc ?
+    Call OUINON(mess(421,182,1), IASKECL) From GESECRAN
+    If IASKECL = 2 Then
+      Call ECLATE_MAC([M:MAC0]MACNUM, SZMESSAGE, IERRECL) From SUBMACB
+      If IERRECL = 0 Then
+        GMESSAGE = SZMESSAGE
+        GERR = 2
+      Else
+        GIAFTERECLATE = 1
+        FILTSUP = ""
+        #Définition de la nouvelle liste gauche
+        If GPILNAV > 1 Then
+          If GNAVIG(GPILNAV-1) = "GESRQW" Then
+            CRITERE = ""
+          Endif
+        Endif
+        # FGR 12/01/2013 : X3SUIVI87924 (début)
+        Local Char SZFILGAUCHE(type(FILGAUCHE)-1)
+        #FILGAUCHE = "MACNUM=[M:MAC0]MACNUM or (MACORI=2 and MACORIVCR=[M:MAC0]MACNUM and MACORIVCRL=0)"
+        SZFILGAUCHE = "MACNUM='" + [M:MAC0]MACNUM + "' or (MACORI=2 and MACORIVCR='" + [M:MAC0]MACNUM + "' and MACORIVCRL=0)"
+        # FGR 12/01/2013 : X3SUIVI87924 (fin)
+        Gosub RAFFRAICHIR From GOBJSUB
+        #La liste gauche comporte désormais uniquement les fiches parc résultant de l'éclatement effectué.
+        GMESSAGE = mess(94,182,1)
+        GERR = 2
+      Endif
+    Endif
+  Elsif BOUT = "%" Then
+    #enregistrer Demande de service
+    GBCRMFLGNEW = 1
+  Endif
+Return
+
+##########################################################################################################
+$VERF_ANU
+Local Integer IERRANN
+
+  IERRANN = 0
+  Call DELPARC([M:MAC0]MACNUM, 0, IERRANN) From SUBMACC
+  If IERRANN Then
+    GMESSAGE = mess(IERRANN,182,1)
+    GERR = 1
+    OK = 0
+    Return
+  Endif
+Return
+
+##########################################################################################################
+$ANNULE
+  # Maj des statistiques
+  Call VALSTA("MAC",-1) From SUBPS2
+Return
+
+##########################################################################################################
+$RAZCRE
+  [M:MAC0]CPNFORSRE = ""
+  Raz GSZTOTFLTMAC
+  [M:MAC0]TOTFLTMAC = GSZTOTFLTMAC
+  #On initialise le site
+  Call SITECRMDEF("HDK", [M:MAC0]SALFCY) From CRM_UTIL
+  GFCY = [M:MAC0]SALFCY
+  Call GETDEV(GFCY) From DEVSUB
+  # FGR 07/04/2015 : X3SUIVI107457 (début)
+  If [M:MAC1]MACCUTBPC <> "" Then
+    Local Char SVALEUR(type([M:MAC1]MACCUTBPC)-10)
+
+    SVALEUR = [M:MAC1]MACCUTBPC
+    Call AM_MACCUTBPC(SVALEUR) From W1MAC1
+  Endif
+  # FGR 07/04/2015 : X3SUIVI107457 (fin)
+  [M:MAC1]MACITNTYP = 1
+  [M:MAC1]MACQTY = 1
+  [M:MAC1]MACORI = 1
+  [M:MAC1]ORITYP = ""
+  Call RAZ_MAC7 From SUBMACB
+  Diszo [M:MAC1]MACWARTYP
+  Diszo [M:MAC1]MACORIVCR
+  Actzo [M:MAC1]MACQTY
+  Actzo [M:MAC1]MACSERNUM
+  Affzo [M:MAC0]1-99
+  Affzo [M:MAC1]1-99
+Return
+
+##########################################################################################################
+$FILTRE
+  Default File [MAC]
+Return
+
+##########################################################################################################
+$FILGAUCHE
+Local Integer IMACPEFLT
+Local Integer IMAINMACPEFLT
+
+  Default File [MAC]
+  # FGR 12/01/2013 : X3SUIVI87924 (Début)
+  If dim(SZFILGAUCHE) >= 0 Then
+    If SZFILGAUCHE <> "" Then
+      Call ADDCRIT(FILGAUCHE, IFILGAUCHE, "FILGAUCHE", SZFILGAUCHE, "&") From GOBJSUB
+    Endif
+    Kill SZFILGAUCHE
+  Endif
+  # FGR 12/01/2013 : X3SUIVI87924 (fin)
+  IMAINMACPEFLT = 0
+  IMACPEFLT = 0
+  Raz GSZTOTFLTMAC
+  Raz [M:MAC0]TOTFLTMAC
+  #Délégation du filgauche complet à un point d'entrée
+  If GIAFTERECLATE = 0 Then
+    Gosub PE_MAINMACFLT From TRTCRMPE
+    If IMAINMACPEFLT Then
+      Affzo [M:MAC0]TOTFLTMAC
+      Return
+    Endif
+  Endif
+  If currbox = GBOXMAC Then
+    If GPILNAV > 1 Then
+      If GNAVIG(GPILNAV-1) = "GESRQW" Then
+        If GIAFTERECLATE = 0 Then
+          Call ADDCRIT(FILGAUCHE, IFILGAUCHE, "FILGAUCHE", "MACORI=5 and MACORIVCR=[M:RQW0]RQWNUM", "&") From GOBJSUB
+        Else
+          Call ADDCRIT(FILGAUCHE, IFILGAUCHE, "FILGAUCHE", "1=1", "&") From GOBJSUB
+        Endif
+      Endif
+    Endif
+  Elsif currbox = "GAU_CHE9" Then
+    Affzo [M:MAC0]TOTFLTMAC
+    Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+  Else
+    #Gestion des browsers générés par transaction de saisie
+    ISREPEFLT = 0
+    #Les filtres sont posés par point d'entrée.
+    Gosub PE_MACFLT From TRTCRMPE
+    If IMACPEFLT Then
+      Affzo [M:MAC0]TOTFLTMAC
+      Return
+    Endif
+    #
+    Case currbox
+      When GBOXMACSP1
+        Call ADDCRIT(FILGAUSUP, IFILGAUSUP, "FILGAUSUP", GSZMACFILGAUFLT(0), "&") From GOBJSUB
+        Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+        If GIMACFILGAUCOU(0) = 2 Then
+          Call SETTOTFLTMAC(GSZMACFILGAUFLT(0)) From SUBMACB
+        Endif
+      When GBOXMACSP2
+        Call ADDCRIT(FILGAUSUP, IFILGAUSUP, "FILGAUSUP", GSZMACFILGAUFLT(1), "&") From GOBJSUB
+        Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+        If GIMACFILGAUCOU(1) = 2 Then
+          Call SETTOTFLTMAC(GSZMACFILGAUFLT(1)) From SUBMACB
+         Endif
+      When GBOXMACSP3
+        Call ADDCRIT(FILGAUSUP, IFILGAUSUP, "FILGAUSUP", GSZMACFILGAUFLT(2), "&") From GOBJSUB
+        Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+        If GIMACFILGAUCOU(2) = 2 Then
+          Call SETTOTFLTMAC(GSZMACFILGAUFLT(2)) From SUBMACB
+        Endif
+      When GBOXMACSP4
+        Call ADDCRIT(FILGAUSUP, IFILGAUSUP, "FILGAUSUP", GSZMACFILGAUFLT(3), "&") From GOBJSUB
+        Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+        If GIMACFILGAUCOU(3) = 2 Then
+          Call SETTOTFLTMAC(GSZMACFILGAUFLT(3)) From SUBMACB
+        Endif
+      When GBOXMACSP5
+        Call ADDCRIT(FILGAUSUP, IFILGAUSUP, "FILGAUSUP", GSZMACFILGAUFLT(4), "&") From GOBJSUB
+        Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+        If GIMACFILGAUCOU(4) = 2 Then
+          Call SETTOTFLTMAC(GSZMACFILGAUFLT(4)) From SUBMACB
+        Endif
+      When GBOXMACSP6
+        Call ADDCRIT(FILGAUSUP, IFILGAUSUP, "FILGAUSUP", GSZMACFILGAUFLT(5), "&") From GOBJSUB
+        Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+        If GIMACFILGAUCOU(5) = 2 Then
+          Call SETTOTFLTMAC(GSZMACFILGAUFLT(5)) From SUBMACB
+        Endif
+      When GBOXMACSP7
+        Call ADDCRIT(FILGAUSUP, IFILGAUSUP, "FILGAUSUP", GSZMACFILGAUFLT(6), "&") From GOBJSUB
+        Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+        If GIMACFILGAUCOU(6) = 2 Then
+          Call SETTOTFLTMAC(GSZMACFILGAUFLT(6)) From SUBMACB
+        Endif
+      When GBOXMACSP8
+        Call ADDCRIT(FILGAUSUP, IFILGAUSUP, "FILGAUSUP", GSZMACFILGAUFLT(7), "&") From GOBJSUB
+        Call AJOUTE_CONDITION_ROLE (FILGAUSUP, IFILGAUSUP, "MAC") From CRMUTIL150  # FGR 14/04/2009 : X3SUIVI54295 : réactivation des rôles
+        If GIMACFILGAUCOU(7) = 2 Then
+          Call SETTOTFLTMAC(GSZMACFILGAUFLT(7)) From SUBMACB
+        Endif
+    Endcase
+    [M:MAC0]TOTFLTMAC = GSZTOTFLTMAC
+    Affzo [M:MAC0]TOTFLTMAC
+  Endif
+Return
+
+##########################################################################################################
+$ABANDON
+  Call RAZ_MAC7 From SUBMACB
+Return
+
+##########################################################################################################
+$INICRE
+Local Integer IERRINF
+Local Integer ICHAPTER
+Local Integer IBRETOUR
+
+  Call READ_COUNTER([M:MAC0]SALFCY, 12, 2, GSOCIETE, GCURLEG, GCMACCPT, GMANCOU) From CRM_UTIL     # FGR 20/05/2015 : X3SUIVI107775
+  # Récupération du compteur parc client
+  If func CRM_UTIL.GET_NUMERO_CHRONO ("ACT", [M:MAC0]SALFCY, GCMACCPT, date$, "", [M:MAC0]MACNUM, IERRINF, ICHAPTER, IBRETOUR) = 1 Then
+    If IBRETOUR = 1 Then
+      [F:MAC]MACNUM = [M:MAC0]MACNUM
+      Affzo [M:MAC0]MACNUM
+    Else
+      # problème lors de la récupération du compteur
+      GERR = 1
+      GMESSAGE = mess(IERRINF,ICHAPTER,1)
+      GOK = 0
+      Return
+    Endif
+  Endif
+Return
+
+##########################################################################################################
+$VERIF_CRE_MOD
+Local Integer IERROR
+Local Char SZMESSAGE(250)
+
+  #Le code article est obligatoire
+  If [M:MAC1]MACPDTCOD = "" Then
+    #Le code article est obligatoire sur une fiche parc
+    GMESSAGE = mess(118,177,1)
+    GERR = 1
+    OK = 0
+    Return
+  Endif
+  # FGR 01/04/2009 : X3SUIVI12201 : Déjà contrôle existance numéro de série
+  Call CTRL_NOSER ([M:MAC0]MACNUM, [M:MAC1]MACPDTCOD, [M:MAC1]MACSERNUM, 1, IERROR, SZMESSAGE) From SUBMACB
+  If IERROR = 1 Then
+    GMESSAGE = SZMESSAGE
+    GERR = 1
+    OK = 0
+    Return
+  Endif
+  #Vérifie qu'une devise a été saisie lors de la saisie du prix de vente
+  If [M:MAC1]MACSALPRI <> 0 Then
+    If [M:MAC1]CUR = "" Then
+      GMESSAGE = mess(306,196,1) #Aucune devise n'a été associée au prix de vente. Création refusée.
+      GERR = 1
+      OK = 0
+      Return
+    Endif
+  Endif
+  #Vérifie qu'une devise a été saisie lors de la saisie du prix d'achat
+  If [M:MAC1]MACBPCPRI <> 0 Then
+    If [M:MAC1]MACBPCCUR = "" Then
+      GMESSAGE = mess(101,182,1) #Aucune devise n'a été associée au prix d'achat. Création refusée.
+      GERR = 1
+      OK = 0
+      Return
+    Endif
+  Endif
+  #Vérifie la cohérence entre implantation et UF
+  Case [M:MAC1]MACITNTYP
+    When 1
+      If [M:MAC1]BPCNUM = "" Then
+        If [M:MAC1]CCNNUM = "" Then
+          #L'utilisateur final n'est pas indiqué.
+          GMESSAGE = mess(119,182,1)
+          GERR = 1
+          OK = 0
+        Endif
+      Else
+        If [M:MAC3]FCYITN = "" Then
+          #Le site d'installation n'est pas indiqué.
+          GMESSAGE = mess(120,182,1)
+          GERR = 1
+          OK = 0
+        Endif
+      Endif
+    When 2
+      If [M:MAC1]MACRSL = "" Then
+        #Le revendeur n'est pas indiqué.
+        GMESSAGE = mess(121,182,1)
+        GERR = 1
+        OK = 0
+      Endif
+    When 3
+      If [M:MAC1]MACRSL = "" Then
+        #Le grossiste n'est pas indiqué.
+        GMESSAGE = mess(122,182,1)
+        GERR = 1
+        OK = 0
+      Endif
+    When 4
+      If [M:MAC1]MACRSL <> "" Then
+        #Le parc est déclaré en stock. Aucun revendeur ne doit donc être précisé.
+        GMESSAGE = mess(123,182,1)
+        GERR = 1
+        OK = 0
+      Else
+        If [M:MAC1]BPCNUM <> "" Then
+          #Le parc est déclaré en stock. Aucun utilisateur final ne doit donc être précisé.
+          GMESSAGE = mess(124,182,1)
+          GERR = 1
+          OK = 0
+        Endif
+        If [M:MAC1]CCNNUM <> "" Then
+          #Le parc est déclaré en stock. Aucun utilisateur final ne doit donc être précisé.
+          GMESSAGE = mess(124,182,1)
+          GERR = 1
+          OK = 0
+        Endif
+      Endif
+    When 5
+      If [M:MAC1]MACRSL <> "" Then
+        #Le parc est déclaré comme mis au rebut. Aucun revendeur ne doit donc être précisé.
+        GMESSAGE = mess(125,182,1)
+        GERR = 1
+        OK = 0
+      Else
+        If [M:MAC1]BPCNUM <> "" Then
+          #Le parc est déclaré comme mis au rebut. Aucun utilisateur final ne doit donc être précisé.
+          GMESSAGE = mess(126,182,1)
+          GERR = 1
+          OK = 0
+        Endif
+        If [M:MAC1]CCNNUM <> "" Then
+          #Le parc est déclaré comme mis au rebut. Aucun utilisateur final ne doit donc être précisé.
+          GMESSAGE = mess(126,182,1)
+          GERR = 1
+          OK = 0
+        Endif
+      Endif
+    When Default
+      #Le type d'implantation indiqué sur la fiche parc est incorrect.
+      GMESSAGE = mess(61,182,1)
+      GERR = 1
+      OK = 0
+  Endcase
+Return
+
+##########################################################################################################
+$VERIF_CRE
+  Gosub VERIF_CRE_MOD
+  If OK = 0 Then
+    Return
+  Endif
+Return
+
+##########################################################################################################
+$VERIF_MOD
+Local Char SZMESS(250)
+Local Integer IERRECL
+Local Char SZMESSAGE(250)
+Local Integer IMESSREP       # FGR 14/12/2015 : X3SUIVI113086
+
+  Gosub VERIF_CRE_MOD
+  If OK = 0 Then
+    Return
+  Endif
+  If [M:MAC7]IMAC7FLG = 2 Then
+    If [M:MAC1]MACQTY > 1 Then
+      #Souhaitez-vous procéder à un éclatement avant d'enregistrer la nouvelle implantation ?
+      SZMESS = mess(105,182,1)
+      IMESSREP = 0
+      Call OUINON(SZMESS, IMESSREP) From GESECRAN
+      If IMESSREP = 2 Then
+        #On éclate
+        Call ECLATE_MAC([M:MAC0]MACNUM, SZMESSAGE, IERRECL) From SUBMACB
+        If IERRECL = 0 Then
+          GMESSAGE = SZMESSAGE
+          GERR = 1
+          OK = 0
+          Return
+        Else
+          [M:MAC1]MACQTY = 1
+          [M:MAC1]MACSERNUM = ""
+          Affzo [M:MAC1]MACQTY
+          Affzo [M:MAC1]MACSERNUM
+        Endif
+      Else
+        #Confirmez-vous que la nouvelle implantation s'applique à toutes les entités physiques du parc indiquées ?
+        SZMESS = mess(495,182,1)
+        IMESSREP = 0
+        Call OUINON(SZMESS, IMESSREP) From GESECRAN
+        If IMESSREP <> 2 Then
+          #Modification de l'implantation courante abandonnée.
+          GMESSAGE = mess(134,182,1)
+          GERR = 1
+          OK = 0
+          Return
+        Endif
+      Endif
+    Endif
+  Endif
+Return
+
+##########################################################################################################
+$APRES_CRE
+  [M:MAC0]CPNFORSRE = ""
+  #Sauvegarde le tableau des contrats de service
+  Call SAVE_CON From SUBMACB
+  # Chargement du tableau des adresses
+  Call LOAD_ADD From SUBMACB
+  #Mémorisation de l'implantation courante.
+  # FGR 16/06/2010 : X3SUIVI64945
+  #GSZPREITN = [M:MAC1]MACCUTBPC + num$([M:MAC1]MACITNTYP) + num$([M:MAC1]MACITNLND)
+  GSZPREITN = func GET_PREITN
+  GSZPREBPCNUM = [M:MAC1]BPCNUM
+  GSZPREFCYITN = [M:MAC3]FCYITN
+  GSZPREPLE = [M:MAC3]PLE
+  GSZPRECCNNUM = [M:MAC1]CCNNUM
+  GIITNTYP = [M:MAC1]MACITNTYP
+  GIITNLND = [M:MAC1]MACITNLND
+  Call RAZ_MAC7 From SUBMACB
+  Diszo [M:MAC1]MACWARTYP
+  Raz GSZTOTFLTMAC
+  [M:MAC0]TOTFLTMAC = GSZTOTFLTMAC
+  Affzo [M:MAC0]TOTFLTMAC
+Return
+
+##########################################################################################################
+$APRES_MOD
+Local Char SZPREITN
+Local Integer IITNREP
+Local Integer IERRITN
+Local Integer ICLSNUM
+
+  [M:MAC0]CPNFORSRE = ""
+  #Sauvegarde le tableau des contrats de service
+  Call SAVE_CON From SUBMACB
+  #Sauvegarde le tableau des implantations
+  Call SAVE_ITN From SUBMACB
+  #Enregistrement d'un historique d'implantation
+  If [M:MAC7]IMAC7FLG = 2 Then
+    # FGR 16/06/2010 : X3SUIVI64945
+    #SZPREITN = [M:MAC1]MACCUTBPC + num$([M:MAC1]MACITNTYP) + num$([M:MAC1]MACITNLND)
+    SZPREITN = func GET_PREITN
+    If GSZPREITN <> SZPREITN Then
+      IITNREP = 0
+      #Confirmez-vous l'enregistrement d'un historique d'implantation ?
+      Call OUINON(mess(138,182,1), IITNREP) From GESECRAN
+      If IITNREP = 2 Then
+        Call CREMAI(ICLSNUM, IERRITN) From SUBMACC
+        If IERRITN Then
+          GMESSAGE = mess(IERRITN,182,1)
+          GERR = 2
+        Endif
+      Endif
+      # FGR 16/06/2010 : X3SUIVI64945
+      #GSZPREITN = [M:MAC1]MACCUTBPC + num$([M:MAC1]MACITNTYP) + num$([M:MAC1]MACITNLND)
+      GSZPREITN = func GET_PREITN
+      GSZPREBPCNUM = [M:MAC1]BPCNUM
+      GSZPREFCYITN = [M:MAC3]FCYITN
+      GSZPREPLE = [M:MAC3]PLE
+      GSZPRECCNNUM = [M:MAC1]CCNNUM
+      GIITNTYP = [M:MAC1]MACITNTYP
+      GIITNLND = [M:MAC1]MACITNLND
+      Call LOAD_ITN From SUBMACB
+      Affzo [M:MAC4]1-99
+      Call RAZ_MAC7 From SUBMACB
+    Endif
+  Endif
+  Diszo [M:MAC1]MACWARTYP
+  Raz GSZTOTFLTMAC
+  [M:MAC0]TOTFLTMAC = GSZTOTFLTMAC
+  Affzo [M:MAC0]TOTFLTMAC
+Return
+
+##########################################################################################################
+$CREATION
+  # Maj des statistiques
+  Call VALSTA("MAC",1) From SUBPS2
+Return
+
+##########################################################################################################
+$MODIF
+  # Maj des statistiques
+  Call VALSTA("MAC",-1) From SUBPS2
+  Call VALSTA("MAC",1) From SUBPS2
+Return
+
+##########################################################################################################
+$LIENS
+Local Integer IADINUM
+Local Integer TESTNBLIG
+Local Integer I
+
+  GFCY = [M:MAC0]SALFCY
+  Call GETDEV(GFCY) From DEVSUB
+  [M:MAC0]CPNFORSRE = ""
+  IADINUM = 19 + GFAMCIA
+  #Défini les infos V140
+  If [M:MAC1]MACITNTYP = 0 Then
+    [M:MAC1]MACITNTYP = 1
+  Endif
+  If [M:MAC1]MACORI = 0 Then
+    [M:MAC1]MACORI = 1
+  Endif
+  #Définition du type de pièce
+  Case [M:MAC1]MACORI
+    When 1
+      [M:MAC1]ORITYP = ""
+    When 2
+      [M:MAC1]ORITYP = ""
+    When 3
+      [M:MAC1]ORITYP = "SDH"
+    When 4
+      [M:MAC1]ORITYP = "SIH"
+    When 5
+      [M:MAC1]ORITYP = "RQW"
+    When 6
+      [M:MAC1]ORITYP = ""
+    When 7
+      [M:MAC1]ORITYP = "SRH"
+    When 8
+      [M:MAC1]ORITYP = "SRL"
+    When Default
+      [M:MAC1]ORITYP = ""
+  Endcase
+  Diszo [M:MAC1]MACORIVCR
+  #Défini la quantité par défaut
+  If [M:MAC1]MACQTY = 0 Then
+    [M:MAC1]MACQTY = 1
+  Endif
+  #Affiche la famille commerciale et la garantie applicable
+  If [M:MAC1]MACPDTCOD = "" Then
+    [M:MAC1]MACFAMCIA = ""
+    [M:MAC1]MACWARTYP = ""
+    [M:MAC1]MACWARTYPC = ""
+  Else
+    Read [ITM]ITM0=[M:MAC1]MACPDTCOD
+    If fstat Then
+      [M:MAC1]MACFAMCIA = ""
+      [M:MAC1]MACWARTYP = ""
+      [M:MAC1]MACWARTYPC = ""
+    Else
+      Call GET_LIB(IADINUM, [F:ITM]TSICOD(GFAMCIA-1), [M:MAC1]MACFAMCIA) From CRM_UTIL
+      If [M:MAC1]MACITNLND = 2 Then
+        #Parc en prêt
+        If [F:ITM]TPLCONLND = "" Then
+          [M:MAC1]MACWARTYP = ""
+          [M:MAC1]MACWARTYPC = ""
+        Else
+          Read [COT]COT0=[F:ITM]TPLCONLND
+          If fstat Then
+            [M:MAC1]MACWARTYP = ""
+            [M:MAC1]MACWARTYPC = ""
+          Else
+            [M:MAC1]MACWARTYP = [F:COT]TPLNAM
+            [M:MAC1]MACWARTYPC = [F:COT]CONNUM
+          Endif
+        Endif
+      Else
+        #Parc acheté
+        If [F:ITM]TPLCONGUA = "" Then
+          [M:MAC1]MACWARTYP = ""
+          [M:MAC1]MACWARTYPC = ""
+         Else
+          Read [COT]COT0=[F:ITM]TPLCONGUA
+          If fstat Then
+            [M:MAC1]MACWARTYP = ""
+            [M:MAC1]MACWARTYPC = ""
+          Else
+            [M:MAC1]MACWARTYP = [F:COT]TPLNAM
+            [M:MAC1]MACWARTYPC = [F:COT]CONNUM
+          Endif
+        Endif
+      Endif
+    Endif
+  Endif
+  Diszo [M:MAC1]MACWARTYP
+  #Grize les champs inutiles
+  Gosub SETGRAY From SUBMACB
+  #---------------------------------------------------#
+  #  Remplit les tableaux
+  #---------------------------------------------------#
+  # Charge les flags couverture croisée
+  Call LOAD_COUV_IND From SUBMACB  # FGR 17/06/2009 : X3SUIVI55514
+  # Chargement du tableau des contrats de services.
+  Call LOAD_CON From SUBMACB
+  # Chargement du tableau des demandes de garantie.
+  Call LOAD_MWR From SUBMACB
+  #Chargement du tableau des adresses
+  Call LOAD_ADD From SUBMACB
+  # Chargement du tableau des implantations
+  Call LOAD_ITN From SUBMACB
+  #Affichage du nom du client actuel en clair
+  If [M:MAC1]BPCNUM <> "" and [M:MAC1]CCNNUM = "" Then
+    Read [BPR]BPR0=[M:MAC1]BPCNUM
+    If !fstat Then
+      [M:MAC1]CUTBPCCLA = [F:BPR]BPRNAM
+    Endif
+  Endif
+  If [M:MAC1]BPCNUM = "" and [M:MAC1]CCNNUM <> "" Then
+    Read [AIN]AIN0=[M:MAC1]CCNNUM
+    If !fstat Then
+      Call BUILDFULNAM("AIN", [M:MAC1]CUTBPCCLA) From CRMUTIL140
+    Endif
+  Endif
+  #---------------------------------------------------#
+  # Définit les variables globales pour le création des historiques d'états
+  #---------------------------------------------------#
+  # FGR 16/06/2010 : X3SUIVI64945
+  #GSZPREITN = [M:MAC1]MACCUTBPC + num$([M:MAC1]MACITNTYP) + num$([M:MAC1]MACITNLND)
+  GSZPREITN = func GET_PREITN
+  GSZPREBPCNUM = [M:MAC1]BPCNUM
+  GSZPREFCYITN = [M:MAC3]FCYITN
+  GSZPREPLE = [M:MAC3]PLE
+  GSZPRECCNNUM = [M:MAC1]CCNNUM
+  GIITNTYP = [M:MAC1]MACITNTYP
+  GIITNLND = [M:MAC1]MACITNLND
+  Call RAZ_MAC7 From SUBMACB
+  #Totaux sur browsers complémentaires
+  [M:MAC0]TOTFLTMAC = GSZTOTFLTMAC
+  Affzo [M:MAC0]TOTFLTMAC
+Return
+
+##########################################################################################################
+$AVANT_CHOI
+# GRNA 18/05/2011
+Local Char CUSSEAORI : CUSSEAORI = "MAC0"
+Gosub AVANT_CHOI From CUSSEALIB
+Return
+
+##########################################################################################################
+Funprog GET_PREITN
+Local Char ARENDRE
+
+  # FGR 16/06/2010 : X3SUIVI64945
+  ARENDRE =  [M:MAC1]MACCUTBPC + "~" + num$([M:MAC1]MACITNTYP) + "~" + num$([M:MAC1]MACITNLND) + "~" + [M:MAC1]MACRSL
+End ARENDRE
+
+##########################################################################################################
+Subprog C_MACCONNUM(VALEUR)
+Variable Char    VALEUR()
+
+Local Integer INBCIT
+
+  INBCIT = 0
+  If VALEUR = "" Then
+    #Valeur incorrecte
+    GMESSAGE = mess(83,123,1)
+    GERR = 1
+    mkstat = 2
+    End
+  Endif
+  Read [CON]CON0=VALEUR
+  If fstat Then
+    #Valeur incorrecte
+    GMESSAGE = mess(83,123,1)
+    GERR = 1
+    mkstat = 2
+    End
+  Endif
+  If [F:CON]CONCAT = 4 Then
+    #Un contrat à points ne peut pas être saisi en tant que couverture directe.
+    GMESSAGE = mess(182,177,1)
+    GERR = 2
+    mkstat = 2
+    End
+  Endif
+  # FGR 19/08/2009 : X3SUIVI57246 : Le site du contrat doit être le même que celui du parc
+  If [F:CON]SALFCY <> [M:MAC0]SALFCY Then
+    #Un contrat à points ne peut pas être saisi en tant que couverture directe.
+    GMESSAGE = mess(637,177,1)
+    GERR = 2
+    mkstat = 2
+    End
+  Endif
+  #
+  [M:MAC2]MACCONNAM(nolign-1) = [F:CON]CONNAM
+  [M:MAC2]MACCONTYP(nolign-1) = [F:CON]CONCAT
+  [M:MAC2]CONENDDAT(nolign-1) = [F:CON]CONENDDAT
+  Read [BPR]BPR0=[F:CON]CONBPC
+  If fstat Then
+    [M:MAC2]CONBPC(nolign-1) = [F:CON]CONBPC
+  Else
+    [M:MAC2]CONBPC(nolign-1) = [F:BPR]BPRNAM
+  Endif
+  #Affecte un numéro d'ordre à la couverture de la machine.
+  If [M:MAC2]MACORD(nolign-1) = "" Then
+    Call CPTCOVNUM(VALEUR, 0, "", [M:MAC2]MACORD(nolign-1), INBCIT) From SUBMACB
+  Endif
+  Affzo [M:MAC2]MACCONTYP(nolign-1)
+  Affzo [M:MAC2]CONENDDAT(nolign-1)
+  Affzo [M:MAC2]CONBPC(nolign-1)
+End
+
+##########################################################################################################
+Subprog AS_NBLIG
+
+  Call DISP_ADD From SUBMACB
+End
+
+##########################################################################################################
+Subprog AM_MACFCYITN(VALEUR)
+Variable Integer VALEUR
+
+  Call RESET_SI From SUBMACB
+End
+
+
+##########################################################################################################
+Subprog IB_MACPDTCOD
+
+  # FGR 30/04/2009 : X3SUIVI18919
+  If [M:MAC1]MACPDTCOD <> ""  and  GFONC1 <> "GESBOD" and !find("GESBOD",GNAVIG(1..GPILNAV)) Then
+    #If !clalev([F:BOH2]) : Local File BOM [BOH2] : Endif  # Issue X3-52742 - 2017-10-24 by FGR
+    Local File BOM [BOH2]                                  # Issue X3-52742 - 2017-10-24 by FGR
+    Filter [F:BOH2] Where ITMREF = [M:MAC1]MACPDTCOD and BOMALTTYP = 1
+    Look [F:BOH2]BOH0 First
+    If fstat Then
+      Raz GBOUT2
+    Endif
+    Filter [F:BOH2] Where ITMREF = [M:MAC1]MACPDTCOD and BOMALTTYP = 2
+    Look [F:BOH2]BOH0 First
+    If fstat Then
+      Raz GBOUT3
+    Endif
+    Filter [F:BOH2] Where ITMREF = [M:MAC1]MACPDTCOD and BOMALTTYP = 3
+    Look [F:BOH2]BOH0 First
+    If fstat Then
+      Raz GBOUT4
+    Endif
+    #Close Local File [BOH2]                               # Issue X3-52742 - 2017-10-24 by FGR
+  Else
+    Raz GBOUT2
+    Raz GBOUT3
+    Raz GBOUT4
+  Endif
+  Call IB_NOTECHECK([M:MAC1]MACPDTCOD,"ITM",5)  From TRTNTSCTL # CRM notes
+End
+
+##########################################################################################################
+Subprog B2_MACPDTCOD(VALEUR)
+Variable Char    VALEUR()
+
+Local Char WCLE1(GLONITM)
+Local Char WCLE2(15)
+Local Integer NBTBO
+Local Char VALBOUT(250), PARBOUT(250)(1..20)
+Local Char SVGFONCTION(type(GFONCTION)-10)       # Issue X3-52742 - 2017-10-24 by FGR
+Local Char SVGFONBOD(type(GFONBOD)-10)           # Issue X3-52742 - 2017-10-24 by FGR
+
+  # FGR 30/04/2009 : X3SUIVI18919
+  WCLE1 = VALEUR
+  WCLE2 = ""
+  NBTBO = 0
+  Raz GBOMALT
+  # Sélectionner les alt. de nomenclature compatibles si décliné par société, il faudra filtrer aussi sur le site
+  Filter [TBO] Where [F:TBO]BOMALTTYP = 1
+  For [TBO]TBO0
+    GBOMALT(NBTBO) = [F:TBO]BOMALT
+    NBTBO += 1
+  Next
+  Filter [TBO]
+  # FILTRE sur article parent
+  If clalev([F:BOH]) > 0 : Close File [BOH] : Endif
+  Local File BOM [F:BOH] Where find(BOMALT, GBOMALT) and ITMREF = WCLE1 and BOMALTTYP = 1
+  Read [F:BOH]BOH0 First
+  If !fstat Then
+    WCLE2 = num$([F:BOH]BOMALT)
+  Endif
+  SVGFONCTION = GFONCTION                        # Issue X3-52742 - 2017-10-24 by FGR
+  SVGFONBOD = GFONBOD                            # Issue X3-52742 - 2017-10-24 by FGR
+  GFONCTION = "GESBODC"
+  GFONBOD = "BOMC"
+  GDATEREF = date$
+  #
+  PARBOUT(1) = WCLE2
+  PARBOUT(2) = "BOD"
+  PARBOUT(3) = WCLE1
+  FLGEXE = 1
+  GACTION = "GOBJETC7A"
+  Call OBJET_CHAR(PARBOUT(1),PARBOUT(2),PARBOUT(3)) From GOBJET
+  GFONCTION = SVGFONCTION                        # Issue X3-52742 - 2017-10-24 by FGR
+  GFONBOD = SVGFONBOD                            # Issue X3-52742 - 2017-10-24 by FGR
+End
+
+##########################################################################################################
+Subprog B3_MACPDTCOD(VALEUR)
+Variable Char    VALEUR()
+
+Local Char WCLE1(GLONITM)
+Local Char WCLE2(15)
+Local Integer NBTBO
+Local Char VALBOUT(250), PARBOUT(250)(1..20)
+Local Char SVGFONCTION(type(GFONCTION)-10)       # Issue X3-52742 - 2017-10-24 by FGR
+Local Char SVGFONBOD(type(GFONBOD)-10)           # Issue X3-52742 - 2017-10-24 by FGR
+
+  # FGR 30/04/2009 : X3SUIVI18919
+  WCLE1 = VALEUR
+  WCLE2 = ""
+  NBTBO = 0
+  Raz GBOMALT
+  # Sélectionner les alt. de nomenclature compatibles si décliné par société, il faudra filtrer aussi sur le site
+  Filter [TBO] Where [F:TBO]MFGUSE = 2 and [F:TBO]BOMALTTYP = 2
+  For [TBO]TBO0
+    GBOMALT(NBTBO) = [F:TBO]BOMALT
+    NBTBO += 1
+  Next
+  Filter [TBO]
+  If clalev([F:BOH]) > 0 : Close File [BOH] : Endif
+  # FILTRE sur article parent
+  Local File BOM [F:BOH] Where find(BOMALT, GBOMALT) and ITMREF = WCLE1 and BOMALTTYP = 2
+  Read [F:BOH]BOH0 First
+  If !fstat Then
+    WCLE2 = num$([F:BOH]BOMALT)
+  Endif
+  SVGFONCTION = GFONCTION                        # Issue X3-52742 - 2017-10-24 by FGR
+  SVGFONBOD = GFONBOD                            # Issue X3-52742 - 2017-10-24 by FGR
+  GFONCTION = "GESBODP"
+  GFONBOD = "BOMP"
+  GDATEREF = date$
+  #
+  PARBOUT(1) = WCLE2
+  PARBOUT(2) = "BOD"
+  PARBOUT(3) = WCLE1
+  FLGEXE = 1
+  GACTION = "GOBJETC7A"
+  Call OBJET_CHAR(PARBOUT(1),PARBOUT(2),PARBOUT(3)) From GOBJET
+  GFONCTION = SVGFONCTION                        # Issue X3-52742 - 2017-10-24 by FGR
+  GFONBOD = SVGFONBOD                            # Issue X3-52742 - 2017-10-24 by FGR
+End
+
+##########################################################################################################
+Subprog B4_MACPDTCOD(VALEUR)
+Variable Char    VALEUR()
+
+Local Char WCLE1(GLONITM)
+Local Char WCLE2(15)
+Local Integer NBTBO
+Local Char VALBOUT(250), PARBOUT(250)(1..20)
+Local Char SVGFONCTION(type(GFONCTION)-10)       # Issue X3-52742 - 2017-10-24 by FGR
+Local Char SVGFONBOD(type(GFONBOD)-10)           # Issue X3-52742 - 2017-10-24 by FGR
+
+  # FGR 30/04/2009 : X3SUIVI18919
+  WCLE1 = VALEUR
+  WCLE2 = ""
+  NBTBO = 0
+  Raz GBOMALT
+  # Sélectionner les alt. de nomenclature compatibles si décliné par société, il faudra filtrer aussi sur le site ---> A FAIRE
+  Filter [TBO] Where [F:TBO]BOMALTTYP = 3
+  For [TBO]TBO0
+    GBOMALT(NBTBO) = [F:TBO]BOMALT
+    NBTBO += 1
+  Next
+  Filter [TBO]
+  If clalev([F:BOH]) > 0 : Close File [BOH] : Endif
+  # FILTRE sur article parent
+  Local File BOM [F:BOH] Where find(BOMALT, GBOMALT) and ITMREF = WCLE1 and BOMALTTYP = 3
+  Read [F:BOH]BOH0 First
+  If !fstat Then
+    WCLE2 = num$([F:BOH]BOMALT)
+  Endif
+  SVGFONCTION = GFONCTION                        # Issue X3-52742 - 2017-10-24 by FGR
+  SVGFONBOD = GFONBOD                            # Issue X3-52742 - 2017-10-24 by FGR
+  GFONCTION = "GESBODS"
+  GFONBOD = "BOMS"
+  GDATEREF = date$
+  #
+  PARBOUT(1) = WCLE2
+  PARBOUT(2) = "BOD"
+  PARBOUT(3) = WCLE1
+  FLGEXE = 1
+  GACTION = "GOBJETC7A"
+  Call OBJET_CHAR(PARBOUT(1),PARBOUT(2),PARBOUT(3)) From GOBJET
+  GFONCTION = SVGFONCTION                        # Issue X3-52742 - 2017-10-24 by FGR
+  GFONBOD = SVGFONBOD                            # Issue X3-52742 - 2017-10-24 by FGR
+End
+
+##########################################################################################################
+Subprog AM_MACPDTCOD(VALEUR)
+Variable Char    VALEUR()
+
+Local Integer IADINUM
+Local Char SZOLDVALEUR
+Local Char SZOLDLIBEL
+Local Char SZLIBEL
+
+  Raz SZOLDVALEUR
+  Raz SZOLDLIBEL
+  Raz SZLIBEL
+  IADINUM = 19 + GFAMCIA
+  [M:MAC1]MACQTY = 1
+  SZOLDVALEUR = [M:MAC1]MACPDTCOD
+  If VALEUR = "" Then
+    Actzo [M:MAC1]MACQTY
+    Actzo [M:MAC1]MACSERNUM
+    [M:MAC0]MACDES = ""
+    [M:MAC1]MACFAMCIA = ""
+    [M:MAC1]MACWARTYP = ""
+    [M:MAC1]MACWARTYPC = ""
+  Else
+    Read [ITM]ITM0=VALEUR
+    If fstat Then
+      Actzo [M:MAC1]MACQTY
+      Actzo [M:MAC1]MACSERNUM
+      [M:MAC0]MACDES = ""
+      [M:MAC1]MACFAMCIA = ""
+      [M:MAC1]MACWARTYP = ""
+      [M:MAC1]MACWARTYPC = ""
+    Else
+      Call GET_LIB(IADINUM, [F:ITM]TSICOD(GFAMCIA-1), [M:MAC1]MACFAMCIA) From CRM_UTIL
+      #Call LECTEXTRA(SZLIBEL, "ITMMASTER", "DES1AXX", [F:ITM]ITMREF, "") From ATEXTRA
+      Call CHARGE_DEFITMDES("DES1AXX",GLANGUE,[F:ITM]ITMREF,SZLIBEL, "[F:ITM]") From TRTX3 # FGR 02/07/2009 : X3SUIVI56296
+      If [M:MAC0]MACDES <> "" Then
+        If SZOLDVALEUR <> "" Then
+          #Call LECTEXTRA(SZOLDLIBEL, "ITMMASTER", "DES1AXX", SZOLDVALEUR , "") From ATEXTRA
+          Call CHARGE_DEFITMDES("DES1AXX",GLANGUE,SZOLDVALEUR ,SZOLDLIBEL, "") From TRTX3 # FGR 02/07/2009 : X3SUIVI56296
+          If SZOLDLIBEL = [M:MAC0]MACDES Then
+            #Le libellé n'a pas été personalisé
+            [M:MAC0]MACDES = SZLIBEL
+          Endif
+        Endif
+      Else
+        [M:MAC0]MACDES = SZLIBEL
+      Endif
+      If [F:ITM]STOMGTCOD = 1 Then
+        #Article non géré en stock
+        Actzo [M:MAC1]MACQTY
+        Grizo [M:MAC1]MACSERNUM
+      Else
+        #Article géré en stock
+        If [F:ITM]SERMGTCOD = 1 Then
+          #Article non géré en numéro de série.
+          Actzo [M:MAC1]MACQTY
+          Grizo [M:MAC1]MACSERNUM
+        Else
+          #Article géré en numéro de série
+          Grizo [M:MAC1]MACQTY
+          Actzo [M:MAC1]MACSERNUM
+        Endif
+      Endif
+      If [M:MAC1]MACITNLND = 2 Then
+        #Parc en prêt
+        If [F:ITM]TPLCONLND = "" Then
+          [M:MAC1]MACWARTYP = ""
+          [M:MAC1]MACWARTYPC = ""
+        Else
+          Read [COT]COT0=[F:ITM]TPLCONLND
+          If fstat Then
+            [M:MAC1]MACWARTYP = ""
+            [M:MAC1]MACWARTYPC = ""
+          Else
+            [M:MAC1]MACWARTYP = [F:COT]TPLNAM
+            [M:MAC1]MACWARTYPC = [F:COT]CONNUM
+          Endif
+        Endif
+      Else
+        If [F:ITM]TPLCONGUA = "" Then
+          [M:MAC1]MACWARTYP = ""
+          [M:MAC1]MACWARTYPC = ""
+        Else
+          Read [COT]COT0=[F:ITM]TPLCONGUA
+          If fstat Then
+            [M:MAC1]MACWARTYP = ""
+            [M:MAC1]MACWARTYPC = ""
+          Else
+            [M:MAC1]MACWARTYPC = [F:COT]CONNUM
+            [M:MAC1]MACWARTYP = [F:COT]TPLNAM
+          Endif
+        Endif
+      Endif
+    Endif
+  Endif
+  Affzo [M:MAC0]MACDES
+  Affzo [M:MAC1]MACSERNUM, MACQTY, MACFAMCIA, MACWARTYP
+End
+
+##########################################################################################################
+Subprog AM_MACBRA(VALEUR)
+Variable Char    VALEUR()
+
+Local Char SZVALEUR
+Local Char SZCLA
+
+  SZVALEUR = VALEUR
+  SZCLA = ""
+  Call GET_LIB(408, SZVALEUR, SZCLA) From CRM_UTIL
+  [M:MAC1]MACBRACLA = SZCLA
+  Affzo [M:MAC1]MACBRACLA
+End
+
+##########################################################################################################
+Subprog C_NBCON
+Local Integer NUMLIGNE
+Local Integer IOKREP
+Local Integer IDEB
+Local Integer IFIN
+Local Integer IERREUR    # FGR 02/02/2010 : X3SUIVI60986
+
+  IOKREP = 0
+  NUMLIGNE = 0
+  IERREUR = 0    # FGR 02/02/2010 : X3SUIVI60986
+  If status = 65 or status = 68 or status = 83 Then
+    If status = 65 Then
+      #Effacement d'une seule ligne
+      IDEB = nolign-1
+      IFIN = nolign-1
+    Elsif status = 68 or status = 83 Then
+      #Effacement d'un groupe de lignes
+      IDEB = nolign-1
+      IFIN = nolign1-1
+    Endif
+    #Cette action ne pourra pas être abandonnée. Confirmez-vous la suppression ?
+    Call OUINON(mess(174,177,1), IOKREP) From GESECRAN
+    If IOKREP <> 2 Then
+      #Action abandonnée.
+      GMESSAGE = mess(736,182,1)
+      GERR = 2
+      mkstat = 2
+      End
+    Else
+      Call DEBTRANS From GLOCK
+      Trbegin [CCV]
+      For NUMLIGNE = IDEB To IFIN
+        Delete [CCV] Where [F:CCV]CONNUM = [M:MAC2]MACCONNUM(NUMLIGNE) and [F:CCV]TPL <> 2 and [F:CCV]RECTYP = "MAC" and [F:CCV]SBBRECTYP = "MAC" and [F:CCV]CMT = [M:MAC0]MACNUM
+        If fstat Then
+          Rollback
+          Affzo [M:MAC2]1-99
+          #End           # FGR 02/02/2010 : X3SUIVI60986
+          IERREUR = 1    # FGR 02/02/2010 : X3SUIVI60986
+          Break          # FGR 02/02/2010 : X3SUIVI60986
+        Endif
+      Next
+      If IERREUR Then
+        # FGR 02/02/2010 : X3SUIVI60986
+        End
+      Endif
+      Commit
+    Endif
+  Endif
+End
+
+##########################################################################################################
+Subprog AM_MACPURDAT(VALEUR)
+Variable Date    VALEUR
+
+  If [M:MAC1]MACITNDAT = [00/00/00] Then
+    [M:MAC1]MACPURDAT = VALEUR
+  Endif
+  Affzo [M:MAC1]MACITNDAT
+End
+
+##########################################################################################################
+Subprog IB_MACWARTYP
+
+  Raz GBOUT1
+  If [M:MAC1]MACWARTYPC <> "" Then
+    GBOUT1 = mess(31,124,1)
+  Endif
+End
+
+##########################################################################################################
+Subprog C_MACSERNUM(VALEUR)
+Variable Char    VALEUR()
+
+Local Integer IERROR
+Local Char SZMESSAGE(250)
+
+  # FGR 01/04/2009 : X3SUIVI12201 : Déjà contrôle existance numéro de série
+  Call CTRL_NOSER ([M:MAC0]MACNUM, [M:MAC1]MACPDTCOD, VALEUR, 0, IERROR, SZMESSAGE) From SUBMACB
+  If IERROR = 1 Then
+    GMESSAGE = SZMESSAGE
+    GERR = 1
+    mkstat = 2
+  Endif
+End
+
+##########################################################################################################
+Subprog AM_MACSERNUM(VALEUR)
+Variable Char    VALEUR()
+
+  If VALEUR <> "" Then
+    [M:MAC1]MACQTY = 1
+  Endif
+  Affzo [M:MAC1]MACQTY
+End
+
+##########################################################################################################
+Subprog C_MACQTY(VALEUR)
+Variable Decimal VALEUR
+
+  If [M:MAC1]MACSERNUM <> "" Then
+    If VALEUR > 1 Then
+      #Il est interdit de saisir une quantité supérieure à 1 sur une fiche parc gérée en numéro de série.
+      GMESSAGE = mess(54,182,1)
+      GERR = 1
+      mkstat = 2
+    Endif
+  Endif
+End
+
+##########################################################################################################
+Subprog AM_MACQTY(VALEUR)
+Variable Decimal VALEUR
+
+  If VALEUR < 1 Then
+    VALEUR = 1
+  Endif
+End
+
+##########################################################################################################
+Subprog IB_NBWRE
+
+  Raz GBOUT1
+  If GPILNAV > 1 Then
+    If GNAVIG(GPILNAV-1) <> "GESRQW" Then
+      If [M:MAC2]WRENUM(nolign-1) <> "" Then
+        GBOUT1 = mess(5,2971,1)
+      Endif
+     Endif
+  Endif
+End
+
+##########################################################################################################
+Subprog B2_NBLIG
+Local Integer IERRMAI
+Local Char SZMESS(250)
+Local Integer IMESSREP
+
+  IERRMAI = 0
+  IMESSREP = 0
+  #L'implantation courante sera définitivement supprimée.
+  #Confirmez-vous son remplacement par l'implantation sélectionnée ?
+  SZMESS = mess(137,182,1)
+  Call OUINON(SZMESS, IMESSREP) From GESECRAN
+  If IMESSREP <> 2 Then
+    End
+  Endif
+  Read [MAI]MAI1=[M:MAC0]MACNUM;[M:MAC4]CLSNUM(nolign-1)
+  If fstat Then
+    #Erreur lors de la restauration de l'implantation.
+    GMESSAGE = mess(127,182,1)
+    GERR = 1
+  Else
+    Call MAIRULE(1, [M:MAC0]MACNUM, [M:MAC4]CLSNUM(nolign-1), IERRMAI) From TRTMAIRULE
+    If IERRMAI Then
+      GMESSAGE = mess(IERRMAI,182,1)
+      GERR = 2
+    Else
+      #On recharge tout à partir de la classe F
+      Read [MAC]MAC0=[M:MAC0]MACNUM
+      If !fstat Then
+        [M:MAC1]MACITNTYP = [F:MAC]MACITNTYP
+        [M:MAC1]MACITNLND = [F:MAC]MACITNLND
+        [M:MAC1]MACRSL = [F:MAC]MACRSL
+        [M:MAC1]BPCNUM = [F:MAC]BPCNUM
+        [M:MAC1]CCNNUM = [F:MAC]CCNNUM
+        [M:MAC1]MACCUTBPC = [F:MAC]MACCUTBPC
+        [M:MAC1]MACSALPRI = [F:MAC]MACSALPRI
+        [M:MAC1]CUR = [F:MAC]CUR
+        [M:MAC1]MACPURDAT = [F:MAC]MACPURDAT
+        [M:MAC1]MACBPCPRI = [F:MAC]MACBPCPRI
+        [M:MAC1]MACBPCCUR = [F:MAC]MACBPCCUR
+        [M:MAC1]MACBPCDAT = [F:MAC]MACBPCDAT
+        [M:MAC1]MACITNDAT = [F:MAC]MACITNDAT
+        [M:MAC1]MACORI = [F:MAC]MACORI
+        [M:MAC1]MACORIVCR = [F:MAC]MACORIVCR
+        [M:MAC1]MACORIVCRL = [F:MAC]MACORIVCRL
+        #Cas particuliers
+        #Définition du type de pièce
+        Case [M:MAC1]MACORI
+          When 1
+            [M:MAC1]ORITYP = ""
+          When 2
+            [M:MAC1]ORITYP = ""
+          When 3
+            [M:MAC1]ORITYP = "SDH"
+          When 4
+            [M:MAC1]ORITYP = "SIH"
+          When 5
+            [M:MAC1]ORITYP = "RQW"
+          When 6
+            [M:MAC1]ORITYP = ""
+          When 7
+            [M:MAC1]ORITYP = "SRH"
+          When 8
+            [M:MAC1]ORITYP = "SRL"
+          When Default
+            [M:MAC1]ORITYP = ""
+        Endcase
+        Diszo [M:MAC1]MACORIVCR
+        If [M:MAC1]BPCNUM <> "" and [M:MAC1]CCNNUM = "" Then
+          Read [BPR]BPR0=[M:MAC1]BPCNUM
+          If !fstat Then
+            [M:MAC1]CUTBPCCLA = [F:BPR]BPRNAM
+          Endif
+        Endif
+        If [M:MAC1]BPCNUM = "" and [M:MAC1]CCNNUM <> "" Then
+          Read [AIN]AIN0=[M:MAC1]CCNNUM
+          If !fstat Then
+            Call BUILDFULNAM("AIN", [M:MAC1]CUTBPCCLA) From CRMUTIL140
+          Endif
+        Endif
+        If [M:MAC1]MACITNTYP = 0 Then
+          [M:MAC1]MACITNTYP = 1
+        Endif
+        If [M:MAC1]MACORI = 0 Then
+          [M:MAC1]MACORI = 1
+        Endif
+        #Onglet Adresse
+        Raz [M:MAC3]
+        Call LOAD_ADD From SUBMACB
+        [M:MAC3]PLE = [F:MAC]PLE
+        # Onglet implantations
+        Raz [M:MAC4]
+        Call LOAD_ITN From SUBMACB
+        #---------------------------------------------------#
+        # Définit les variables globales pour le création des historiques d'états
+        #---------------------------------------------------#
+        # FGR 16/06/2010 : X3SUIVI64945
+        #GSZPREITN = [M:MAC1]MACCUTBPC + num$([M:MAC1]MACITNTYP) + num$([M:MAC1]MACITNLND)
+        GSZPREITN = func GET_PREITN
+        GSZPREBPCNUM = [M:MAC1]BPCNUM
+        GSZPREFCYITN = [M:MAC3]FCYITN
+        GSZPREPLE = [M:MAC3]PLE
+        GSZPRECCNNUM = [M:MAC1]CCNNUM
+        GIITNTYP = [M:MAC1]MACITNTYP
+        GIITNLND = [M:MAC1]MACITNLND
+        Call RAZ_MAC7 From SUBMACB
+        Affzo [M:MAC1]1-99
+        Affzo [M:MAC3]1-99
+		INFBOX "NCA SUBMAC LINE 1629 ..."
+        Affzo [M:MAC4]1-99
+      Endif
+    Endif
+  Endif
+End
+
+##########################################################################################################
+Subprog IB_NBLIG
+
+  Raz GBOUT1
+  Raz GBOUT2
+  If GREP = "" Then
+    If [M:MAC4]VCRTYP(nolign-1) <> "" Then
+      If [M:MAC4]ORIVCR(nolign-1) <> "" Then
+        #Détail pièce
+        GBOUT1 = mess(103,182,1)
+      Endif
+    Endif
+    If nolign = [M:MAC4]NBLIG Then
+      #Restaurer l'implantation
+      GBOUT2 = mess(104,182,1)
+    Endif
+  Endif
+End
+
+##########################################################################################################
 Subprog AM_MACITNTYP(VALEUR)
 Variable Integer VALEUR
-# Mise au rebus
-If VALEUR = 5
-    [M:MAC1]ZMACENAFLG = 2 : Affzo [M:MAC1]ZMACENAFLG
-Endif
+
+  [M:MAC1]MACITNTYP = VALEUR
+  If GREP <> "C" Then
+    Call ALIMENTE_DEFAUT_MAC7 From SUBMACB
+    [M:MAC7]ITNTYP = GIITNTYP
+    #Défini une nouvelle implantation vierge
+    Raz [M:MAC3]
+    [M:MAC1]MACITNLND = 1
+    [M:MAC1]MACRSL = ""
+    [M:MAC1]MACCUTBPC = ""
+    [M:MAC1]CUTBPCCLA = ""
+    [M:MAC1]BPCNUM = ""
+    [M:MAC1]CCNNUM = ""
+    [M:MAC1]MACPURDAT = [00/00/00]
+    [M:MAC1]MACSALPRI = 0
+    [M:MAC1]CUR = ""
+    [M:MAC1]MACBPCDAT = [00/00/00]
+    [M:MAC1]MACBPCPRI = 0
+    [M:MAC1]MACBPCCUR = ""
+    [M:MAC1]MACITNDAT = date$
+    [M:MAC1]MACORI = 6
+    [M:MAC1]MACORIVCR = [M:MAC0]MACNUM
+    [M:MAC1]MACORIVCRL = 0
+  Endif
+  #Affichage de la nouvelle garantie applicable
+  Gosub SETWARTYP From SUBMACB
+  #Grisage des champs
+  Gosub SETGRAY From SUBMACB
+End
+
+##########################################################################################################
+Subprog AM_MACITNLND(VALEUR)
+Variable Integer VALEUR
+
+  [M:MAC1]MACITNLND = VALEUR
+  If GREP <> "C" Then
+    Call ALIMENTE_DEFAUT_MAC7 From SUBMACB
+    [M:MAC7]LND = GIITNLND
+    #Défini une nouvelle implantation vierge
+    If VALEUR <> 2 Then
+      If [M:MAC1]MACITNTYP = 2 or [M:MAC1]MACITNTYP = 3 Then
+        If [M:MAC1]MACRSL <> "" Then
+          If [M:MAC1]MACCUTBPC <> "" Then
+            If [M:MAC1]MACCUTBPC = [M:MAC1]MACRSL Then
+              [M:MAC1]MACCUTBPC = ""
+              [M:MAC1]CUTBPCCLA = ""
+              [M:MAC1]BPCNUM = ""
+              [M:MAC1]CCNNUM = ""
+            Endif
+          Endif
+        Endif
+      Endif
+    Endif
+    [M:MAC1]MACITNDAT = date$
+    [M:MAC1]MACORI = 6
+    [M:MAC1]MACORIVCR = [M:MAC0]MACNUM
+    [M:MAC1]MACORIVCRL = 0
+  Endif
+  #Affichage de la nouvelle garantie applicable
+  Gosub SETWARTYP From SUBMACB
+  #Grisage des champs
+  Gosub SETGRAY From SUBMACB
+End
+
+##########################################################################################################
+Subprog AM_MACRSL(VALEUR)
+Variable Char    VALEUR()
+
+  # FGR 16/06/2010 : X3SUIVI64945
+  # Gestion des historiques d'implantation
+  If GREP <> "C" Then
+    Call ALIMENTE_DEFAUT_MAC7 From SUBMACB
+    #Défini une nouvelle implantation vierge
+    [M:MAC1]MACCUTBPC = ""
+    [M:MAC1]CUTBPCCLA = ""
+    # FGR 16/06/2011 : (début) X3SUIVI74232 pas "1"
+    If [M:MAC1]MACITNTYP <> 2 and [M:MAC1]MACITNTYP <> 3 Then
+      [M:MAC1]MACITNTYP = 2
+    Endif
+    # FGR 16/06/2011 : (fin) X3SUIVI74232 pas "1"
+    [M:MAC1]MACITNLND = 1
+    [M:MAC1]MACPURDAT = [00/00/00]
+    [M:MAC1]MACSALPRI = 0
+    [M:MAC1]CUR = ""
+    [M:MAC1]MACBPCDAT = [00/00/00]
+    [M:MAC1]MACBPCPRI = 0
+    [M:MAC1]MACBPCCUR = ""
+    [M:MAC1]MACITNDAT = date$
+    [M:MAC1]MACORI = 6
+    [M:MAC1]MACORIVCR = [M:MAC0]MACNUM
+    [M:MAC1]MACORIVCRL = 0
+  Endif
+  # Affichage de la nouvelle garantie applicable
+  Gosub SETWARTYP From SUBMACB
+  # Grisage des champs
+  Gosub SETGRAY From SUBMACB
+End
+
+##########################################################################################################
+Subprog AM_MACCUTBPC(VALEUR)
+Variable Char    VALEUR()
+
+Local Char SZFULNAM(100)
+Local Char SZMESS(250)
+Local Char SZVALEUR
+Local Integer IMESSREP
+
+  SZMESS = ""
+  IMESSREP = 0
+  SZVALEUR = ""
+  SZFULNAM = ""
+  #Affiche le nom du client actuel en clair selon qu'il s'agit d'un tiers ou d'un interlocuteur.
+  If GSZCUTBPCTYP = "BPR" Then
+    #Cas Tiers
+    [M:MAC1]BPCNUM = VALEUR
+    [M:MAC1]CCNNUM = ""
+    Read [BPR]BPR0=VALEUR
+    If fstat Then
+      [M:MAC1]CUTBPCCLA = VALEUR
+    Else
+      [M:MAC1]CUTBPCCLA = [F:BPR]BPRNAM
+    Endif
+    [M:MAC1]MACCUTBPC = VALEUR
+  Elsif GSZCUTBPCTYP = "CCN" Then
+    #Cas interlocuteur
+    [M:MAC1]CCNNUM = VALEUR
+    [M:MAC1]BPCNUM = ""
+    Read [AIN]AIN0=VALEUR
+    If fstat Then
+      [M:MAC1]CUTBPCCLA = VALEUR
+    Else
+      Call BUILDFULNAM("AIN", [M:MAC1]CUTBPCCLA) From CRMUTIL140
+    Endif
+    [M:MAC1]MACCUTBPC = VALEUR
+  Elsif GSZCUTBPCTYP = "" Then
+    #Cas saisie de la clé manuellement.
+    SZVALEUR = toupper(VALEUR)
+    VALEUR = SZVALEUR
+    #Détermine s'il s'agit d'un code tiers
+    If SZVALEUR = "" Then
+      [M:MAC1]MACCUTBPC = ""
+      [M:MAC1]CUTBPCCLA = ""
+      [M:MAC1]BPCNUM = ""
+      [M:MAC1]CCNNUM = ""
+    Else
+      Read [BPR]BPR0=SZVALEUR
+      If fstat Then
+        Read [AIN]AIN0=SZVALEUR
+        If fstat Then
+          # Vous devez utiliser l'un des deux menus contextuels pour sélectionner un tiers ou un interlocuteur.
+          GMESSAGE = mess(252,196,1)
+          GERR = 2
+          [M:MAC1]MACCUTBPC = ""
+          [M:MAC1]CUTBPCCLA = ""
+          [M:MAC1]BPCNUM = ""
+          [M:MAC1]CCNNUM = ""
+          VALEUR = ""
+        Else
+          Call BUILDFULNAM("AIN", SZFULNAM) From CRMUTIL140
+          SZMESS = mess(670,196,1) - SZFULNAM
+          IMESSREP = 0
+          Call OUINON(SZMESS, IMESSREP) From GESECRAN
+          If IMESSREP = 2 Then
+            [M:MAC1]CCNNUM = SZVALEUR
+            [M:MAC1]BPCNUM = ""
+            Call BUILDFULNAM("AIN", [M:MAC1]CUTBPCCLA) From CRMUTIL140
+            [M:MAC1]MACCUTBPC = SZVALEUR
+          Else
+            [M:MAC1]MACCUTBPC = ""
+            [M:MAC1]CUTBPCCLA = ""
+            [M:MAC1]BPCNUM = ""
+            [M:MAC1]CCNNUM = ""
+            VALEUR = ""
+          Endif
+        Endif
+      Else
+        SZMESS = mess(667,196,1) - [F:BPR]BPRNAM
+        IMESSREP = 0
+        Call OUINON(SZMESS, IMESSREP) From GESECRAN
+        If IMESSREP = 2 Then
+          [M:MAC1]BPCNUM = SZVALEUR
+          [M:MAC1]CCNNUM = ""
+          [M:MAC1]CUTBPCCLA = [F:BPR]BPRNAM
+          [M:MAC1]MACCUTBPC = SZVALEUR
+        Else
+          [M:MAC1]MACCUTBPC = ""
+          [M:MAC1]CUTBPCCLA = ""
+          [M:MAC1]BPCNUM = ""
+          [M:MAC1]CCNNUM = ""
+          VALEUR = ""
+        Endif
+      Endif
+    Endif
+  Endif
+  # Chargement du tableau des adresses
+  Raz [M:MAC3]
+  Call LOAD_ADD From SUBMACB
+  #Gestion des historiques d'implantation
+  If GREP <> "C" Then
+    Call ALIMENTE_DEFAUT_MAC7 From SUBMACB
+    [M:MAC7]BPCNUM = GSZPREBPCNUM
+    [M:MAC7]ITNFCY = GSZPREFCYITN
+    [M:MAC7]PLE = GSZPREPLE
+    [M:MAC7]CCNNUM = GSZPRECCNNUM
+    #Défini une nouvelle implantation vierge
+    [M:MAC1]MACITNTYP = 1
+    [M:MAC1]MACITNLND = 1
+    [M:MAC1]MACRSL = ""
+    [M:MAC1]MACPURDAT = [00/00/00]
+    [M:MAC1]MACSALPRI = 0
+    [M:MAC1]CUR = ""
+    [M:MAC1]MACBPCDAT = [00/00/00]
+    [M:MAC1]MACBPCPRI = 0
+    [M:MAC1]MACBPCCUR = ""
+    [M:MAC1]MACITNDAT = date$
+    [M:MAC1]MACORI = 6
+    [M:MAC1]MACORIVCR = [M:MAC0]MACNUM
+    [M:MAC1]MACORIVCRL = 0
+  Endif
+  #Affichage de la nouvelle garantie applicable
+  Gosub SETWARTYP From SUBMACB
+  #Grisage des champs
+  Gosub SETGRAY From SUBMACB
+  GSZCUTBPCTYP = ""
+End
+
+##########################################################################################################
+Subprog IB_MACORIVCR
+
+  Raz GBOUT1
+  If [M:MAC1]ORITYP <> "" Then
+    #Détail pièce
+    GBOUT1 = mess(103,182,1)
+  Endif
+End
+
+##########################################################################################################
+Subprog IB_NBCON
+
+  Raz GBOUT1
+  If [M:MAC2]MACCONNUM(nolign-1) <> "" Then
+    GBOUT1 = mess(279,196,1)
+  Endif
+End
+
+##########################################################################################################
+Subprog C_CUR(VALEUR)
+Variable Char    VALEUR()
+
+  If VALEUR <> "" Then
+    Read [TCU]TCU0=VALEUR
+    If fstat Then
+      GMESSAGE = mess(84,116,1) #Devise incorrecte.
+      GERR = 2
+      mkstat = 2
+      End
+    Else
+      If [F:TCU]EURFLG = 2 Then
+        If [F:TCU]CURENDDAT <> [00/00/00] Then
+          If [F:TCU]CURENDDAT < date$ Then
+            GMESSAGE = mess(84,116,1) #Devise incorrecte.
+            GERR = 2
+            mkstat = 2
+            End
+          Endif
+        Endif
+      Endif
+    Endif
+  Endif
+End
+
+##########################################################################################################
+Subprog C_MACBPCCUR(VALEUR)
+Variable Char    VALEUR()
+
+  If VALEUR <> "" Then
+    Read [TCU]TCU0=VALEUR
+    If fstat Then
+      GMESSAGE = mess(84,116,1) #Devise incorrecte.
+      GERR = 2
+      mkstat = 2
+      End
+    Else
+      If [F:TCU]EURFLG = 2 Then
+        If [F:TCU]CURENDDAT <> [00/00/00] Then
+          If [F:TCU]CURENDDAT < date$ Then
+            GMESSAGE = mess(84,116,1) #Devise incorrecte.
+            GERR = 2
+            mkstat = 2
+            End
+          Endif
+        Endif
+      Endif
+    Endif
+  Endif
+End
+
+##########################################################################################################
+Subprog AM_SALFCY(VALEUR)
+Variable Char    VALEUR()
+
+  GFCY = VALEUR
+  Call GETDEV(GFCY) From DEVSUB
 End
 
 ######################################################################################
+Subprog AV_MACSAT(VALEUR)
+Variable Char    VALEUR()
+  If GFMT<>"" Then
+    Chgfmt [M:MAC3]MACSAT With "K:"+GFMT
+  Else
+    Chgfmt [M:MAC3]MACSAT With "-K:1X"
+  Endif
+End
+
+######################################################################################
+Subprog IB_MACCUTBPC
+  Call IB_NOTECHECK([M:MAC1]MACCUTBPC,"CRM",3)  From TRTNTSCTL # CRM notes
+End
+
+######################################################################################
+

@@ -1,0 +1,755 @@
+#########################################################################
+# CNSCPSSTD : Consultation des réceptions d'achat          HN  10/05/00 #
+# ECRAN 1   : CONSCPS1                                                  #
+# ECRAN 2   : CONSCPS2                                                  #
+# ECRAN CRIT: CRITCPS                                                   #
+#########################################################################
+Local Char PARAM(20)(1..2)
+PARAM(1) = "2204"
+PARAM(2) = "GAL"
+Call GCONSULT("CPS","",PARAM) From GCONSULT
+End
+#############################################################
+$ACTION
+Case ACTION
+  When "AUTORIS"    : Gosub AUTORIS
+  When "OUVRE"      : Gosub OUVRE
+  When "LECTURE"    : Gosub LECTURE
+  When "AB2_NBLIG"  : Gosub AB2_NBLIG
+  When "DEB_CRIT"   : Gosub DEB_CRIT
+  When "FIN_CRIT"   : Gosub FIN_CRIT
+  When Default
+Endcase
+Return
+
+############################################################
+$AUTORIS
+Return
+###################################################################
+# analyse paramères, initialisations, ouvertures et déclarations  #
+###################################################################
+$OUVRE
+NAVIG="CONSCPS"
+Local Char    WFIL(250),WFIL1(250),WFIL2(250),WFIL3(250)
+Local Char    DEBNUM(GLONPTH), FINNUM(GLONPTH)
+Local Date    DEBDAT, FINDAT
+Local Integer DEBLIN, FINLIN :# 69747
+
+#MAE, exi 91193
+If clalev([F:TCU])= 0 : Local File TABCUR [TCU] : Endif
+
+Gosub DEFCRIT
+Return
+
+# --------------------------------------------------------------------------#
+# Analyse paramères, initialisations                                        #
+# --------------------------------------------------------------------------#
+$DEFCRIT
+# Issue 81125 - 2012-03-29 by MUARN : consultation lignes
+#If GNBAUZ=1 : PARAM(2) = GUSRFCY(1) : Endif
+If GNBAUZ=1 : PARAM(3) = GUSRFCY(1) : Endif
+For I = 1 To dim(PARAM)
+  Case I
+    When 1 :    : # Parametre article
+      If PARAM(I) <> ""
+        If [F:ITM]ITMREF <> PARAM(I) Read [ITM] ITM0 = PARAM(I)
+                                     If fstat  Raz [F:ITM], PARAM(I) : Endif
+        Endif
+        [M:CPS1]ITMREF = PARAM(I)
+      Endif
+
+    When 2 :    : # Parametre Fournisseur
+      If PARAM(I) <> ""
+        If [F:BPS]BPSNUM <> PARAM(I) Read [BPS] BPS0 = PARAM(I)
+                                     If fstat  Raz [F:BPS], PARAM(I) : Endif
+        Endif
+#US 71069/138  by RBA
+#        [M:CPS1]BPSNUM = PARAM(I)
+        [M:CPS1]BPSNUMDEB = PARAM(I)
+        [M:CPS1]BPSNUMFIN = PARAM(I)
+#/US 71069/138  by RBA
+      Endif
+    When 3 :    : # Parametre Site
+      If PARAM(I) <> ""
+        If [F:FCY]FCY <> PARAM(I)    Read [FCY] FCY0 = PARAM(I)
+                                     If fstat  Raz [F:FCY], PARAM(I) : Endif
+        Endif
+        If (GUSRFCY(1)="\" | find(PARAM(I),GUSRFCY(1..GNBAUZ)))
+            [M:CPS1]PRHFCY = PARAM(I)
+            [M:CPS1]CPY = GSOCIETE
+        Endif
+      Endif
+    # Issue 84130 - 2013-05-23 by MAE : ajout des bornes réception
+     When 4 :    : # Numéro de reception
+      If PARAM(I) <> ""
+       [M:CPS1]PTHNUMDEB = PARAM(I)
+       [M:CPS1]PTHNUMFIN = PARAM(I)
+      Endif
+    # Fin MAE
+    When 5 :    : # Parametre PJT
+      # Issue Issue X3-15598 - 2017-02-23 by FGR : BEGIN
+      If PARAM(I) <> "" Then
+        [M:CPS1]PJTDEB = PARAM(I)
+        [M:CPS1]PJTFIN = PARAM(I)
+        If find(GNAVIG(GPILNAV-0),"GESPJM") Then   # Note FGR : '-0' is not an error. This is true in this case.
+          [M:CPS1]PJTDSPALL = [V]CST_AYES
+        Endif
+      Endif
+      # Issue Issue X3-15598 - 2017-02-23 by FGR : END
+    When 6 :    : # Parametre DATBEG
+      # Issue Issue X3-15598 - 2017-02-23 by FGR : BEGIN
+      If PARAM(I) <> "" and PARAM(I) <> "000000" Then
+        [M:CPS1]RCPDATDEB = PARAM(I)
+        [M:CPS1]RCPDATDEB = gdat$(01,month([M:CPS1]RCPDATDEB),year([M:CPS1]RCPDATDEB))
+      Endif
+      # Issue Issue X3-15598 - 2017-02-23 by FGR : END
+    Endcase
+Next I
+# facturée oui
+If !find([M:CPS1]INVFLGO,1,2) : [M:CPS1]INVFLGO= 2 : Endif
+# facturée non
+If !find([M:CPS1]INVFLGN,1,2) : [M:CPS1]INVFLGN= 2 : Endif
+# comptabilisée oui
+If !find([M:CPS1]PSTFLGO,1,2) : [M:CPS1]PSTFLGO= 2 : Endif
+# comptabilisée non
+If !find([M:CPS1]PSTFLGN,1,2) : [M:CPS1]PSTFLGN= 2 : Endif
+# imprimée oui
+If !find([M:CCPS]PRNFLGO,1,2) : [M:CCPS]PRNFLGO= 2 : Endif
+# imprimée non
+If !find([M:CCPS]PRNFLGN,1,2) : [M:CCPS]PRNFLGN= 2 : Endif
+If !find([M:CCPS]TRI,1,2)     : [M:CCPS]TRI = 1   : Endif
+#----- Initialisation dates début et fin -----#
+Gosub INIT_DATES From TRTACHGRH1
+# Issue Issue X3-15598 - 2017-02-23 by FGR : BEGIN
+#[M:CPS1]RCPDATDEB=WDATDEB
+If [M:CPS1]RCPDATDEB = [0/0/0] Then
+  [M:CPS1]RCPDATDEB=WDATDEB
+Endif
+# Issue Issue X3-15598 - 2017-02-23 by FGR : END
+[M:CPS1]RCPDATFIN=WDATFIN
+
+# Issue 84130 - 2013-04-23 by MUARN : landed cost - descente des flags
+If GPILNAV>1
+  If find(GNAVIG(GPILNAV),"CONSCPR")
+    [M:CPS1]INVFLGO=[M:CPR1]INVFLGO
+    [M:CPS1]INVFLGN=[M:CPR1]INVFLGN
+    [M:CPS1]PSTFLGO=[M:CPR1]PSTFLGO
+    [M:CPS1]PSTFLGN=[M:CPR1]PSTFLGN
+    [M:CPS1]RCPDATDEB=[M:CPR1]RCPDATDEB
+    [M:CPS1]RCPDATFIN=[M:CPR1]RCPDATFIN
+  Endif
+Endif
+
+#----- Copie du masque 1 (CPS1) vers l'écran critères (CCPS) -----#
+Gosub CRITENT From =PROGCNS
+Return
+
+############################################################
+$DEB_CRIT
+#acces depuis article ou article site
+If GPILNAV>1
+    If find(GNAVIG(GPILNAV-1),"GESITM","GESITF")
+        If find(GNAVIG(GPILNAV-1),"GESITM")
+            Diszo [M:CCPS]ITMREF
+        Elsif find(GNAVIG(GPILNAV-1),"GESITF")
+            Diszo [M:CCPS]ITMREF
+            Diszo [M:CCPS]PRHFCY
+            Diszo [M:CCPS]CPY
+        Endif
+        If dim([M:CCPS]TSICOD) > 0
+          For I = 0 To dim([M:CCPS]TSICOD)-1
+            Diszo [M:CCPS]TSICOD(I)
+          Next I
+        Endif
+    Endif
+    #acces depuis clients ou fournisseurs
+    If find(GNAVIG(GPILNAV-1),"GESBPS","GESBPC")
+#        Diszo [M:CCPS]BPSNUM
+        Diszo [M:CCPS]BPSNUMDEB : Diszo [M:CCPS]BPSNUMFIN
+        If dim([M:CCPS]TSICOD) > 0
+          For I = 0 To dim([M:CCPS]TSICOD)-1
+            Diszo [M:CCPS]TSICOD(I)
+          Next I
+        Endif
+    Endif
+    # Issue Issue X3-15598 - 2017-02-23 by FGR : BEGIN
+    If find(GNAVIG(GPILNAV-1),"GESPJM","PJMACTBUD", "PJMACTTAS") Then
+      Diszo [M:CCPS]PJTDEB
+      Diszo [M:CCPS]PJTFIN
+    Endif
+    # Issue Issue X3-15598 - 2017-02-23 by FGR : END
+Endif
+
+Return
+
+############################################################
+$LECTURE
+Local   Decimal  WMNTORG(0..1), WMNTDES(0..1), WMNTHT, WMNTTTC
+Local   Integer  SPSTAT
+
+#acces depuis article ou article site
+If GPILNAV>1
+    If find(GNAVIG(GPILNAV-1),"GESITM")
+        Diszo [M:CPS1]ITMREF
+    Else If find(GNAVIG(GPILNAV-1),"GESITF")
+        Diszo [M:CPS1]ITMREF
+        Diszo [M:CPS1]PRHFCY
+        Diszo [M:CPS1]CPY
+    Endif
+    Endif
+    #acces depuis clients ou fournisseurs
+    If find(GNAVIG(GPILNAV-1),"GESBPS","GESBPC")
+#        Diszo [M:CPS1]BPSNUM
+        Diszo [M:CPS1]BPSNUMDEB : Diszo [M:CPS1]BPSNUMFIN
+    Endif
+    # Issue Issue X3-15598 - 2017-02-23 by FGR : BEGIN
+    If find(GNAVIG(GPILNAV-1),"GESPJM","PJMACTBUD", "PJMACTTAS") Then
+      Diszo [M:CPS1]PJTDEB
+      Diszo [M:CPS1]PJTFIN
+    Endif
+    # Issue Issue X3-15598 - 2017-02-23 by FGR : END
+Endif
+
+
+Gosub CHANGE_MSK From GCONSULT
+If CHGPAG<0 : NOL = MAXLIG : Endif
+
+#-- Positionnement des Filtres
+Gosub LOAD_FILTER
+If PROGSPE<>""
+  ACTION = "FILTRE" : Gosub ACTION From =PROGSPE
+Endif
+
+Link [PTD] With [PTH]PTH0=[PTD]PTHNUM
+&          As [LNK]
+
+
+# ------------------------------------------------------- #
+# CHGPAG = 1    :    Recherche                            #
+# ------ = 2    :    Suite                                #
+#        = 3    :    F5 (Rafraichissement page courante)  #
+# CHGPAG = -1   :    Dernier                              #
+# ------ = -2   :    Retour (Page précédente)             #
+# ------------------------------------------------------- #
+
+#-- Application des Filtres
+If CHGPAG > 0
+    SUITE=1
+    If    CHGPAG = 1 : RETOUR = 1 : Elsif CHGPAG = 2 : RETOUR = 2 : Endif
+    Case [M:CCPS]TRI
+      When 1 : # tri par numéro
+        Filter [LNK] Where evalue(WFIL) & evalue(WFIL1) & evalue(WFIL2) & evalue(WFIL3) Order By Key PTD0
+      When 2 : # tri par date
+        Filter [LNK] Where evalue(WFIL) & evalue(WFIL1) & evalue(WFIL2) & evalue(WFIL3)
+&                    Order By Key CLE=[F:PTD]RCPDAT;[F:PTD]PTHNUM;[F:PTD]PTDLIN :# 69747
+#&                    Order By Key CLE=[F:PTD]RCPDAT;[F:PTD]PTHNUM
+    Endcase
+Else
+    RETOUR=1
+    If    CHGPAG = -1 : SUITE = 1 : Else  SUITE = 2 : Endif
+    Case [M:CCPS]TRI
+      When 1 : # tri par numéro
+        Filter [LNK] Where evalue(WFIL) & evalue(WFIL1) & evalue(WFIL2) & evalue(WFIL3) Order By Key PTD0 Desc
+      When 2 : # tri par date
+        Filter [LNK] Where evalue(WFIL) & evalue(WFIL1) & evalue(WFIL2) & evalue(WFIL3)
+&                    Order By [F:PTD]RCPDAT Desc ;[F:PTD]PTHNUM Desc ;[F:PTD]PTDLIN Desc :# 69747
+#&                    Order By [F:PTD]RCPDAT Desc ;[F:PTD]PTHNUM Desc
+    Endcase
+Endif
+#-- raz du masque
+If CHGPAG<>2 & CHGPAG<>-2 : Raz [M:CPS2] : Endif
+
+#-- lecture
+$BOUCLE
+For [LNK]
+
+# Filtre sur la société
+  If [M:CPS1]CPY <> ""
+      If [F:FCY]FCY <> [F:PTH]PRHFCY Read [FCY] FCY0 = [F:PTH]PRHFCY
+                                     If fstat  Raz [F:FCY] : Endif
+                                     Endif
+      If [F:FCY]LEGCPY <> [M:CPS1]CPY Goto SUIV : Endif
+      # Issue 91193 - 2013-08-09 by MUARN : Réaffectation Globale
+      GSOCIETE = [M:CPS1]CPY
+  Endif
+
+  If NBLU = 1
+     If CHGPAG=2 | CHGPAG=-2 : Raz [M:CPS2] : Endif
+     NBLU = 2
+  Endif
+  If CHGPAG > 0
+     If NOL >= MAXLIG-1 : SUITE=2 : Break : Endif
+     NOL    += 1
+     If NOL=0
+         #69747
+         If CHGPAG=2
+           If [F:PTD]PTHNUM=FINNUM and [F:PTD]PTDLIN<=FINLIN : NOL-=1 : Goto SUIV : Endif
+         Endif
+         #fin 69747
+         DEBNUM = [F:PTH]PTHNUM
+         DEBDAT = [F:PTH]RCPDAT
+         DEBLIN = [F:PTD]PTDLIN :# 69747
+     Endif
+     FINNUM = [F:PTH]PTHNUM
+     FINDAT = [F:PTH]RCPDAT
+     FINLIN = [F:PTD]PTDLIN :# 69747
+  Else
+     If NOL <= 0 : RETOUR=2 : Break : Endif
+     NOL    -= 1
+     If NOL=MAXLIG-1
+         #69747
+         If CHGPAG=-2
+           If [F:PTD]PTHNUM=DEBNUM and [F:PTD]PTDLIN>=DEBLIN : NOL+=1 : Goto SUIV : Endif
+         Endif
+         #fin 69747
+         FINNUM = [F:PTH]PTHNUM
+         FINDAT = [F:PTH]RCPDAT
+         FINLIN = [F:PTD]PTDLIN :# 69747
+     Endif
+     DEBNUM = [F:PTH]PTHNUM
+     DEBDAT = [F:PTH]RCPDAT
+     DEBLIN = [F:PTD]PTDLIN :# 69747
+  Endif
+  nolign = NOL+1
+
+  [M:CPS2]=[F:PTH] : # trans classe sur PRECEIPT
+  [M:CPS2]=[F:PTD] : # trans classe sur PRECEIPTD
+
+#MAE, exi 91193
+#CONVERSION EN DEVISE DOCUMENT (SOCIÉTÉ POUR LINAMT)
+If GLOCALDEV <> [F:PTH]CUR & [F:PTH]CHGCOE<>0
+  #récupération arrondi devise société
+  # Issue X3-232436 - 2021-01-22 by MUARN
+  #If GLOCALDEV <> [F:PTH]CUR
+  If [F:TCU]CUR <> GLOCALDEV
+    Read [TCU] TCU0 = GLOCALDEV
+       If fstat Raz [F:TCU] : Endif
+  Endif
+  [M:CPS2]LINAMTSOC(nolign-1) = arr([M:CPS2]LINAMT(nolign-1)*[F:PTH]CHGCOE,[F:TCU]CURRND)
+  # Issue X3-232436 - 2021-01-22 by MUARN : use good currency for runding
+  [M:CPS2]LINATIAMTSOC(nolign-1) = arr([M:CPS2]LINATIAMT(nolign-1)*[F:PTH]CHGCOE,[F:TCU]CURRND)
+  #récupération arrondi devise document
+  # Issue X3-232436 - 2021-01-22 by MUARN
+  #If GLOCALDEV <> [F:PTH]CUR
+  If [F:TCU]CUR <> [M:CPS2]CUR(nolign-1)
+    Read [TCU] TCU0 = [M:CPS2]CUR(nolign-1)
+       If fstat Raz [F:TCU] : Endif
+  Endif
+  [M:CPS2]CSTPURDOC(nolign-1) = arr([M:CPS2]CSTPUR(nolign-1)/[F:PTH]CHGCOE,[F:TCU]CURRND)
+  [M:CPS2]LINCSTPURDOC(nolign-1) = arr([M:CPS2]LINCSTPUR(nolign-1)/[F:PTH]CHGCOE,[F:TCU]CURRND)
+  # MUARN, exi 91193
+  # Issue X3-232436 - 2021-01-22 by MUARN : use good currency for runding
+  #[M:CPS2]LINATIAMTSOC(nolign-1) = arr([M:CPS2]LINATIAMT(nolign-1)*[F:PTH]CHGCOE,[F:TCU]CURRND)
+Else
+  [M:CPS2]LINAMTSOC(nolign-1) = [M:CPS2]LINAMT(nolign-1)
+  [M:CPS2]CSTPURDOC(nolign-1) = [M:CPS2]CSTPUR(nolign-1)
+  [M:CPS2]LINCSTPURDOC(nolign-1) = [M:CPS2]LINCSTPUR(nolign-1)
+  # MUARN, exi 91193
+  [M:CPS2]LINATIAMTSOC(nolign-1) = [M:CPS2]LINATIAMT(nolign-1)
+Endif
+
+#fin MAE 91193
+
+  #US 71069/12  PJT by RBA
+  [M:CPS2]PJT(nolign-1)       = [F:PTD]PJT
+  #/US 71069/12  PJT by RBA
+
+ # FVT ajout TSICOD(0) 2025-02-28
+ If !clalev ([F:PTD]) : Local File PRECEIPTD [PTD] :  Endif
+ Read [PTD]
+  [M:CPS2]TSICOD(nolign-1)       = [F:PTD]TSICOD(0)
+ # FVT ajout TSICOD(0) 2025-02-28
+
+  $SUIV
+Next
+Filter [LNK]
+
+Return
+#-------------------------------#
+# Avant saisie de la ligne      #
+#-------------------------------#
+$AB2_NBLIG
+Local Char    WOBJET(GLONAOB)
+If [M:CPS2]POHTYP(nolign-1) = 1
+    WOBJET= "POH"
+Endif
+If [M:CPS2]POHTYP(nolign-1) = 2
+    WOBJET= "POC"
+Endif
+Return
+
+
+
+############################################################
+#    Préparation du filtre                                 #
+############################################################
+$LOAD_FILTER
+WFIL  = "1=1"
+WFIL1 = "1=1"
+WFIL2 = "1=1"
+WFIL3 = "1=1"
+
+# Site de réception
+If [M:CPS1]PRHFCY <> ""
+   WFIL += "&[F:PTH]PRHFCY=[M:CPS1]PRHFCY"
+Endif
+# Autorisation site
+If GUSRFCY(1)<>"\" & GNBAUZ<>GNBSITE
+   WFIL += "& find([F:PTH]PRHFCY,GUSRFCY(1..GNBAUZ))"
+Endif
+## Numéro de fournisseur
+#If [M:CPS1]BPSNUM <> ""
+#   WFIL += "&[F:PTH]BPSNUM =[M:CPS1]BPSNUM"
+#Endif
+
+# Numéro de fournisseur
+If [M:CPS1]BPSNUMDEB <> ""
+   WFIL3 += "&[F:PTH]BPSNUM >=[M:CPS1]BPSNUMDEB"
+Endif
+If [M:CPS1]BPSNUMFIN <> ""
+   WFIL3 += "&[F:PTH]BPSNUM <=[M:CPS1]BPSNUMFIN"
+Endif
+
+# Article
+If [M:CPS1]ITMREF <> ""
+   WFIL += "&[F:PTD]ITMREF =[M:CPS1]ITMREF"
+Endif
+
+
+
+#    Prise en compte des réceptions facturées
+#    --> Si 1 : Pas de prise en compte
+#    --> Si 2 : On prend tout
+If [M:CPS1]INVFLGO= 1
+   WFIL1 += "&[F:PTH]INVFLG<3"
+Endif
+
+#    Prise en compte des réceptions non facturées
+#    --> Si 1 : Pas de prise en compte
+#    --> Si 2 : On prend tout
+If [M:CPS1]INVFLGN= 1
+   WFIL1 += "&[F:PTH]INVFLG>2"
+Endif
+
+#    Prise en compte des réceptions comptabilisées
+#    --> Si 1 : Pas de prise en compte
+#    --> Si 2 : On prend tout
+If [M:CPS1]PSTFLGO= 1
+   WFIL1 += "&[F:PTH]PSTFLG<>2"
+Endif
+
+#    Prise en compte des réceptions non comptabilisées
+#    --> Si 1 : Pas de prise en compte
+#    --> Si 2 : On prend tout
+If [M:CPS1]PSTFLGN= 1
+   WFIL1 += "&[F:PTH]PSTFLG=2"
+Endif
+
+#    Prise en compte des réceptions imprimées
+#    --> Si 1 : Pas de prise en compte
+#    --> Si 2 : On prend tout
+If [M:CCPS]PRNFLGO= 1
+   WFIL1 += "&[F:PTH]PRNFLG<>2"
+Endif
+
+#    Prise en compte des réceptions non imprimées
+#    --> Si 1 : Pas de prise en compte
+#    --> Si 2 : On prend tout
+If [M:CCPS]PRNFLGN= 1
+   WFIL1 += "&[F:PTH]PRNFLG=2"
+Endif
+
+
+If [M:CPS1]PTHNUMDEB <> ""
+   WFIL += "&[F:PTH]PTHNUM>=[M:CPS1]PTHNUMDEB"
+Endif
+If [M:CPS1]PTHNUMFIN <> ""
+   WFIL += "&[F:PTH]PTHNUM<=[M:CPS1]PTHNUMFIN"
+Endif
+
+If [M:CCPS]RCPDATDEB <> [0/0/0]
+   WFIL += "&[F:PTH]RCPDAT>=[M:CCPS]RCPDATDEB"
+Endif
+If [M:CCPS]RCPDATFIN <> [0/0/0]
+   WFIL += "&[F:PTH]RCPDAT<=[M:CCPS]RCPDATFIN"
+Endif
+
+If dim([M:CCPS]TSICOD) > 0
+  For I = 0 To dim([M:CCPS]TSICOD)-1
+    If [M:CCPS]TSICOD(I) <> ""
+      If len(WFIL) > 200
+        WFIL1 += "&[F:PTD]TSICOD("+num$(I)+")='"+[M:CCPS]TSICOD(I)+"'"
+      Else
+        WFIL += "&[F:PTD]TSICOD("+num$(I)+")='"+[M:CCPS]TSICOD(I)+"'"
+      Endif
+    Endif
+  Next I
+Endif
+
+If dim([M:CCPS]TSSCOD) > 0
+  For I = 0 To dim([M:CCPS]TSSCOD)-1
+    If [M:CCPS]TSSCOD(I) <> ""
+      If len(WFIL) > 200
+        WFIL1 += "&[F:PTH]TSSCOD("+num$(I)+")='"+[M:CCPS]TSSCOD(I)+"'"
+      Else
+        WFIL += "&[F:PTH]TSSCOD("+num$(I)+")='"+[M:CCPS]TSSCOD(I)+"'"
+      Endif
+    Endif
+  Next I
+Endif
+
+# Issue X3-25731 - 2017-02-24 by FGR : BEGIN
+##US 71069/12  PJT by RBA
+#If [M:CCPS]PJTDEB <> ""
+#   WFIL3 += "&[F:PTD]PJT>=[M:CCPS]PJTDEB"
+#Endif
+#If [M:CCPS]PJTFIN <> ""
+#   WFIL3 += "&[F:PTD]PJT<=[M:CCPS]PJTFIN"
+#Endif
+##/US 71069/12  PJT by RBA
+If dim([M:CCPS]PJTDSPALL) >= 0 and [M:CCPS]PJTDSPALL = [V]CST_AYES and [M:CCPS]PJTDEB <> "" Then
+  Local Char SPJT(GLONPIM)
+  Local Char SBUDGET(GLONTAC)
+  Local Char STASK(GLONPBU)
+  Local Integer IRET
+
+  IRET = func PIMPL_CSTD_PROGS.PJM_KEY_SPLIT(GACTX, [M:CCPS]PJTDEB, SPJT, SBUDGET, STASK)
+  WFIL1 += "&pat([F:PTD]PJT,'" + SPJT + "*')<>0"
+Else
+  If [M:CCPS]PJTDEB <> ""
+     WFIL3 += "&[F:PTD]PJT>=[M:CCPS]PJTDEB"
+  Endif
+  If [M:CCPS]PJTFIN <> ""
+     WFIL3 += "&[F:PTD]PJT<=[M:CCPS]PJTFIN"
+  Endif
+Endif
+# Issue X3-25731 - 2017-02-24 by FGR : END
+
+Case CHGPAG
+   When 3 : # rafraichissement
+     Case [M:CCPS]TRI
+       When 1 : # tri par numéro
+           WFIL += "&[F:PTH]PTHNUM>=DEBNUM"
+       When 2 : # tri par date
+           WFIL += "&([F:PTH]RCPDAT>DEBDAT | ([F:PTH]RCPDAT=DEBDAT & [F:PTH]PTHNUM>=DEBNUM))"
+     Endcase
+   When 2 : # suite
+     Case [M:CCPS]TRI
+       When 1 : # tri par numéro
+           #WFIL += "&[F:PTH]PTHNUM>FINNUM"
+           WFIL += "&[F:PTH]PTHNUM>=FINNUM" :# 69747
+       When 2 : # tri par date
+           #WFIL += "&([F:PTH]RCPDAT>FINDAT | ([F:PTH]RCPDAT=FINDAT & [F:PTH]PTHNUM>FINNUM))"
+           WFIL += "&([F:PTH]RCPDAT>FINDAT | ([F:PTH]RCPDAT=FINDAT & [F:PTH]PTHNUM>=FINNUM))" :# 69747
+     Endcase
+   When -2 : # retour
+     Case [M:CCPS]TRI
+       When 1 : # tri par numéro
+           #WFIL += "&[F:PTH]PTHNUM<DEBNUM"
+           WFIL += "&[F:PTH]PTHNUM<=DEBNUM" :# 69747
+       When 2 : # tri par date
+           #WFIL += "&([F:PTH]RCPDAT<DEBDAT | ([F:PTH]RCPDAT=DEBDAT & [F:PTH]PTHNUM<DEBNUM))"
+           WFIL += "&([F:PTH]RCPDAT<DEBDAT | ([F:PTH]RCPDAT=DEBDAT & [F:PTH]PTHNUM<=DEBNUM))" :# 69747
+     Endcase
+Endcase
+
+Return
+
+############################################################################
+#    Avant de fermer la fenetre critère et de revenir à fenetre principale #
+############################################################################
+$FIN_CRIT
+
+Return
+
+
+#############################################################
+##     Etiquettes masques CONSPOH1 & CONSPOH2 & CRITPOH    ##
+#############################################################
+Subprog AV_CPY(VALEUR)
+#---------------------#
+# Avant zone          #
+#---------------------#
+Variable Char     VALEUR
+If GNBAUZ=1 : Diszo [M]CPY, PRHFCY : Endif
+End
+
+Subprog C_CPY(VALEUR)
+#-------------------------------#
+# Contrôle de la société        #
+#-------------------------------#
+Variable Char     VALEUR
+If VALEUR <> ""
+    LOCALDEV=[F:CPY]ACCCUR
+Elsif [M]PRHFCY = ""
+   GSOCIETE="" : GLOCALDEV=""
+Endif
+End
+
+Subprog AM_CPY(VALEUR)
+#-------------------------------#
+# Après modif de la société     #
+# Utilisé par 2 écrans          #
+#-------------------------------#
+Variable Char     VALEUR
+Affzo ZCPY
+Raz [M]PRHFCY, [M]ZPRHFCY, [M]PRHFCY
+Affzo ZPRHFCY
+If VALEUR<>""  GSOCIETE=VALEUR : Endif
+End
+
+Subprog C_PRHFCY(VALEUR)
+#------------------------------------------------#
+# Contrôle du site par defaut pour achat         #
+# on regarde en fonction des autorisations sites #
+# uniquement dans le cas site par defaut = ""    #
+# complément de l'action VERIFCY en avant saisie #
+#------------------------------------------------#
+Variable Char    VALEUR()
+If VALEUR <> ""
+#-----------------------------------#
+# Alimentation site fin.(GFINRSP)   #
+#              soc. (GSOCIETE)      #
+#              dev.soc. (GLOCALDEV) #
+#-----------------------------------#
+    Call GETDEV(VALEUR) From DEVSUB
+    [M]CPY = GSOCIETE
+
+Elsif [M]CPY = ""
+    GSOCIETE="" : GLOCALDEV=""
+Else
+    Call CONTALLFCY([M]CPY) From CPTSUB : # Accès à tous les sites de la société ?
+Endif
+End
+
+#-------------------------------#
+# Après modif du site           #
+# Utilisé par 2 écrans          #
+#-------------------------------#
+Subprog AM_PRHFCY(VALEUR)
+Variable Char     VALEUR
+If VALEUR <> ""
+  Affzo CPY, ZCPY
+Endif
+End
+
+#----------------------------------------#
+# Après modification de la date de début #
+#----------------------------------------#
+Subprog AM_RCPDATDEB(VALEUR)
+Variable Date     VALEUR
+#----- Recalcul date fin en fonction de la périodicité et du nbre de périodes -----#
+If dim([M]PERCOD)>0
+  Local Date WDATE
+  Call CALDATPER([M]PERCOD,[M]PERNBR,"+",[M]RCPDATDEB,VALEUR,WDATE) From TRTX3DAT
+  If WDATE<>[0/0/0]
+    [M]RCPDATFIN=WDATE : Affzo RCPDATFIN
+  Endif
+Elsif VALEUR>[M]RCPDATFIN
+  [M]RCPDATFIN=VALEUR
+Endif
+End
+
+#-----------------------------------#
+# Après modification de la date fin #
+#-----------------------------------#
+Subprog AM_RCPDATFIN(VALEUR)
+Variable Date    VALEUR
+If dim([M]PERCOD)<1  End : Endif
+#----- Recalcul date début en fonction de la périodicité et du nbre de périodes -----#
+Local Date WDATE
+Call CALDATPER([M]PERCOD,[M]PERNBR,"-",[M]RCPDATFIN,VALEUR,WDATE) From TRTX3DAT
+If WDATE<>[0/0/0]
+  [M]RCPDATDEB=WDATE : Affzo RCPDATDEB
+Endif
+#-----
+End
+
+#---------------------------------------------------#
+#      Controle du numéro de réceptionfin           #
+# ------------------------------------------------- #
+Subprog C_PTHNUMFIN(VALEUR)
+Variable Char     VALEUR
+If VALEUR<>"" & VALEUR<[M]PTHNUMDEB
+ GMESSAGE = mess(44,199,1)
+  mkstat = 2
+Endif
+End
+
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran CONSCPS2) 25/03/2008 10:35:17 (MAE)
+######################################################################################
+Subprog IB_NBLIG
+Raz GBOUT1, GBOUT2
+If [M:CPS2]NBLIG<>0
+    If clalev([M:PTH1])=0
+         GBOUT1=mess(117,198,1)-[M:CPS2]PTHNUM (nolign -1) : # Réceptions
+    Endif
+
+    If [M:CPS2]POHNUM(nolign-1) <> ""
+        If [M:CPS2]POHTYP(nolign-1) = 1
+             GBOUT2=mess(2,306,1)-[M:CPS2]POHNUM (nolign -1) : # Commande fournisseur
+        Endif
+        If [M:CPS2]POHTYP(nolign-1) = 2
+             GBOUT2=mess(2,506,1)-[M:CPS2]POHNUM (nolign -1) : # Commande ouverte
+        Endif
+    Endif
+Endif
+End
+
+
+#########################################################################
+# Pour exécution de la validation des consultations en gestion de patch #
+#########################################################################
+Subprog PATCH(APPLI)
+Value Char    APPLI
+If APPLI="X3" End : Endif
+If clalev([F:ADS])=0  Local File ADOSSIER [ADS] : Endif
+Read [ADS] DOSSIER=APPLI : If fstat Raz [F:ADS] : Endif
+If [F:ADS]MODULE(5)<>2 End : Endif
+Call VALGTC(APPLI,"CPS") From SUBGTC
+End
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran CONSCPS1) 23/05/2013 14:55:02 (MAE)
+######################################################################################
+Subprog AS_PTHNUMFIN(VALEUR)
+Variable Char    VALEUR()
+If VALEUR = ""
+  VALEUR = [M]PTHNUMDEB
+Endif
+End
+
+#US 71069/12  PJT by RBA
+Subprog AS_PJTFIN(VALEUR)
+Variable Char    VALEUR()
+If VALEUR = ""
+  VALEUR = [M]PJTDEB
+Endif
+End
+
+Subprog C_PJTFIN(VALEUR)
+Variable Char    VALEUR()
+If VALEUR<[M]PJTDEB
+  GMESSAGE = mess(44,199,1)
+  mkstat = 2
+Endif
+End
+#/US 71069/12  PJT by RBA
+
+#US 71069/138  by RBA
+Subprog AS_BPSNUMFIN(VALEUR)
+Variable Char    VALEUR()
+If VALEUR = ""
+  VALEUR = [M]BPSNUMDEB
+Endif
+End
+
+Subprog C_BPSNUMFIN(VALEUR)
+Variable Char    VALEUR()
+If VALEUR<[M]BPSNUMDEB
+  GMESSAGE = mess(44,199,1)
+  mkstat = 2
+Endif
+End
+#/US 71069/138  by RBA

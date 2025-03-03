@@ -668,3 +668,6 @@ Subprog CONFIRMATION_ALLOCATION
     OK = 0
     Endif
     end
+
+
+    If !clalev ([F:ITM]) : Local File ITMMASTER [ITM] :  Endif
