@@ -1,0 +1,16 @@
+$ACTION
+If clalev([M:SAI1]) and ACTION = "DEBUT" : Gosub DEBUT : Endif
+Return
+
+$DEBUT
+Gosub DEBUT from MODECHE
+If !clalev ([F:BPC]) : Local File BPCUSTOMER [BPC] :  Endif
+Infbox [M:SAI1]BPR(0)
+# For I = 0 to  [M:SAI1]NB-1
+#     Read [BPC]BPC0 = [M:SAI1]BPR(I)
+#     If !fstat
+#         [M:SAI1]BPRSHO = [BPC]BPRSHO
+#     Endif
+# Next
+GPE = 1
+Return

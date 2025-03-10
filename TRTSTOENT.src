@@ -1,0 +1,1584 @@
+﻿#<AdxTL>@(#)0.0.0.0 $Revision$ Saisie Entrées  #!!!!DISCLAIMER X3V11P13 P Base DO NOT COPY OR USE THIS FILE IN ANY X3 FOLDER OR SUB FOLDER!!!!
+#########################################################################
+# TRTSTOENT    Saisie mouvements entrées                                #
+#########################################################################
+$ACTION
+#--- Actions liés au type fenêtre de saisie
+Case ACTION
+ When "INIT"        : Gosub INIT
+ When "TITRE"       : Gosub TIT_TRT
+ When "OUVRE_BOITE" : Gosub OUVRE_BOITE
+ When "DEBUT"       : Gosub DEBUT
+ When "APRES_MODIF" : Gosub APRES_MODIF
+ When "SETBOUT"     : Gosub SETBOUT
+ When "AVANT_BOUTON":
+    Case BOUT
+     When "E"   : Gosub AVANT_ENR
+    Endcase
+ When "BOUTON":
+    Case BOUT
+     When "E"         : Gosub ENR
+     When "A"         : Gosub ABA
+ Endcase
+ When "END"         : Gosub ACTEND
+ When "FIN"         : Gosub FIN
+ When "FINSAI"      : Gosub FINSAI
+Endcase
+Return
+
+$TIT_TRT
+Local Char    WTAB
+Local Char    WTRS(2)
+Case LTYP
+  When  6    : WTAB="PURTRS"   : WTRS="6"
+  When 12    : WTAB="BENCHTRS" : WTRS="63"
+  When 13    : WTAB="SALTRS"   : If LABR="SRH1"
+                                    WTRS="6"
+                                 Elsif LABR="SRL1"
+                                    WTRS="7"
+                                 Else
+                                    WTRS="8"
+                                 Endif
+  When 15    : If LABR="PSTT"
+                  WTAB="PURTRS"  : WTRS="6"
+               Elsif LABR="MTK2"
+                  WTAB="MFGTRS"  : WTRS="2"
+               Elsif LABR="MBI"
+                  WTAB="BENCHTRS": WTRS="62"
+               Endif
+  When 18    : WTAB="SALTRS" : WTRS="5"
+  When 19    : WTAB="STKTRS" : WTRS="1"
+  When 27    : WTAB="STKTRS" : WTRS="5"
+  When 31,32 : WTAB="STKTRS" : WTRS="7"
+Endcase
+Call LECTEXTRA(TIT,WTAB,"DESAXX",WTRS,GFLAG) From ATEXTRA
+If !clalev([F:AWI]) : Local File AWINDOW : Endif
+Read [AWI]AWI0=BOITE
+Call TEXTE([F:AWI]DES,GBIDC1) From OBJDIV
+TIT = GBIDC1-GFLAG-":"-TIT
+Return
+
+
+#########################################################################
+$INIT
+
+#si variable globale GOUVENT <= 1 on sort
+If GOUVENT <= 1
+  FIN = 1
+  Return
+Endif
+
+#recuperation ecran généré de la saisie des entrées
+Local Char       LBOI(GLONFEN) : LBOI  =      PARAM(3)
+
+#If LQUS = LQTO BCRIT = "" Endif
+#If LQUS > LQTO BCRIT = "" Endif
+BCRIT = ""
+# ouverture de l ecran géneré
+If LBOI <> ""
+    BOITE = LBOI
+Endif
+
+Global Integer GNOLIG    : # nolign-1 (pour accés aux axes ana origines)
+GNOLIG = val(PARAM(4))
+
+Return
+
+#########################################################################
+$OUVRE_BOITE
+#########################################################################
+#recuperation parametre standard
+#recuperation type de piece (m701)
+Local Integer    LTYP : LTYP  =      val(PARAM(1))
+#recuperation code ecran
+Local Char       LABR : LABR  =          PARAM(2)
+#recuperation ecran généré de la saisie des entrées
+Local Char       LBOI(GLONFEN) : LBOI  =      PARAM(3)    # variable utilisée dans trtstoenta
+#recuperation numero de ligne
+Local Integer    LLIGDOC: LLIGDOC =       val(PARAM(4))
+
+
+Local Char     LFCY(GLONFCY) : LFCY = PARAM(5)
+Local Char     LBPR(GLONBPR) : LBPR = PARAM(6)
+Local Integer  LTRSTYP       : LTRSTYP = val(PARAM(7))
+Local Char     LTRSCOD(5)    : LTRSCOD = PARAM(8)
+#--- Issue 122857 et X3-38689 remplacement LMSKCOU(7) par LMSKCOU(10)
+Local Char    LMSKCOU(10)   : LMSKCOU = func STKLIB.MSKDEF
+Global Decimal GQTYPHY    # Nécessaire pour calculer la quantité physique à passer en paramètre des actions d'emplacement
+Global Char    GSAIFLG(15)   : GSAIFLG = "000000000000000"
+Global Char    GCHPSTO(GLONAVA)(1..15)
+GCHPSTO(1) = "PCU"
+GCHPSTO(2) = "QTYPCU"
+GCHPSTO(3) = "PCUSTUCOE"
+GCHPSTO(4) = "STA"
+GCHPSTO(5) = "LOCTYP"
+GCHPSTO(6) = "LOC"
+GCHPSTO(7) = "BPSLOTAFF"
+GCHPSTO(8) = "LOTAFF"
+GCHPSTO(10)= "SLOAFF"
+GCHPSTO(11)= "SERNUM"
+
+Default Mask "["+LABR+"]"
+Call LECFICENT(LFCY,LBPR,"",LLIGDOC,LTRSTYP,LTRSCOD,0) From STKECR
+Default Mask LMSKCOU
+
+#########################################################################
+Local Integer    LOUVAUTO  # Indicateur permettant de savoir si le détail a été ouvert par clic droit
+                           # ou automatiquement ( 0=clic droit, 1=auto)
+If mod(GOUVENT,32768)>=16384
+    Raz LOUVAUTO
+Else
+    LOUVAUTO = 1
+Endif
+
+# Tout ce qui est réservé avant l'ouverture du détail doit pouvoir être de nouveau réservé si on fait "Fin" CCC: 22/09/03
+#Local Integer    LRESEMPOK # Indicateur permettant de savoir s'il faut revenir à une réservation avec
+#                           # n° de séquence temporaire (0) ou s'il faut conserver les n° de ENTW(1)
+#If mod(GOUVENT,128)>=64 | evalue("[M:"+LABR+"]WSTOFLG(LLIGDOC)")=1
+#    LRESEMPOK = 1
+#Else
+#    Raz LRESEMPOK
+#Endif
+
+Global Integer GMAJLIGDOC  # Indique si la maj de la ligne de document est nécessaire
+                           # =1 si modif mvtdes ou apres_nblig
+Raz GMAJLIGDOC
+
+#!!!!!!!!!!!!
+# La fenêtre ISTOENTS est prévue pour sélectionner des lignes d'un document d'origine
+# Cela pourra être activé dès qu'on pourra mettre une action en apres picking
+#!!!!!!!!!!!!
+If  BOITE = "ISTOENTS"
+           Case LTYP
+                When 4   : GBIDC1  = mess( 4,701,1)       # livraison
+                When 5   : GBIDC1  = mess( 5,701,1)       # facture vente
+                When 10  : GBIDC1  = mess(10,701,1)       # ordre de fabrication
+                When 19  : GBIDC1  = mess(19,701,1)       # entree diverse
+                When 22  : GBIDC1  = mess(22,701,1)       # transfert inter-sites
+                When 24  : GBIDC1  = mess(24,701,1)       # transfert sous-traitance
+                When 36  : GBIDC1  = mess(36,701,1)       # ordre de sous-traitance
+               Endcase
+Else
+           Case LTYP
+                When 6   : GBIDC1  = mess( 6,701,1)       # reception
+                When 13  : GBIDC1  = mess(13,701,1)       # retour client / retour pret
+                When 18  : GBIDC1  = mess(18,701,1)       # avoir vente
+                When 19  : GBIDC1  = mess(19,701,1)       # entree diverse
+                When 15  : GBIDC1  = mess(15,701,1)       # declaration production
+                When 23  : GBIDC1  = mess(23,701,1)       # reception transfert inter site
+                When 25  : GBIDC1  = mess(25,701,1)       # reception sous traitance
+                When 12  : GBIDC1  = mess(26,701,1)       # reintegration stock
+                When 27  : GBIDC1  = mess(27,701,1)       # plan de rangement
+                When 31  : GBIDC1  = mess(31,701,1)       # Assemblage
+                When 32  : GBIDC1  = mess(32,701,1)       # Desassemblage
+           Endcase
+Endif
+
+If clalev([F:STL])=0 Local File STOLOT     [STL]  Endif
+If clalev([F:ITF])=0 Local File ITMFACILIT [ITF]  Endif
+If clalev([F:ITM])=0 Local File ITMMASTER  [ITM]  Endif
+If clalev([F:ITP])=0 Local File ITMBPS     [ITP]  Endif
+If clalev([F:TUN])=0 Local File TABUNIT    [TUN]  Endif
+If clalev([F:STJ])=0 Local File STOJOU     [STJ]  Endif
+If clalev([F:STO])=0 Local File STOCK      [STO]  Endif
+If clalev([F:STS])=0 Local File STOSER     [STS]  Endif
+If clalev([F:STA])=0 Local File STOALL     [STA]  Endif
+If clalev([F:ITG])=0 Local File ITMCATEG   [ITG]  Endif
+If clalev([F:SRU])=0 Local File TABSTORUL  [SRU]  Endif
+If clalev([F:TST])=0 Local File TABSTASTO  [TST]  Endif
+If clalev([F:TLO])=0 Local File TABLOCTYP  [TLO]  Endif
+If clalev([F:STC])=0 Local File STOLOC     [STC]  Endif
+If GWRHACT=2
+   If clalev([M:ITW])=0  Local File ITMWRH    [ITW] Endif
+   If clalev([F:WRH])=0  Local File WAREHOUSE [WRH] Endif
+Endif
+
+# Important : l écran STOENTW doit etre ouvert par le document appelant
+If clalev([M:ENTW])=0 Local Mask STOENTW   [ENTW] Endif  #  ecran stockage mvt du document
+#If clalev([M:ENTS])=0 Local Mask STOENTSEL [ENTS] Endif  #  ecran saisie selection mvt origine
+
+# Ce doit être fait en auto dans WINPROG
+## ouverture et lecture du dictionnaire des fenetres pour recuperer l ecran generé
+#If clalev([F:AWI])=0 Local File AWINDOW [AWI] : Endif
+#Local Char WNOMMSK(10)
+#Read [AWI] AWI0=BOITE
+#If fstat
+#   WNOMMSK="STOENT"
+#Else
+#   WNOMMSK=[F:AWI]NOMMSK(0)
+#Endif
+#If clalev([M:ENT])=0 Local Mask = WNOMMSK   [ENT] Endif  #  ecran stockage
+#
+
+#If GUSER="LD"
+#    Infbox "BOITE="+BOITE
+#    Infbox "WNOMMSK="+WNOMMSK
+#Endif
+Return
+
+#########################################################################
+$DEBUT
+#########################################################################
+Local Integer  LDEB_I
+Local Shortint LDEB_SI
+Local Decimal  LOVF
+Local Char     WWRH(GLONWRH)
+
+Raz GMAJLIGDOC
+Raz [M:ENT]
+
+If BOITE = "ISTOENTS"
+           Raz [M:ENTS]
+Endif
+
+[M:ENT]STOFCY = LFCY
+[M:ENT]BPRNUM = LBPR
+[M:ENT]TRSTYP = LTRSTYP
+[M:ENT]TRSCOD = LTRSCOD
+
+# Chargement des blocs ENTETE / PARAMETRAGE  ecran STOENT
+Gosub CHARG_PARAM_STOENT  From TRTSTOENTA
+If [M:ENT]QTYTOENT=0
+    FIN =1
+    Return
+Endif
+
+#If [M:ENT]TRFFCY=""
+#    [M:ENT]TRFFCY=[M:ENT]STOFCY
+#Endif
+
+[M:ENT]TYPBPR = 1                                          # hcb 71276
+If [M:ENT]BPRNUM<>""
+    [M:ENT]TYPBPR = 3                                      # hcb 71276
+    If [M:ENT]TRSTYP=3
+        [M:ENT]TYPBPR = 1
+    Elsif [M:ENT]TRSTYP=12
+        [M:ENT]TYPBPR = 2
+    Endif
+Endif
+# If [M:ENT]TYPBPR=0                          # hcb 71276
+#    [M:ENT]TYPBPR = 3
+#Endif
+
+# Dépôt obligatoire ou renseigné sur ligne document --> non modifiable
+If [M:ENT]XWRH<>""
+   [M:ENT]WRHOBY=2
+Else
+   [M:ENT]WRHOBY=1
+Endif
+
+#------------- Lecture des tables ------------#
+Default Mask "["+LABR+"]"
+Call LECFICENT( [M:ENT]STOFCY, [M:ENT]BPRNUM, "", LLIGDOC, [M:ENT]TRSTYP, [M:ENT]TRSCOD, 0 ) From STKECR
+Default Mask "[ENT]"
+# Lecture règle de gestion de stock
+Local Integer LRET
+Call LECSRU([M:ENT]STOFCY, [F:ITM]TCLCOD, [M:ENT]TRSTYP, [M:ENT]TRSCOD, "", LRET) From STKLIB
+If LRET
+    GERR = 1
+    GOK  = 0
+    FIN  = 1
+    Return
+Endif
+
+#---------- Positionnement de la variable GSAIFLG --------#
+If [F:SRU]DACLOT = 1
+    GSAIFLG = left$(GSAIFLG,7) + "2" + right$(GSAIFLG,9)
+Endif
+If  mid$(GSAIFLG,11,1)<>"0"
+& & [F:ITM]SERMGTCOD > 1                   # Si le n° de série n'est pas saisissable on ne peut pas saisir la qté
+    GSAIFLG = "222" + right$(GSAIFLG,4)    # sinon le contrôle ne se ferait pas
+Endif
+
+#---------- Positionnement du filtre type emplacement --------#
+If  [M:ENT]SRGWAIFLG<>2
+    If [M:ENT]FILLOCENT=""
+        [M:ENT]FILLOCENT = "[F:TLO]LOCCAT<>2"
+    Else
+        [M:ENT]FILLOCENT += "&[F:TLO]LOCCAT<>2"
+    Endif
+Endif
+
+# Chargement des lignes à partir des mouvements de stock du document origine
+Gosub LIGNE_STOENTW From TRTSTOENTA
+
+If [M:ENT]COETOENT = 0
+   [M:ENT]COETOENT = 1
+Endif
+
+Gosub GESSELECTION From TRTSTOENTB
+
+If LABR <> "SSL1"
+  [M:ENT]VCRTYP = LTYP
+Endif
+
+[M:ENT]STU    = [F:ITM]STU
+
+[M:ENT]COEFUCUS  = [M:ENT]PCUTOENT+"  ="+format$("N:5.4",[M:ENT]COETOENT)+"  "+[F:ITM]STU
+
+#initialisation rubrique (affiche / saisi) selon parametrage transaction
+#impression
+If   [M:ENT]PRNCOD1 = 1
+      Raz[M:ENT]LBEFMT
+      Raz[M:ENT]LBENBR
+Endif
+
+# Ne doit plus être utile CCC:19/09/03 depuis la possibilité de modifier une ligne de doc qui n'a qu'une seule ligne de détail
+## Il est possible de revenir sur un détail non enregistré (=>WLOCSEQ>100000)
+## en ouvrant par clic droit => la déréservation (avec WLOCSEQ=100000+WSTOSEQ) n'est pas faite
+## ainsi que la réservation avec le(s) WLOCSEQ provenant de WSTOSEQ et qui sont <100000
+#If !LOUVAUTO
+#    Look [SWL]SWL0=adxuid(1);100000+[M:ENT]WSTOSEQ
+#    If !fstat
+#        Call STKDELRES(100000+[M:ENT]WSTOSEQ, "", "", LDEB_I) From STKLOC
+#        For LDEB_I=0 To [M:ENT]NBLIG
+#            Call STKCTREMP([M:ENT]WLOCSEQ(LDEB_I), [M:ENT]TRSTYP,      [M:ENT]TRSCOD,
+#&                          [M:ENT]STOFCY,          [M:ENT]ITMREF,      [M:ENT]PCU(LDEB_I),
+#&                          [M:ENT]QTYPCU(LDEB_I),  [M:ENT]STA(LDEB_I), [M:ENT]LOCTYP(LDEB_I),
+#&                          [M:ENT]LOC(LDEB_I),     [M:ENT]BPRNUM,
+#&                          1, LDEB_SI, LOVF, "", "" ) From STKLOC
+#        Next I
+#    Endif
+#Endif
+
+#desactivation des rubriques ecrans suivant le contexte
+Gosub FORMAT_INV     From STKLIB
+
+# Choix traitement numéros de série
+If find(LTYP,6,12,15,19,23,27)
+  If [F:ITM]SERMGTCOD = 1 | ([F:ITM]SERMGTCOD = 2 & [M:ENT]SERNUM(0)="")
+     Gosub FORMAT_INV_ENT From STKLIB
+  Endif
+Endif
+################################################################
+# quand le bug 14749 sera ok enlever les 5 lignes suivantes -> bug sans suite
+If left$(GWSINVSER,1)  <> "-"
+   If dim([M:ENT]SERNUMF) > 0
+      Grizo [M:ENT]SERNUMF
+   Endif
+Endif
+
+Gosub DESACTIV_RUB From TRTSTOENTA
+
+If dim([M:ENT]WRH)>0
+   If [F:FCY]WRHGES=2
+      If [M:ENT]XWRH=""
+         Actzo [M:ENT]WRH
+      Else
+         If [M:ENT]WRHOBY=2
+            Diszo [M:ENT]WRH
+         Else
+            Actzo [M:ENT]WRH
+         Endif
+      Endif
+   Else
+      Grizo [M:ENT]WRH
+   Endif
+Endif
+
+Affzo [M:ENT]
+
+Return
+
+#########################################################################
+$SETBOUT
+
+# Pour interdire la navigation
+GREP="M"
+
+# Mis en commentaire, car si on ne fait qu'un split (bouton droit) les boutons ne sont pas activés!
+#    If GOUVENT<>128 & GOUVENT<>129 & !GMAJLIGDOC
+#        Call VIREBOUT(CHMEN,"ae") From GOBJET
+#    Elsif !GMAJLIGDOC
+#        Call VIREBOUT(CHMEN,"a") From GOBJET
+#    Endif
+If [M:ENT]CCECODS=3
+    Call VIREBOUT(CHMEN,"a") From GOBJET
+Endif
+
+#hcb 35623 deb  : Option : Sélection détail stock
+#  non permit des lors qu il y a une modification
+If GMAJLIGDOC=1
+    Call VIREBOUT(CHMEN,"b") From GOBJET
+Endif
+#
+#  permit sur "Retour" et "Réception"
+If !find(LTYP,6,13)
+    Call VIREBOUT(CHMEN,"b") From GOBJET
+Endif
+#hcb 35623 deb
+
+Return
+
+#########################################################################
+$APRES_MODIF
+    GMAJLIGDOC=1
+Return
+
+#########################################################################
+$AVANT_ENR
+
+Local Decimal  LQTYSTU, LQTYSTUACT
+Local Char     LPCU(GLONUOM)
+Local Decimal  LCOEF
+Local Integer  I, LRET
+Local Char    LWRNLOT(20)
+
+Local Decimal  LQTYPCU    # hcb 160205 28512
+
+For I=0 To [M:ENT]NBLIG-1
+  If [M:ENT]WFLG(I)=1
+    Call APRESNBLIG(I, LRET) From TRTSTOENTB
+  Endif
+Next
+I = find(1,[M:ENT]WFLG)
+If I
+    Call ERREUR(mess(93,100,1)-num$(I)) From GESECRAN
+    FOK =0
+    Return
+Endif
+
+
+# Contrôle que l'enregistrement peut se faire
+Call ENRENT("ENT") From TRTSTOENTB
+If mkstat
+    FOK = 0
+    Return
+Endif
+
+If dim([M:ENT]SAIACTFLG)>0 & [M:ENT]SAIACTFLG=2
+    LQTYSTU    = sigma (I=0,[M:ENT]NBLIG-1,[M:ENT]QTYSTU(I)/(([M:ENT]NUMLIGLOT(I)<0)+sigma(abs([M:ENT]NUMLIGLOT(I)),[M:ENT]NUMLIGLOT(I),[M:ENT]POT(indcum)/100)))
+    LQTYSTUACT = sigma (I=0,[M:ENT]NBLIG-1,[M:ENT]QTYSTU(I))
+Else
+    LQTYSTU    = sigma (I=0,[M:ENT]NBLIG-1,[M:ENT]QTYSTU(I))
+    LQTYSTUACT = sigma (I=0,[M:ENT]NBLIG-1,[M:ENT]QTYSTU(I)*(([M:ENT]NUMLIGLOT(I)<0)+sigma(abs([M:ENT]NUMLIGLOT(I)),[M:ENT]NUMLIGLOT(I),[M:ENT]POT(indcum)/100)))
+Endif
+LPCU    = string$( !!( sigma(I=0,[M:ENT]NBLIG-1,([M:ENT]PCU(0)=[M:ENT]PCU(I))) = [M:ENT]NBLIG), [M:ENT]PCU(0))
+LCOEF   = !!( sigma(I=0,[M:ENT]NBLIG-1,([M:ENT]PCUSTUCOE(0)=[M:ENT]PCUSTUCOE(I))) = [M:ENT]NBLIG)* [M:ENT]PCUSTUCOE(0)
+
+If LPCU <> "" & LCOEF <> 0                                    # hcb 160205 28512
+    LQTYPCU    = sigma (I=0,[M:ENT]NBLIG-1,[M:ENT]QTYPCU(I))  # hcb 160205 28512
+Endif                                                         # hcb 160205 28512
+
+
+# Donne la main au document origine pour effectuer ses propres contrôles
+Gosub CTL_LIGNE_DOCUMENT From TRTSTOENTB
+
+If mkstat
+    FOK = 0
+    Return
+Endif
+
+# Vérifie que tous les compléments lots sont renseignés
+LWRNLOT = sigma( 0, [M:ENT]NBLIGLOT-1, string$([M:ENT]VALIDE(indcum)<>2 & find(indcum,[M:ENT]NUMLIGLOT),
+&                                              num$(find(indcum,[M:ENT]NUMLIGLOT))+"-") )
+If FOK & LWRNLOT<>""
+    #--- inversion des caractères pour ensuite pouvoir trouver "-"... ----#
+    LWRNLOT=sigma(1,len(LWRNLOT),mid$(LWRNLOT,len(LWRNLOT)-indcum+1,1))
+    I=instr(1,LWRNLOT,"-")
+    #--- ... et supprimer ce qui suit (qui peut avoir été tronqué) ----#
+    LWRNLOT=sigma(1,len(LWRNLOT)-I,mid$(LWRNLOT,len(LWRNLOT)-indcum+1,1))
+    GMESSAGE= mess(93,100,1)-LWRNLOT+chr$(13)+mess(101,184,1)+chr$(13)+mess(205,100,1)
+    GERR = 3
+Endif
+#For I=1 To [M:ENT]NBLIGLOT-1
+#    If [M:ENT]VALIDE(I) = 1 & find(I,[M:ENT]NUMLIGLOT)
+#        Call ERREUR(mess(28,184,1)+chr$(13)+mess(23,107,1)+" : "+[M]LOT(I)) From GESECRAN
+#        FOK = 0
+## Les lignes suivantes peuvent servir si l'action SAIENTLOT est appelée sur le bouton "Enregistrer"
+## pour ouvrir automatiquement la fenêtre complément lot si nécessaire.
+## Ce n'est pas le cas actuellement pour éviter le lancement de l'action dans les cas (certainement plus nombreux)
+## où il n'y en n'a pas besoin.
+##        GOUVENT = 1     # Permet l'ouverture de la fenêtre complément lot
+##        nolign = I+1    # nolign est passée en paramètre de l'action SAISTOENT
+##        Call INIT_GOUVLOT([M:ENT]TABLE1) From STKENT
+#        Break
+#    Endif
+#Next
+
+Return
+
+
+#########################################################################
+$ENR
+# stochage des mvts  dans ENTW
+Gosub STOCKAGE_LIGNE  From TRTSTOENTA
+
+# Donne la main au document origine
+Gosub MAJ_LIGNE_DOCUMENT From TRTSTOENTA
+
+GOUVENT = 0
+If BOITE <> "ISTOENTS"
+    If clalev([ENTS])
+        Raz [M:ENTS]
+    Endif
+# restitution ligne document
+    If evalue("dim([M:"+LABR+"]MVTDES(LLIGDOC))")>0
+        Assign "[M:"+LABR+"]MVTDES(LLIGDOC)"   With [M:ENT]MVTDES
+        Default Mask "["+LABR+"]"    # Nécessaire pour affzo
+        Affzo MVTDES(LLIGDOC)
+    Endif
+    Assign "[M:"+LABR+"]WSTOFLG(LLIGDOC)"   With 1
+    Call LOAD_FROM_ENTW( LABR, LLIGDOC, [M:ENT]STOFCY, [M:ENT]WSTOSEQ, [M:ENT]ITMREF, [M:ENT]VCRTYPORI )  From STKENT
+
+Endif
+
+GMAJLIGDOC = 1
+FIN = 1
+Return
+
+#########################################################################
+$ABA
+Local Integer  I
+Local Integer  ABAI_RET    # NE PAS UTILISER LRET!!!
+Local Shortint ABASI_RET   # Car cette variable est déclarée dans DEBUT, et cela crée un conflit!!
+Local Decimal  WOVF
+
+If BOITE = "ISTOENTS"
+    GOK = 1
+    FIN = 1
+    Return
+Endif
+
+If [F:ITF]LOCMGTCOD=2 & dim([M:ENT]LOC)>0
+    # Supprimer les réservations d'emplacements
+    For I=0 To [M:ENT]NBLIG-1
+        Call STKDELRES([M:ENT]WLOCSEQ(I), [M:ENT]STOFCY, [M:ENT]LOC(I), ABAI_RET) From STKLOC
+    Next I
+Endif
+
+# Réalimentation avec les valeurs initiales
+Raz [M:ENT]
+Gosub DEBUT
+
+If [F:ITF]LOCMGTCOD=2 & dim([M:ENT]LOC)
+    If dim([M:ENT]WRH) > 0
+        WWRH=[M:ENT]WRH(I)
+    Else
+        WWRH=""
+    Endif
+    # Recréer les réservations
+    For I=0 To [M:ENT]NBLIG-1
+        Call CALQTYPHY("ENT",I)
+        Call STKCTREMP([M:ENT]WLOCSEQ(I),[M:ENT]TRSTYP,[M:ENT]TRSCOD,
+&                      [M:ENT]STOFCY,[M:ENT]ITMREF,[M:ENT]PCU(I),GQTYPHY,
+&                      [M:ENT]STA(I),[M:ENT]LOCTYP(I),[M:ENT]LOC(I),
+&                      [M:ENT]BPRNUM,0,ABASI_RET,WOVF,"","",WWRH) From STKLOC
+    Next I
+    [M:ENTW]WLOCSEQCUR = 99999999
+Endif
+
+Return
+
+#########################################################################
+$ACTEND
+Local Integer  ENDI_RET
+Local Shortint ENDSI_RET
+Local Decimal  WOVF
+Local Integer  I,J
+Local Decimal  WSEQ
+Local Integer  WSTOP
+
+    If GMAJLIGDOC = 1
+        Call OUINON(mess(12,184,1), ENDI_RET) From GESECRAN
+        FIN=ENDI_RET-1
+    Endif
+    If FIN & dim([M:ENT]LOC)>0
+        #---- Déréservation des emplacements ----#
+        For I=0 To [M:ENT]NBLIG-1
+            Call STKDELRES([M:ENT]WLOCSEQ(I), [M:ENT]STOFCY, [M:ENT]LOC(I), ENDI_RET) From STKLOC
+        Next I
+        Raz GMAJLIGDOC
+        J = find([M:ENT]WSTOSEQ, [M:ENTW]WSTOSEQ)-1
+        If J>=0
+            #---- Réservation des emplacements de STOENTW -----#
+            If [M:ENTW]LOC(J)<>""
+                Raz WSTOP
+                Raz I
+                While !WSTOP
+                    WSEQ = [M:ENTW]WLOCSEQ(J+I)
+                    Call CALQTYPHY("ENTW",J+I)
+                    If [M:ENTW]WSTOSEQ(J+I+1) <> [M:ENT]WSTOSEQ
+                        WSTOP = 1
+                    Endif
+                    Call STKCTREMP(WSEQ,[M:ENT]TRSTYP,[M:ENT]TRSCOD,[M:ENT]STOFCY,
+&                                  [M:ENT]ITMREF,[M:ENTW]PCU(J+I),GQTYPHY,
+&                                  [M:ENTW]STA(J+I),[M:ENTW]LOCTYP(J+I),
+&                                  [M:ENTW]LOC(J+I),[M:ENT]BPRNUM,0,ENDSI_RET,
+&                                  WOVF,"","",[M:ENTW]WRH(J+I)) From STKLOC
+                    Raz GMESSAGE    # STKCTREMP peut renvoyer un message si on n'est pas bon dans le ENTW => Raz, sur Fin on ne s'attend pas à un message d'erreur
+                    I += 1
+                Wend
+                [M:ENTW]WLOCSEQCUR = 99999999
+            Endif
+        Endif
+    Endif
+
+Return
+
+#########################################################################
+$FIN
+#    Raz GOUVENT
+Return
+
+$FINSAI
+# On ne sait plus pourquoi "mkstat=4" a été ajouté
+# ( Cela permet de remettre à jour les boutons de la ligne, car avec mkstat=0,
+#   le curseur peut rester sur la ligne et la mise à jour des boutons n'est alors pas effectuée)
+#    If GMAJLIGDOC & GUSER="CCC"
+#        mkstat=4
+#    Endif
+If LOUVAUTO=0 & GMAJLIGDOC=1     : # à vérifier !!!!
+    mkstat=4
+Endif
+
+Raz GOUVENT
+Kill GMAJLIGDOC
+
+If dim(GISTOENTS) > 0
+   Kill GISTOENTS          # hcb 35623
+Endif
+
+
+Return
+
+############################################################
+# sous programmes des actions ecran
+############################################################
+
+
+$SET_NOL
+Local Integer NOL : NOL = nolign-1
+
+Return
+
+
+
+############################################################
+#----------------------------------------------------------#
+#----------------------------------------------------------#
+#                  Actions ecran                           #
+#----------------------------------------------------------#
+#----------------------------------------------------------#
+############################################################
+
+########################################
+Subprog AM_MVTDES(VALEUR)
+Variable Char    VALEUR()
+
+# fait dans $APRES_MODIF
+#    GMAJLIGDOC = 1
+
+End
+
+########################################
+Subprog AVANT_NBLIG
+
+Gosub SET_NOL
+
+Local Integer WRET
+
+Gosub LECFIC_ALIG From TRTSTOENTB
+
+# Si ligne incomplète dans doc, il faut initialiser les champs non renseignés
+# => mise en commentaire de ces lignes.
+#If [M:ENT]WFLG(NOL)   > 1
+#   End
+#Endif
+
+If [M:ENT]WLOCSEQ(NOL)=0        # Nouvelle ligne
+    Call STKWLOCSEQ("ENT", nolign-1, WRET) From STKECR
+Endif
+
+If NOL = 0
+    If [M:ENT]NBLIG>1 
+        #On ne copie que sur une nouvelle ligne
+        If find(status,73,82) | GACTION="SAISTKSPL"                  # hcb X3-132529
+        # On copie la ligne précédente, car elle est censée contenir des info plus proches
+        # de ce qui doit être saisi
+           If GACTION="SAISTKSPL"                                    # hcb X3-132529
+              Call COPYLINE(GNOLFROM, GNOLTO) From TRTSTOENTB        # hcb X3-132529
+           Else                                                      # hcb X3-132529
+              Call COPYLINE(1, 0) From TRTSTOENTB
+           Endif                                                     # hcb X3-132529
+        Endif
+    Else
+        # INIZONENT2 ne peut pas être utilisé ici, car la ligne peut déjà contenir des valeurs
+        #----- Si lot = "", lot=n° piece  -----#
+        If dim([M:ENT]LOTAFF(NOL))>0 & [F:ITM]LOTMGTCOD>1 & [M:ENT]LOTAFF(NOL) = ""
+            If [F:SRU]LOTSUPINH = 3
+                [M:ENT]LOTAFF(NOL) = [M:ENT]VCRNUM
+                Affzo [M:ENT]LOTAFF(NOL)
+            Endif
+        Endif
+
+        #------- Initialisation des unités et du coeff. UC/US
+        If [M:ENT]PCU(NOL) = ""
+            If [M:ENT]PCUTOENT <> "" & find([M:ENT]PCUTOENT, [F:ITM]PCU(0..dim([F:ITM]PCU)-1))
+                [M:ENT]PCU(NOL) = [M:ENT]PCUTOENT
+            Else
+                [M:ENT]PCU(NOL) = [F:ITM]STU
+            Endif
+            If [M:ENT]NBLIG=0
+                Call MAJPCU("ENT",[M:ENT]PCU(NOL), NOL) From TRTSTOENTB
+            Endif
+        Endif
+
+        #----- si sta non renseigne statut  = statut par defaut
+        If [M:ENT]STA(NOL) = ""
+            Call STKINISTA([M:ENT]STA(NOL),[M:ENT]BPRNUM,1) From STKACT
+        Endif
+
+        #----- Initialisation des n° de série si pas de compteur ----#
+        If dim([M:ENT]SERNUM)>0 & [F:ITM]SERMGTCOD=3 & [M:ENT]SERNUM(0)="" & [F:ITM]SERCOU="" & [F:TLO]LOCCAT<>2
+            Call STKLASSER([M:ENT]SERNUM(0), [M:ENT]ITMREF) From STKACT
+            If [M:ENT]SERNUM(0)<>""
+                Call ENTCTRSER([M:ENT]SERNUM(NOL)) From TRTSTOENTB
+                If mkstat
+                    Raz mkstat
+                    Raz GMESSAGE
+                    Effzo [M:ENT]SERNUM(0)
+                Else
+                    Affzo [M:ENT]SERNUM(0)
+                Endif
+            Endif
+        Endif
+
+        If [M:ENT]PRNCOD1 = 1
+            Raz[M:ENT]LBEFMT(0)
+            Raz[M:ENT]LBENBR(0)
+        Endif
+
+    Endif
+Else # NOL > 0
+    #On ne copie que sur une nouvelle ligne
+    If find(status,73,82) | GACTION="SAISTKSPL"
+        # On copie la ligne précédente, car elle est censée contenir des info plus proches
+        # de ce qui doit être saisi
+        If GACTION="SAISTKSPL"                                    # hcb X3-132529
+           NOL = GNOLTO                                           # hcb X3-132529
+           Call COPYLINE(GNOLFROM, NOL) From TRTSTOENTB           # hcb X3-132529
+        Else                                                      # hcb X3-132529
+           Call COPYLINE(NOL-1, NOL) From TRTSTOENTB
+        Endif                                                     # hcb X3-132529
+        # ... et on initialise la quantité qu'après avoir copié l'unité et le coef
+        Call INITQTY(NOL, [M:ENT]QTYPCU(NOL), [M:ENT]QTYSTU(NOL)) From TRTSTOENTB
+        # on propose le numero de serie suivant si l article n a pas de compteur
+        If [F:ITM]SERCOU = ""
+           If dim([M:ENT]SERNUM) > 0
+              If ([M:ENT]SERNUM(NOL-1)) <> ""
+                  Effzo [M:ENT]SERNUM(NOL)
+                  Call PLUS_UN( [M:ENT]SERNUMF(NOL-1),[M:ENT]SERNUM(NOL),WRET ) From STKLIB
+                  #--- Init temporaire de la quantité pour passer le contrôle ---#
+                  If [M:ENT]QTYSTU(NOL)=0
+                     [M:ENT]QTYSTU(NOL)=1
+                  Endif
+                  Call ENTCTRSER([M:ENT]SERNUM(NOL)) From TRTSTOENTB
+                  If [M:ENT]QTYPCU(NOL)=0
+                     [M:ENT]QTYSTU(NOL)=0
+                  Endif
+                  If mkstat
+                      Raz mkstat
+                      #--- Bug 72126
+                      Raz GMESSAGE
+                      Effzo [M:ENT]SERNUM(NOL)
+                  Else
+                      Affzo [M:ENT]SERNUM(NOL)
+                  Endif
+              Endif
+           Endif
+        Endif
+    Endif
+Endif # If NOL=0
+#------ Si quantité non saisissable et nouvelle ligne on préalimente la qté à 1 -----#
+If find(status,73,82) & mid$(GSAIFLG,2,1)<>"0"
+    [M:ENT]QTYPCU(NOL) = 1
+    Call C_QTYPCU ([M:ENT]QTYPCU(NOL))
+    Call AM_QTYPCU([M:ENT]QTYPCU(NOL))
+Else
+    Call CALQTYPHY("ENT",NOL)    #Recalcul de GQTYPHY au cas où on saisi directement l'emplacement
+Endif
+
+
+
+End
+
+########################################
+Subprog IB_NBLIG
+Gosub SET_NOL
+
+# Gconsult est positionnée quand on arrive par tunnel sur le document d'entrée
+If [F:ITM]LOTMGTCOD=1 | GCONSULT | NOL=[M:ENT]NBLIG
+    GBOUT1 = ""
+    GBOUT2 = ""
+Else
+    If [M:ENT]GESLOTAFF(NOL)=""
+        GBOUT1 = ""
+    Endif
+    If GOUVLOT>0
+        GOUVENT = 1 # permet de passer le test de l'ouverture de la fenetre complément lot
+    Else
+        GBOUT2=""
+    Endif
+Endif
+
+If [M:ENT]VCRNUMORI<>"" & dim([M:ENT]SERNUM)>0 & [M:ENT]SERNUM(NOL)<>"" | GCONSULT
+    GBOUT3 = ""
+Endif
+
+End
+
+########################################
+Subprog B1_NBLIG
+If [M:ENT]NUMLIGLOT(nolign-1)>=0
+    Call INFOLOT("ENT",[M:ENT]NUMLIGLOT(nolign-1)) From STKENT
+Endif
+End
+
+########################################
+Subprog B2_NBLIG
+    GOUVLOT = GOUVLOT-mod(GOUVLOT,2)    # Ouverture par clic du complément lot
+    GOUVENT = 1    #
+End
+
+########################################
+Subprog C_NBLIG
+Local Integer I
+Local Integer LRET
+
+# annulation d une ligne
+If status=65
+  If dim([M:ENT]LOC)>0
+      Call STKDELRES([M:ENT]WLOCSEQ(nolign-1), [M:ENT]STOFCY, [M:ENT]LOC(nolign-1), LRET) From STKLOC
+  Endif
+  [M:ENT]QTYSTU (nolign-1) = 0
+  Gosub GESSELECTION From TRTSTOENTB
+  Affzo [M:ENT]PECQTY
+Endif
+
+# annulation d'un groupe de lignes
+If find(status,68,83)
+    For I=nolign-1 To nolign1-1
+        If dim([M:ENT]LOC)>0
+            Call STKDELRES([M:ENT]WLOCSEQ(I), [M:ENT]STOFCY, [M:ENT]LOC(I), LRET) From STKLOC
+        Endif
+        [M:ENT]QTYSTU (I) = 0
+    Next
+   Gosub GESSELECTION From TRTSTOENTB
+   Affzo [M:ENT]PECQTY
+
+Endif
+
+# CCC (03/03/04) : Cela n'apparait plus nécessaire, voire même contraignant
+#If find(status,73,82) & [M:ENT]TRSTYP=18
+#    mkstat=2
+#Endif
+
+End
+
+########################################
+# Attention : pour l'action SAISTKSPL, mkstat<>0 équivaut à un problème lors du contrôle d'emplacement
+########################################
+Subprog APRES_NBLIG
+Local Integer     LRET
+
+    Call APRESNBLIG(nolign-1, LRET) From TRTSTOENTB
+
+End
+
+########################################
+Subprog IB_PCU
+Gosub SET_NOL
+
+If [M:ENT]WFLG(NOL)   > 1
+   GBOUT1 = ""
+Else
+    # Selection stocks
+    GBOUT1 = mess(145,198,1)
+Endif
+End
+
+########################################
+Subprog AM_PCU(VALEUR)
+Variable Char    VALEUR()
+    Call MAJPCU("ENT",VALEUR, nolign-1) From TRTSTOENTB
+    Call CALQTYPHY("ENT",(nolign-1))   # hcb X3-134445
+End
+
+########################################
+Subprog IB_QTYPCU
+Gosub SET_NOL
+
+If [M:ENT]NBLIG >  1
+# MAJ colonne
+   GBOUT1 = mess(01,108,1)
+Else
+    GBOUT1 = ""
+Endif
+# id ligne precedente
+GBOUT2 = mess(33,198,1)
+# solde
+GBOUT4 = mess(101,106,1)
+# qte initiale
+GBOUT5 = mess(100,106,1)
+
+If NOL = 0                         GBOUT2 = "" : Endif
+End
+
+########################################
+Subprog B1_QTYPCU(VALEUR)
+Variable Decimal VALEUR
+Call MAJCOLONNE ("ENT", 1, nolign-1) From TRTSTOENTB
+VALEUR = [M:ENT]QTYPCU(nolign-1)
+End
+
+########################################
+
+Subprog B2_QTYPCU(VALEUR)
+Variable Decimal VALEUR
+Gosub SET_NOL
+If NOL = 0
+  VALEUR = [M:ENT]QTYTOENT
+Else
+  If NOL > 0
+    VALEUR = [M:ENT]QTYPCU(NOL-1)
+  Endif
+Endif
+
+End
+
+########################################
+Subprog B3_QTYPCU(VALEUR)
+Variable Decimal VALEUR
+Gosub SET_NOL
+VALEUR = ([M:ENT]QTYPCU(NOL)*-1)
+
+End
+
+########################################
+Subprog B4_QTYPCU(VALEUR)
+Variable Decimal VALEUR
+Gosub SET_NOL
+    Local Decimal LDIF
+    LDIF = [M:ENT]QTYTOENT*[M:ENT]COETOENT - sigma(0,[M:ENT]NBLIG-1,[M:ENT]QTYSTU(indcum)*(indcum<>NOL))
+    If LDIF>0
+        Call QTEARR(LDIF,[M:ENT]STU) From TRTDIV
+    Else
+        LDIF = 0
+    Endif
+    VALEUR  = LDIF / [M:ENT]PCUSTUCOE(NOL)
+End
+########################################
+Subprog B5_QTYPCU(VALEUR)
+Variable Decimal VALEUR
+Gosub SET_NOL
+VALEUR =  [M:ENT]QTYPCUO(NOL)
+
+End
+
+
+########################################
+Subprog AS_QTYPCU(VALEUR)
+Variable Decimal VALEUR
+Gosub SET_NOL
+
+# si unite saisie = unite de la ligne de document qte =  ligne de document
+If NOL = 0
+   If  VALEUR = 0               &
+&     [M:ENT]PCU(NOL) = [M:ENT]PCUTOENT
+      VALEUR          = [M:ENT]QTYTOENT
+   Endif
+Endif
+
+
+If VALEUR = 0
+    Call INITQTY(NOL, VALEUR, [M:ENT]QTYSTU(NOL)) From TRTSTOENTB
+Else
+    Call QTEARR(VALEUR,[M:ENT]PCU(NOL)) From TRTDIV
+Endif
+#--- Alimentation de la quantité en US : QTYstu
+[M:ENT]QTYSTU(NOL) = (VALEUR * [M:ENT]PCUSTUCOE(NOL))
+Call QTEARR([M:ENT]QTYSTU(NOL),[M:ENT]STU) From TRTDIV
+
+End
+
+########################################
+Subprog C_QTYPCU(VALEUR)
+Variable Decimal VALEUR
+
+Local Integer I
+Gosub SET_NOL
+Call QTEARR(VALEUR,[M:ENT]PCU(NOL)) From TRTDIV
+#--- Bug 63848
+#If VALEUR = 0
+If VALEUR <= 0
+  mkstat = 2
+Endif
+#---
+End
+
+########################################
+Subprog AM_QTYPCU(VALEUR)
+Variable Decimal VALEUR
+Gosub SET_NOL
+
+#--- Contrôle si la quantité UC génère une qté US arrondie
+Local Integer LRET
+If [M:ENT]PCU(NOL)<>[M:ENT]STU
+   Call STKCTRCOE(VALEUR,[M:ENT]PCUSTUCOE(NOL),[M:ENT]STU,LRET) From STKACT
+   If LRET=0 : mkstat=2 : End : Endif
+Endif
+
+#--- Alimentation de la quantité en US : ENTstu
+[M:ENT]QTYSTU(NOL) = (VALEUR * [M:ENT]PCUSTUCOE(NOL))
+Call QTEARR([M:ENT]QTYSTU(NOL),[M:ENT]STU) From TRTDIV
+Affzo [M:ENT]QTYSTU(NOL)
+#--- Alimentation du statut
+If  [M:ENT]STA(NOL) = ""
+    Call STKINISTA([M:ENT]STA(NOL),[M:ENT]BPRNUM,1) From STKACT
+Endif
+[M:ENT]QTYPCU(NOL) = VALEUR
+Call CALQTYPHY("ENT",NOL)
+End
+
+########################################
+Subprog AM_PCUSTUCOE(VALEUR)
+Variable Decimal VALEUR
+Gosub SET_NOL
+
+#--- Contrôle si le coef UC/US génère une qté US arrondie
+Local Integer LRET
+If [M:ENT]PCU(NOL)<>[M:ENT]STU
+   Call STKCTRCOE([M:ENT]QTYPCU(NOL),VALEUR,[M:ENT]STU,LRET) From STKACT
+   If LRET=0 : mkstat=2 : End : Endif
+Endif
+
+#--- Alimentation de la quantité en US : QTYstu
+[M:ENT]QTYSTU(NOL) = (VALEUR * [M:ENT]QTYPCU(NOL))
+Call QTEARR([M:ENT]QTYSTU(NOL),[M:ENT]STU) From TRTDIV
+
+Call CALQTYPHY("ENT",NOL)
+
+End
+
+########################################
+Subprog IB_STA
+If [M:ENT]NBLIG >  1
+# MAJ colonne
+   GBOUT1 = mess(01,108,1)
+Else
+   GBOUT1 = ""
+Endif
+End
+
+########################################
+Subprog B1_STA(VALEUR)
+Variable Char    VALEUR()
+Call C_STA(VALEUR) From W1STOENT
+If mkstat : End : Endif
+
+Call MAJCOLONNE ("ENT", 4, nolign-1) From TRTSTOENTB
+End
+
+#--- Bug 60553
+########################################
+Subprog AM_WRH(VALEUR)
+Variable Char    VALEUR()
+If [M:ENT]WRH(nolign-1)<>""
+   Raz [M:ENT]LOC(nolign-1)
+Endif
+#--- Bug 63949
+# Contrôle existence article-dépôt
+If [M]STOFCY<>[F:FCY]FCY
+  Read [FCY]FCY0=[M]STOFCY
+Endif
+If [F:FCY]WRHGES=2
+  Read [ITW]ITW0=[M]ITMREF;VALEUR
+  If fstat
+     GMESSAGE=[M]ITMREF-":"-mess(343,184,1) : mkstat=2
+  Endif
+Endif
+#---
+End
+
+########################################
+Subprog C_LOCTYP(VALEUR)
+Variable Char    VALEUR()
+# Quand on passe ici, le premier contrôle était OK, on regarde donc juste si le type est un type quai
+Read [TLO]TLO0=[M:ENT]STOFCY;VALEUR
+# test si type quai autorisé
+If !fstat & [F:TLO]LOCCAT = 2 & [M:ENT]SRGWAIFLG<=0
+    GMESSAGE = mess(854,196,1)
+    mkstat = 2
+    End
+Endif
+#--- Bug 72649
+If [M:ENT]LOCTYP(nolign-1)<>VALEUR
+   Call RAZLOC([M:ENT]LOC(nolign-1),[M:ENT]WLOCSEQ(nolign-1)) From STKACT
+Endif
+#---
+End
+
+########################################
+Subprog C_LOC(VALEUR)
+Variable Char    VALEUR()
+If VALEUR <> ""
+    Read [STC]STC0=[M:ENT]STOFCY;VALEUR
+    If !fstat & dim([M:ENT]WRH)>0
+       [M:ENT]WRH(nolign-1)=[F:STC]WRH
+    Endif
+    Read [TLO]TLO0=[M:ENT]STOFCY;[F:STC]LOCTYP
+    # test si type quai autorisé
+    If !fstat & [F:TLO]LOCCAT = 2 & [M:ENT]SRGWAIFLG<=0
+        GMESSAGE = mess(854,196,1)
+        mkstat = 2
+        End
+    Endif
+Endif
+Affzo [M:ENT]LOCTYP(nolign-1)
+If dim([M:ENT]WRH)>0
+   Affzo [M:ENT]WRH(nolign-1)
+Endif
+
+End
+
+##########################################################################
+Subprog AM_BPSLOTAFF(VALEUR)
+Variable Char    VALEUR()
+# plus nécessaire
+#If GIMPORT  End : Endif : # En import le contrôle s'effectuera sur le lot ! (à vérifier par CCC)
+
+If find([M:ENT]VCRTYP,13,18)
+    If dim([M:ENT]SLOAFF)>0
+        Call STKCTRLOF(VALEUR, [M:ENT]ITMREF, [M:ENT]LOTAFF(nolign-1), [M:ENT]SLOAFF(nolign-1), 1, [M:ENT]GESLOTAFF(nolign-1) ) From STKACT
+    Else
+        Call STKCTRLOF(VALEUR, [M:ENT]ITMREF, [M:ENT]LOTAFF(nolign-1), "", 1, [M:ENT]GESLOTAFF(nolign-1) ) From STKACT
+    Endif
+Else
+    Call STKAMLOF(VALEUR,"ENT",nolign-1,[M:ENT]ITMREF,[M:ENT]STOFCY,[M:ENT]BPSLOTAFF(nolign-1),"LOTAFF","SLOAFF",
+&                 "LOCTYP",[M:ENT]GESLOTAFF(nolign-1)) From STKACT
+Endif
+End
+
+########################################
+Subprog IB_LOTAFF
+Gosub SET_NOL
+
+If clalev([SRU])
+    If [F:SRU]DACLOT=3
+        Raz GBOUT1    # Efface le bouton "Sélection" si nouveau lot obligatoire
+    Endif
+Endif
+
+# N° compteur lot suivant
+If  [F:ITM]LOTCOU = ""
+&  |find([M:ENT]VCRTYP,13,18) & [M:ENT]VCRNUMORI<>""
+
+    Raz GBOUT2
+Endif
+
+# Lot blanc
+If !( [F:ITM]LOTMGTCOD = 2 & [M:ENT]GESLOTAFF(nolign-1)<>"B")
+    GBOUT3 = ""
+Endif
+
+# Info lot
+If [F:ITM]LOTMGTCOD = 1           GBOUT4 = "" : Endif
+If [M:ENT]LOTAFF(NOL) <> ""       GBOUT4 = "" : Endif
+
+# Complément lot
+If !([M:ENT]NUMLIGLOT(nolign-1)>=0 & [M:ENT]GESLOTAFF(nolign-1)<>"B")
+    GBOUT5 = ""
+Endif
+
+If [M:ENT]WFLG(nolign-1) =0                # hcb X3-105130
+    GBOUT5 = ""                            # hcb X3-105130
+Endif                                      # hcb X3-105130
+
+# id ligne precedente
+If NOL = 0                        GBOUT7 = "" : Endif
+
+End
+
+########################################
+Subprog B5_LOTAFF(VALEUR)
+Variable Char    VALEUR()
+GOUVLOT = GOUVLOT-mod(GOUVLOT,2)    # Ouverture par clic du complément lot
+GOUVENT = 1    #
+End
+
+########################################
+Subprog B7_LOTAFF(VALEUR)
+Variable Char    VALEUR()
+Gosub SET_NOL
+If NOL > 0
+   If [M:ENT]LOTAFF(NOL-1) <> ""
+      VALEUR = [M:ENT]LOTAFF(NOL-1)
+   Endif
+Endif
+
+End
+
+########################################
+Subprog C_SLOAFF(VALEUR)
+Variable Char    VALEUR()
+Gosub SET_NOL
+Local Char WSLOF(GLONSLO)
+WSLOF = ""
+
+If clalev([MBR]) & [M:ENT]TRSTYP=19 & [M:MBR]MATTYP(GNOLIG)=4
+    Call STKCTRSLO(VALEUR, [M:ENT]LOTAFF(NOL),
+&                  [M:MBR]ITMREF(GNOLIG),[MBR]BOMNUM(GNOLIG), [M:MBR]BOMSEQ(GNOLIG),
+&                  [M:MBR]WENDDATD,[M:MBR]WENDDATF,[M:MBR]FCY) From FUNBENCHR
+    End    # On ne devrait pas faire d'entrée sur le quai en réintégration
+Endif
+
+If dim([M:ENT]LOCTYP)>0 & [M:ENT]LOCTYP(NOL)<>""
+    If [F:TLO]LOCTYP<>[M:ENT]LOCTYP(NOL)
+        Read [F:TLO]TLO0=[M:ENT]STOFCY;[M:ENT]LOCTYP(NOL)
+    Endif
+    If [F:TLO]LOCCAT=2
+        End
+    Endif
+Endif
+
+#--- Bug 39779
+#If VALEUR <> "" & !( clalev([MBR]) & [M:ENT]TRSTYP=19 & [M:MBR]MATTYP(GNOLG)=4 )
+#    Call STKCTRSLO(VALEUR, 1, [M:ENT]LOTAFF(NOL),
+#&                  [M:ENT]ITMREF, [M:ENT]BPSLOTAFF(NOL), [M:ENT]GESLOTAFF(NOL), [M:ENT]VCRNUMORI, [M:ENT]VCRTYPORI, [M:ENT]VCRLINORI, [M:ENT]VCRSEQORI,
+#&                  [M:ENT]STOFCY, WSLOF) From STKACT
+#Else
+#    mkstat=2
+#Endif
+If VALEUR<>""
+   # Si réception inter-société, on ne contrôle pas l'existence du lot
+   # dans le documement origine --> on ne passe pas le document origine
+   If [M:ENT]VCRTYP=6 & dim([M:PTH0]BETCPY)>0 & [M:PTH0]BETCPY=2
+      Call STKCTRSLO(VALEUR, 1, [M:ENT]LOTAFF(NOL), [M:ENT]ITMREF, [M:ENT]BPSLOTAFF(NOL),
+&                    [M:ENT]GESLOTAFF(NOL), "", 0, 0, 0,
+&                    [M:ENT]STOFCY, WSLOF) From STKACT
+   Else
+      Call STKCTRSLO(VALEUR, 1, [M:ENT]LOTAFF(NOL), [M:ENT]ITMREF,[M:ENT]BPSLOTAFF(NOL),
+&                    [M:ENT]GESLOTAFF(NOL), [M:ENT]VCRNUMORI, [M:ENT]VCRTYPORI, [M:ENT]VCRLINORI, [M:ENT]VCRSEQORI,
+&                    [M:ENT]STOFCY, WSLOF) From STKACT
+   Endif
+Else
+   mkstat=2
+Endif
+#---
+End
+
+
+########################################
+Subprog IB_SLOAFF
+# Suivant
+If [M:ENT]NUMLIGLOT(nolign-1)>=0
+    GBOUT1 = mess(442,198,1)
+Else
+    GBOUT1 = ""
+Endif
+
+End
+
+########################################
+Subprog B1_SLOAFF(VALEUR)
+Variable Char    VALEUR()
+GOUVLOT = GOUVLOT-mod(GOUVLOT,2)    # Ouverture par clic du complément lot
+GOUVENT = 1    #
+End
+
+########################################
+#Subprog B2_SLOAFF(VALEUR)
+#Variable Char    VALEUR()
+#Call MAJCOLONNE ("ENT", 3, nolign-1) From TRTSTOENTB
+#End
+
+########################################
+Subprog B3_SLOAFF(VALEUR)
+Variable Char    VALEUR()
+Gosub SET_NOL
+Call RECLASTSLO([M:ENT]ITMREF, [M:ENT]LOTAFF(NOL), "ENT","", VALEUR) From STKLIB
+End
+
+########################################
+Subprog IB_SERNUM
+Gosub SET_NOL
+# Compteur Série
+GBOUT1 = ""
+If func STKLIB.SENSVCR([M:ENT]VCRTYP)=1 & [F:ITM]SERCOU <> ""
+    GBOUT1 = mess(446,198,1)
+Endif
+
+
+If find([M:ENT]VCRTYP,13,18)
+    Raz GBOUT2
+Else
+   If [M:ENT]VCRTYP <> 19     #hcb 24923
+      Raz GBOUT3
+   Endif                      #hcb 24923
+   If [M:ENT]VCRTYP <> 13
+      Raz GBOUT2
+   Endif
+Endif
+End
+
+########################################
+Subprog B1_SERNUM(VALEUR)
+Variable Char    VALEUR()
+Gosub SET_NOL
+Local Char    WSER(GLONSER) : WSER = ""
+Local Integer WRET          : WRET = 0
+Local Integer I
+For I = 1 To [M:ENT]QTYSTU(NOL)
+    Call NUMERO([F:ITM]SERCOU,[M:ENT]STOFCY,[M:ENT]IPTDAT,[F:ITM]ITMREF,WSER,WRET) From SUBANM
+
+    If WRET = 1  mkstat = 2 :
+       GMESSAGE= [F:ITM]SERCOU-":"-mess(816,196,1)
+    Endif
+    If WRET = 2  mkstat = 2 :
+       GMESSAGE= [F:ITM]SERCOU-":"-mess(30,196,1)
+    Endif
+
+    If I = 1
+       VALEUR= WSER
+    Endif
+
+Next I
+
+End
+
+########################################
+Subprog IB_LBENBR
+If [M:ENT]NBLIG >  1
+# MAJ colonne
+   GBOUT1 = mess(01,108,1)
+Else
+    GBOUT1 = ""
+Endif
+
+End
+
+########################################
+Subprog B1_LBENBR(VALEUR)
+Variable Decimal VALEUR
+Call MAJCOLONNE ("ENT", 6, nolign-1) From TRTSTOENTB
+End
+
+########################################
+Subprog C_LBENBR(VALEUR)
+Variable Decimal VALEUR
+If VALEUR = 0
+    Diszo [M:ENT]LBEFMT(nolign-1)
+Else
+    Actzo [M:ENT]LBEFMT(nolign-1)
+    If [M:ENT]LBEFMT(nolign-1)=""
+        Local Char    LUSCAV(5)
+        Local Integer LMODIF
+        Local Char    LLBEFMT(GLONARP)
+        Local Decimal LCOEF
+        Call CTLUOM ([M:ENT]ITMREF,3,[M:ENT]BPRNUM, [M:ENT]PCU(nolign-1), LCOEF, LUSCAV, LLBEFMT, LMODIF) From STKACT
+        [M:ENT]LBEFMT(nolign-1) = LLBEFMT
+    Endif
+Endif
+
+End
+
+########################################
+Subprog IB_LBEFMT
+If [M:ENT]NBLIG >  1
+# MAJ colonne
+   GBOUT5 = mess(01,108,1)             # hcb 75177
+Else
+    GBOUT5 = ""                        # hcb 75177
+Endif
+
+End
+
+########################################  # hcb 75177
+Subprog B5_LBEFMT(VALEUR)
+Variable Char    VALEUR()
+Call MAJCOLONNE ("ENT", 5, nolign-1) From TRTSTOENTB
+End
+
+########################################
+Subprog IB_PALNUM
+If [M:ENT]NBLIG >  1
+# MAJ colonne
+   GBOUT1 = mess(01,108,1)
+Else
+    GBOUT1 = ""
+Endif
+
+End
+
+########################################
+Subprog B1_PALNUM(VALEUR)
+Variable Char    VALEUR()
+Call MAJCOLONNE ("ENT", 7, nolign-1) From TRTSTOENTB
+End
+
+########################################
+Subprog IB_CTRNUM
+If [M:ENT]NBLIG >  1
+# MAJ colonne
+   GBOUT1 = mess(01,108,1)
+Else
+    GBOUT1 = ""
+Endif
+
+End
+
+########################################
+Subprog B1_CTRNUM(VALEUR)
+Variable Char    VALEUR()
+Call MAJCOLONNE ("ENT", 8, nolign-1) From TRTSTOENTB
+End
+
+
+##########################################################################
+Subprog C_LOTAFF(VALEUR)
+Variable Char    VALEUR()
+Local Integer LRET
+Local Shortint LSAVMKSTAT
+
+  #--- Bug 68725
+  If !find([M:ENT]GESLOTAFF(nolign-1),"B","V")
+    # Si lot obligatoire et pas de compteur
+    If VALEUR="" & [F:ITM]LOTMGTCOD>2 & [F:ITM]LOTCOU="" & [F:TLO]LOCCAT <> 2    # hcb 41462
+       Call ERREUR(mess(141,184,1)) From GESECRAN
+       mkstat=2 : End
+    Endif
+  #--- Bug 68725
+  Endif
+
+    If clalev([MBR]) & [M:ENT]TRSTYP=19 & [M:MBR]MATTYP(GNOLIG)=4
+        Call STKCTRLOT(VALEUR, [M:MBR]ITMREF(GNOLIG),[M:MBR]BOMNUM(GNOLIG), [M:MBR]BOMALT(GNOLIG), [M:MBR]WENDDATD,
+&                      [M:MBR]WENDDATF, [M:MBR]FCY) From FUNBENCHR
+    Else
+        If find([M:ENT]VCRTYP,13,18)
+            LRET = func STKACT.FSTKCTRLOT(VALEUR,"ENT",nolign-1,[M:ENT]ITMREF,[M:ENT]BPSLOTAFF(nolign-1),
+&                          [M:ENT]VCRTYP,[M:ENT]VCRNUM,[M:ENT]VCRLIN,
+&                          [M:ENT]VCRNUMORI,[M:ENT]VCRTYPORI,[M:ENT]VCRLINORI,[M:ENT]VCRSEQORI,
+&                          [M:ENT]STOFCY,"LOCTYP",[M:ENT]GESLOTAFF(nolign-1))
+            LSAVMKSTAT = mkstat
+            If mod(LRET,2)=1
+                Diszo [M:ENT]BPSLOTAFF(nolign-1)
+            Else
+                Actzo [M:ENT]BPSLOTAFF(nolign-1)
+            Endif
+            Affzo [M:ENT]BPSLOTAFF(nolign-1)
+            mkstat = LSAVMKSTAT
+
+        #--- Bug 39779
+        # Si réception inter-société, on ne contrôle pas l'existence du lot
+        # dans le documement origine --> on ne passe pas le document origine
+        Elsif [M:ENT]VCRTYP=6 & dim([M:PTH0]BETCPY)>0 & [M:PTH0]BETCPY=2
+           Call STKCTRLOT(VALEUR,"ENT",nolign-1,[M:ENT]ITMREF,[M:ENT]BPSLOTAFF(nolign-1),
+&                         [M:ENT]VCRTYP,[M:ENT]VCRNUM,[M:ENT]VCRLIN,"",0,0,0,
+&                         [M:ENT]STOFCY,"LOCTYP",[M:ENT]GESLOTAFF(nolign-1)) From STKACT
+        #---
+        Else
+            Call STKCTRLOT(VALEUR,"ENT",nolign-1,[M:ENT]ITMREF,[M:ENT]BPSLOTAFF(nolign-1),
+&                          [M:ENT]VCRTYP,[M:ENT]VCRNUM,[M:ENT]VCRLIN,
+&                          [M:ENT]VCRNUMORI,[M:ENT]VCRTYPORI,[M:ENT]VCRLINORI,[M:ENT]VCRSEQORI,
+&                          [M:ENT]STOFCY,"LOCTYP",[M:ENT]GESLOTAFF(nolign-1)) From STKACT
+        Endif
+    Endif
+
+#                                                     # hcb 71276 deb
+If VALEUR <> [M]LOTAFF (nolign-1) &  [M]ECCBOMFLG <> 9
+   If dim([M]ECCVALMAJAFF) > 0
+      Raz [M]ECCVALMAJAFF(nolign-1)
+      Raz [M]ECCVALMINAFF(nolign-1)
+      Raz [M]ECCSAIFLG   (nolign-1)
+   Endif
+Endif
+#                                                     # hcb 71276 fin
+
+
+
+
+
+End
+
+Subprog AM_LOTAFF(VALEUR)
+Variable Char    VALEUR()
+
+    If !(clalev([MBR]) & [M:ENT]TRSTYP=19)
+        Call STKAMLOT(VALEUR,"ENT",nolign-1,[M:ENT]ITMREF,"SLOAFF") From STKACT
+    Endif
+End
+
+Subprog C_SERNUM(VALEUR)
+Variable Char    VALEUR()
+    Call ENTCTRSER(VALEUR) From TRTSTOENTB
+End
+
+##########################################################################
+Subprog CALQTYPHY(LABR,LNOL)
+Value Char    LABR
+Value Integer LNOL
+LDIMSAIACT = evalue("dim([M:"+LABR+"]SAIACTFLG)")
+If   LDIMSAIACT<=0
+&  | [F:ITF]STOMGTCOD<>3
+&  | LDIMSAIACT=1 & evalue("[M:"+LABR+"]SAIACTFLG")<>2
+&  | LDIMSAIACT>1 & evalue("[M:"+LABR+"]SAIACTFLG(LNOL)")<>2
+    GQTYPHY = evalue("[M:"+LABR+"]QTYPCU(LNOL)")
+Else
+    If evalue("[M:"+LABR+"]NUMLIGLOT(LNOL)")<0 | evalue("[M:"+LABR+"]POT([M:"+LABR+"]NUMLIGLOT(LNOL))")=0
+        GQTYPHY = evalue("[M:"+LABR+"]QTYPCU(LNOL)")*100/([F:ITM]DEFPOT+([F:ITM]DEFPOT=0))
+    Else
+        GQTYPHY = evalue("[M:"+LABR+"]QTYPCU(LNOL)")*100/evalue("[M:"+LABR+"]POT([M:"+LABR+"]NUMLIGLOT(LNOL))")
+    Endif
+Endif
+
+End
+
+##########################################################################
+Subprog AM_SAIACTFLG(VALEUR)
+Variable Integer VALEUR
+Local Integer I
+    For I=0 To [M:ENT]NBLIG-1
+        nolign = I+1
+        If [M:ENT]NUMLIGLOT(I)<=0
+            If [F:ITF]STOMGTCOD=3
+                If VALEUR=2
+                    [M:ENT]QTYPCU(I) = [M:ENT]QTYPCU(I)*[F:ITM]DEFPOT/100
+                Else
+                    [M:ENT]QTYPCU(I) = [M:ENT]QTYPCU(I)*100/[F:ITM]DEFPOT
+                Endif
+            Endif
+        Else
+            If [F:ITF]STOMGTCOD=3
+                If VALEUR=2
+                    [M:ENT]QTYPCU(I) = [M:ENT]QTYPCU(I)*[M:ENT]POT([M:ENT]NUMLIGLOT(I))/100
+                Else
+                    [M:ENT]QTYPCU(I) = [M:ENT]QTYPCU(I)*100/[M:ENT]POT([M:ENT]NUMLIGLOT(I))
+                Endif
+            Endif
+        Endif
+        Call QTEARR([M:ENT]QTYPCU(I),[M:ENT]PCU(I)) From TRTDIV
+        Call AM_QTYPCU([M:ENT]QTYPCU(I))
+    Next
+Affzo [M:ENT]QTYPCU,QTYSTU
+End
+
+
+
+##########################################################################
+Subprog AV_SAIACTFLG(VALEUR)
+Variable Integer VALEUR
+If left$(GWSINVPOT,1)="-"
+    Chgfmt SAIACTFLG With "-LO:20X"
+Endif
+End
+
+
+
+
+
+
+
+
+
+

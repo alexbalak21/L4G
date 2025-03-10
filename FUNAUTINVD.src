@@ -1,0 +1,2207 @@
+#########################################################################
+#                                       Module Ventes - Septembre 2000  #
+#     FACTURES AUTO. DES LIVRAISONS                                     #
+#                                                                       #
+#     - Traitement        : FUNAUTINVD                                  #
+#     - Action e_commerce : TRTAUTINVD  (Traitement standard)           #
+#                                                                       #
+#########################################################################
+# Issue 112108 - 20151214 by LD : Pb ctrl invoice number chronology
+# Issue 114316 - 20160208 by LD : X3 Error - [F:FCY] : Classe innexistante.
+# Issue 121233 - 20170130 by LD : X3 V11 :  Delivery Invoice Generation Abort
+# Issue 122003 - 20170314 by LD : Facturation automatique des livraisons
+# Issue X3-38450 - 20171030 by LD : Invalid sales invoice without currency rate
+# Issue X3-64430 - 20171227 by LD : Contrôle du cours multiplicateur
+# Issue X3-111855 - 2019-02-20 by LD : Untreated exception thrown by FUNAUTINVO
+# Issue X3-160406 - 2019-10-14 by SR : Active/Inactive customer control
+
+#########################################################################
+# Etiquettes ACTION                                                     #
+#########################################################################
+$ACTION
+
+#--- Actions liées au traitement standard
+Case ACTION
+ When "OUVRE_BATCH" : Gosub INIT_TRTAUTINVD
+ When "INIT"        : Gosub INIT_TRTAUTINVD
+ When "DEBUT"       : Affzo [DIA]1-99
+ When "OK"          : GOK=1
+ When "END"         : GOK=0 : FIN=1
+ When "CONTROLE"    : Gosub CONTROLE_TRTAUTINVD
+ When "EXEC"        : Gosub EXEC_TRTAUTINVD
+ When "TERMINE"     : Gosub TERMINE_TRTAUTINVD
+ When "SORTIE"      : Gosub SORTIE_TRTAUTINVD   :#--CPO 88651
+ When Default
+Endcase
+Return
+
+#########################################################################
+# Détail des actions liées au traitement standard                       #
+#########################################################################
+
+#########################################################################
+$INIT_TRTAUTINVD
+
+Global Shortint GINVTYP  : GINVTYP = 1  : # Type document        = Facture
+
+#----- Ouverture des tables et déclaration des variables pour les états -----#
+Gosub INIT_ETAT From TRTX3ETA
+#-----
+
+# En batch , il vaut mieux mettre onerrgo
+If GSERVEUR
+    Onerrgo ERRBATCH
+Endif
+
+Gosub OUVRE
+
+Local Mask SAUTINVD [DIA]
+
+Raz [M:DIA]
+
+[M]SALFCY=GFCYDEF(5)
+[M]INVDAT=date$
+[M]SIVTYP=GSIVTYP
+[M]SHIDAT=date$
+
+Call LECMEMO ("STD","[M:DIA]","vf4") From GMEMO
+
+# Positionner le flag si saisie des paramêtres depuis la gestion des abonnements
+[M]ABT=1
+If GFONCTION1="GESABA" [M]ABT=2 Endif
+
+# Positionner le flag si lancement batch
+If GSERVEUR [M]BATCH=1 Endif
+Return
+
+#########################################################################
+$CONTROLE_TRTAUTINVD
+If GOK < 1  FIN=1 Else TMP=1  Endif
+
+# --> Suppression enreg. fichier travail si interruption
+Gosub DEL_SWI
+If GOK < 1 : FIN=1 : Endif
+
+Return
+
+#########################################################################
+$EXEC_TRTAUTINVD
+Local Char    WPARAM(10)
+Local Decimal WAMTNOTLIN
+Local Char    WMESS_UMRNUM(250) :#--CPO 87923 Gestion des prélèvements SDD
+# Issue X3-160406 - 2019-10-14 by SR : Active/Inactive customer control
+Local Shortint RES
+# End issue X3-160406
+
+## --> Réalimentation GSOCIETE,GFINRSP,GLOCALDEV
+#Call GETDEV([M]SALFCY) From DEVSUB
+# --> Chargement globales référenciels, comptes et sections de la société
+#If GFCY<>[M]SALFCY : GFCY=[M]SALFCY : Gosub CHARG_PARAM Endif            : # Bug 69105
+GFCY=[M]SALFCY : Gosub CHARG_PARAM                                        : # Bug 69105
+
+# Localisation argentine : Pour la numérotation, recherche du type de document lié aux factures
+If GLOCARGNUM
+    Local Integer SAV_GFACTYP : SAV_GFACTYP=GFACTYP : GFACTYP=1
+    Gosub REC_ARGNUM_TYPDOC From TRTVENFAC
+    GFACTYP=SAV_GFACTYP
+    If GERR=1 Return Endif
+Endif
+
+# --> Récupération des paramêtres de vente
+Call GLOBVAR([M]SALFCY,"VEN") From TRTX3
+# --> Vérification Type de facture utilisateur
+Gosub VERF_SIVTYP
+
+If !GSERVEUR
+    Call OUVRE_TRACE(TIT) From LECFIC
+    Call ECR_TRACE(" ",0) From GESECRAN
+    Call ECR_TRACE(string$(70,"-"),0) From GESECRAN
+    Call PRTSCR("SAUTINVD","DIA","",0,1) From ATRTX3
+    Call ECR_TRACE(string$(70,"-"),0) From GESECRAN
+    Call ECR_TRACE(" ",0) From GESECRAN
+Endif
+
+#85803 RICAR 2014/05/20 - Portuguese legal requirements - BEGIN
+If func AFNC.ACTIV("KPO") & GCURLEG = "POR"
+
+  Local Integer WRET
+  Call LEC_TSV_LEG(GCURLEG,[M:DIA]SIVTYP,WRET) From TRTLECLEG
+  If WRET Raz [F:TSV] : Endif
+
+  If [F:TSV]SAFTINVTYP = 2
+    GMESSAGE = mess(78,7711,1)
+    Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+    Goto EXEC_FIN
+  Endif
+
+  If [F:TSV]AUTINV = 2
+    GMESSAGE = mess(146,7711,1)
+    Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+    Goto EXEC_FIN
+  Endif
+
+  If [F:TSV]CSHVATRGM = 2 : ISCASHVATTSV = 1 : Else : ISCASHVATTSV = 0 : Endif
+
+  Call PARAML(GSOCIETE,"SIVTYPCVAT",CSHVATSIVTYP) From ADOVAL
+
+  If CSHVATSIVTYP <> ""
+    If !clalev([F:TSV2]) : Local File TABSIVTYP [TSV2] : Endif
+    Read [F:TSV2]TSV0=CSHVATSIVTYP;GCURLEG
+    If fstat
+      Read [TSV2]TSV0=CSHVATSIVTYP;""
+    Endif
+    If fstat Raz [F:TSV2] : Endif
+    If [F:TSV2]CSHVATRGM <> 2
+      CSHVATSIVTYPSTA = 2
+    Endif
+  Else
+    CSHVATSIVTYPSTA = 1
+  Endif
+
+Endif
+#85803 RICAR 2014/05/20 - Portuguese legal requirements - END
+
+# --> Récupération du numero de compteur
+Raz GCPT
+#Read [TCA] TCA0=5                  # FGR 12/10/2015 : X3SUIVI111579
+#If fstat                           # FGR 12/10/2015 : X3SUIVI111579
+Local Integer WRET                  # FGR 12/10/2015 : X3SUIVI111579
+Call LECTCA(5,WRET) From SUBTCA     # FGR 12/10/2015 : X3SUIVI111579
+If fstat | !WRET Then               # FGR 12/10/2015 : X3SUIVI111579
+   GOK=0 : Call ECR_TRACE ("          "+mess(64,199,1),0) From GESECRAN : Goto AB_TRT
+   If !GSERVEUR Call ERREUR(mess(64,199,1)) From GESECRAN : Endif
+Else
+   GCPT=[F:TCA]CODNUM(3)
+Endif
+
+#85803 RICAR 2014/05/20 - Portuguese legal requirements - BEGIN
+Call VAL_INVDAT([M:DIA]SIVTYP,[M:DIA]INVDAT,GCPT) From SUBSIH
+If mkstat <> 0
+  Goto EXEC_FIN
+Endif
+#85803 RICAR 2014/05/20 - Portuguese legal requirements - END
+
+If [M]INVDAT = [0/0/0]
+    [M]INVDAT = date$
+    Local Date WINVDAT
+    WINVDAT=[M]INVDAT
+    Gosub CTL_INVDAT
+    If mkstat <> 0
+        Call ECR_TRACE(mess(468,197,1)-format$(GFMDAT,[M]INVDAT)-GMESSAGE,1) From GESECRAN :#--CPO 83985 GFMDAT au lieu de GFMD
+        Goto EXEC_FIN
+    Endif
+Endif
+# Bornage de la date de prise en compte des livraisons si la requête est abonnée
+# Si date expédition/livraison non renseignée, on force la date du jour
+If [M]SHIDAT = [0/0/0] & [M]ABT=2 [M]SHIDAT = date$ : Endif
+
+# --> Sélection des livraisons à traiter
+Gosub SEL_SDH
+If GOK < 1 Goto EXEC_FIN : Endif
+
+# --> Traitement à partir du fichier de travail
+Gosub TRT_SWI
+
+# --> Fin du traitement
+$EXEC_FIN
+# --> déverrouillage de toutes les livraisons
+For [SWI]
+    SYMBOLE = "SDH"+[F:SWI]NUM
+    Unlock = SYMBOLE
+Next
+Filter [SWI]
+
+# --> Suppression enreg. fichier travail
+Gosub DEL_SWI
+
+Return
+
+#########################################################################
+$TERMINE_TRTAUTINVD
+
+If NBINV
+  If [M:DIA]PRNFLG=2 & [M:DIA]PRNNAM <> "" & [M:DIA]PRNDEN <> ""
+    Call PRINT_ETAT (1,WARP_NUMREQ,[M:DIA]PRNDEN) From TRTX3ETA
+  Endif
+Endif
+
+If !GSERVEUR
+    If !NBINV
+      Call ECR_TRACE(mess(48,192,1),0) From GESECRAN
+    Endif
+    Call FERME_TRACE From LECFIC
+    # --> Aucune facture effectuee
+    If !NBINV
+         GERR=2 : GMESSAGE=mess(48,192,1)
+    Endif
+    TRA=1
+Endif
+
+Return
+#########################################################################
+$SORTIE_TRTAUTINVD
+#--CPO 88651 On va utiliser l'écran SFITRFA dont les dimensions sont paramètrables
+If func AFNC.ACTIV("SFIAT")>0
+  #If clalev([M:SFIT])>0 Close Local Mask [M:SFIT] Endif
+  If clalev([M:SFIT])>0 Close Mask [M:SFIT] Endif         # FGR 14/04/2014 : X3SUIVI99185 pas Local
+Endif
+#--/
+Return
+
+#-----------------------------------------------------------------------#
+#     Ouverture des fichiers et masques                                 #
+#-----------------------------------------------------------------------#
+$OUVRE
+
+Local Char     LNUM(GLONVCR), PNUM
+Local Integer  OK, STAT, NBINV, NBPOSTE
+Local Char     TIT(50), CRITERE(250), CRITDET(50)
+Local Char     WMESS(80), WMESS1(80), WMESS2(80)
+Local Integer  WRET, LIN, WSIHLIN, WSDHLIN, WSIHACV, LINFLG
+#Local Char     WKEY(15), WKEY1(66), WNUM(15), WDATA(250)
+Local Char     WKEY(GLONVCR), WKEY1(66), WNUM(GLONVCR), WDATA(250):#--CPO 88848
+Local Char     WIME(1)
+Local Decimal  MNTCALC
+Local Decimal  WNIVDLV
+Local Shortint WINVORN
+Local Char     WTRANSAC(GLONGAU), WIDENT(GLONGTE), WJOURNAL(GLONJOU)
+Local Char     WBPINAM(GLONNAM)
+Local Date     WREFDAT
+Local Tinyint  KPOACT
+# Issue 122003
+Local Char     CRITERE1(250)
+# End issue 122003
+# Issue X3-195220 - 2020-08-13 by SR : To be able to load FIY and PER fileds in PINVOICE
+Local Integer EXERCICE, PERIODE, WSTATUS
+
+#---------------------------------------#
+# Ouverture des fichiers utilisés       #
+#---------------------------------------#
+If clalev([F:TCA])  = 0 Local File TABCOUAFF   [TCA] : Endif
+If clalev([F:TSV])  = 0 Local File TABSIVTYP   [TSV] : Endif
+If clalev([F:SWI])  = 0 Local File SWRKINV     [SWI] : Endif
+If clalev([F:SWI1]) = 0 Local File SWRKINV     [SWI1]: Endif          : # Bug 22378
+If clalev([F:SIH])  = 0 Local File SINVOICE    [SIH] : Endif
+If clalev([F:SIV])  = 0 Local File SINVOICEV   [SIV] : Endif
+If clalev([F:SID])  = 0 Local File SINVOICED   [SID] : Endif
+If clalev([F:SVF])  = 0 Local File SVCRFOOT    [SVF] : Endif
+If clalev([F:SVV])  = 0 Local File SVCRVAT     [SVV] : Endif
+
+If clalev([F:SOH])  = 0 Local File SORDER      [SOH] : Endif
+If clalev([F:SOQ])  = 0 Local File SORDERQ     [SOQ] : Endif
+# Issue 121233
+# 107888 : Scheduled invoices : New fields 'To invoice' - X3-15772 (LD:20/12/16)
+If clalev([F:SOP])  = 0 Local File SORDERP     [SOP] : Endif
+# 107888 : Scheduled invoices : New fields 'To invoice' - X3-15772 (LD:20/12/16)
+# End issue 121233
+If clalev([F:SDH])  = 0 Local File SDELIVERY   [SDH] : Endif
+If clalev([F:SDD])  = 0 Local File SDELIVERYD  [SDD] : Endif
+If clalev([F:SDH1]) = 0 Local File SDELIVERY   [SDH1]: Endif
+If clalev([F:CAL])  = 0 Local File CPTANALIN   [CAL] : Endif
+If clalev([F:BPC])  = 0 Local File BPCUSTOMER  [BPC] : Endif
+If clalev([F:BPD])  = 0 Local File BPDLVCUST   [BPD] : Endif
+#FQ 69370 GACTSAD conditionne uniquement le stockage de l'adresse sur le document
+#If GACTSAD=2 If clalev([F:BPA])=0 Local File BPADDRESS [BPA] : Endif : Endif
+If clalev([F:BPA])  = 0 Local File BPADDRESS   [BPA] : Endif
+#fin FQ 69370
+If clalev([F:BPR])  = 0 Local File BPARTNER    [BPR] : Endif
+If clalev([F:MVC])  = 0 Local File BPCUSTMVT   [MVC] : Endif
+If clalev([F:LCM])  = 0 Local File LASTCUSMVT  [LCM] : Endif
+If clalev([F:GTE])  = 0 Local File GTYPACCENT  [GTE] : Endif
+If clalev([F:CAC])  = 0 Local File GACCCODE    [CAC] : Endif
+If clalev([F:GAC])  = 0 Local File GACCOUNT    [GAC] : Endif
+If clalev([F:GAU])  = 0 Local File GAUTACE     [GAU] : Endif
+If clalev([F:GAG])  = 0 Local File GAUTACEF    [GAG] : Endif
+If clalev([F:ANM])  = 0 Local File ACODNUM     [ANM] : Endif
+If GMODU(2)=2                :  # 105566 : Ajout test présence module compta
+    If clalev([F:JOU]) = 0 Local File GJOURNAL [JOU] : Endif
+Endif                        :  # 105566
+
+If clalev([F:GCM])  = 0 Local File GACM        [GCM] : Endif
+
+If clalev([F:ITM])  = 0 Local File ITMMASTER   [ITM] : Endif
+If clalev([F:ITS])  = 0 Local File ITMSALES    [ITS] : Endif
+If clalev([F:ITU])  = 0 Local File ITMBPC      [ITU] : Endif
+If clalev([F:ITF])  = 0 Local File ITMFACILIT  [ITF] : Endif
+# Issue 114316
+If clalev([F:FCY])  = 0 Local File FACILITY    [FCY] : Endif
+# End Issue 114316
+
+If clalev([F:CPY]) = 0 : Local File COMPANY    [CPY] : Endif   # 106867.n
+
+# Issue X3-218177/241577 - 2021-04-27 by MUARN : read table invoice type
+If clalev([F:FGR]) = 0 Local File FACGROUP    [FGR] : Endif
+# End issue X3-218177/241577
+
+# Ouverture + reservations pour repartition elts facturation a la ligne
+Gosub OUV_DSPLIN From TRTVENFACC
+
+# Local Mask SAUTINVD [DIA]
+# Default Mask [DIA]
+
+TIT = mess(128,197,1)
+
+#Call GETDEV(GFCYDEF(5)) From DEVSUB
+# --> Chargement globales référenciels, comptes et sections de la société
+Raz GSOC_ACTIVE : GFCY=GFCYDEF(5) : Gosub CHARG_PARAM
+
+# ------------------------------------------- #
+# Récupération des paramêtres de vente        #
+# ------------------------------------------- #
+Call GLOBVAR(GFCYDEF(5),"VEN") From TRTX3
+# --> Vérification Type de facture utilisateur
+Gosub VERF_SIVTYP
+
+#--CPO 88651 On va utiliser l'écran SFITRFA dont les dimensions sont paramètrables
+If func AFNC.ACTIV("SFIAT")>0
+  #If clalev([M:SFIT])>0 Close Local Mask [M:SFIT] Endif
+  If clalev([M:SFIT])>0 Close Mask [M:SFIT] Endif         # FGR 14/04/2014 : X3SUIVI99185 pas Local
+  Local Mask SFITRFA [M:SFIT]
+Endif
+#--/
+
+KPOACT = func AFNC.ACTIV("KPO")
+If KPOACT
+  Local Char    CSHVATSIVTYP(GLONTSV) #Invoice type to be used for Cash VAT invoices (will store value from SIVTYPCVAT parameter)
+  Local Tinyint CSHVATSIVTYPSTA       #Status 0/1/2/... Will be 0 if Invoice type is coeherent with cash vat regime. Other values represent error cases.
+  Local Tinyint ISCASHVATDOC          #Flag 0/1. Will be 1 if Cash VAT regime applies to the current business partner for the document date. 0 on the other cases.
+  Local Tinyint ISCASHVATTSV          #Flag 0/1. Will be 1 if the selected invoice type is for Cash VAT regime ([F:TSV]CSHVATRGM=2)
+Endif
+
+Return
+
+#-----------------------------------------------------------------------#
+#     Effacement fichier de travail si interruption auparavant          #
+#-----------------------------------------------------------------------#
+$DEL_SWI
+Call DEBTRANS From GLOCK
+Trbegin [SWI]
+  Delete [SWI] Where PRONUM=adxuid(1)
+  If fstat=1  GOK=-1 : GLOCK="$SWRKINV"-num$(adxuid(1))           : Goto AB_TRT
+  Elsif fstat GOK= 0 : Call RSTA("SWI",num$(adxuid(1))) From GLOCK : Goto AB_TRT
+  Endif
+Commit
+Return
+#-----------------------------------------------------------------------#
+#    Sélection des livraisons à traiter                                 #
+#-----------------------------------------------------------------------#
+$SEL_SDH
+#Fq74541-Gbn-variable critère trop petite - suppression des blancs.
+#--> critères de saisie
+CRITERE = 'SALFCY="'+[M]SALFCY+'"'
+If [M]SDHNUMDEB <> ""
+   CRITERE += '&SDHNUM>="'+[M]SDHNUMDEB+'"'
+Endif
+If [M]SDHNUMFIN <> ""
+   CRITERE += '&SDHNUM<="'+[M]SDHNUMFIN+'"'
+Endif
+If [M]BPCINVDEB <> ""
+   CRITERE += '&BPCINV>="'+[M]BPCINVDEB+'"'
+Endif
+If [M]BPCINVFIN <> ""
+   CRITERE += '&BPCINV<="'+[M]BPCINVFIN+'"'
+Endif
+
+# V6.2 : Certification
+# Si ctrl date documents : La livraison doit avoir une date <= à la date de la facture
+#If GCTLDATORI=2  CRITERE -='& [F:SDH]DLVDAT<=[M:DIA]INVDAT' : Endif : # Dde 73382
+If GCTLDATORI=2  CRITERE +='&[F:SDH]SHIDAT<=[M:DIA]INVDAT' : Endif  : # Dde 73382
+
+#--> Critères supplémentaires
+CRITERE += "&LND<>2"                           :# Prêt              = non
+CRITERE += "&SCO<>2"                           :# Sous-traitance    = non
+CRITERE += "&(BETFCY=1|(BETFCY=2&BETCPY=2))"   :# Intra-société     = non
+CRITERE += "&CFMFLG=2"                         :# Etat validation   = Validée
+CRITERE += "&INVFLG<=1"                        :# Etat facture     <> facturée
+CRITERE += "&IME<>6"                           :# mode facturation <> fact manuelle
+
+# 40127 : Return status management
+# Only not totally returned deliveries if returned qty are not invoiced (GDLVRTNCNO=1)
+# All deliveries                       if returned qty are invoiced (GDLVRTNCNO=2)
+# Issue 122003
+#CRITERE +='&((RTNSTA<3&GDLVRTNCNO=1) | GDLVRTNCNO=2)'
+CRITERE1 ='((RTNSTA<3&GDLVRTNCNO=1) | GDLVRTNCNO=2)'
+# End issue 122003
+# 40127
+
+# X3-1152 : Non invoiceable deliveries
+CRITERE1+='& SDHCAT<>4'
+# X3-1152 : Non invoiceable deliveries
+
+#CRITERE -= "& BETFCY <> 2"                :# Inter-site        = non
+
+#---------------------------------------------------------------------#
+# Point d'entree ajout filtres supplémentaires                        #
+#---------------------------------------------------------------------#
+Local Char    FILSUP (250)
+Local Integer WSWIKEYD                                                : # bug 22378
+FILSUP="1=1"
+GPOINT="AUTINVDFIL" : Gosub ENTREE From EXEFNC
+
+# ACA - On ajoute dans le tableau [L]GRUNOM les numeros des élements
+# dont la regle de regroupement est à "Non si différent", pour ce document
+Gosub OPEN_SFI From TRTX3CPY
+Local Integer RCNTDFI : RCNTDFI= nbrecord([F:SFI])
+#FQ 66266 - pour éviter le cas ou la SFOOTINV n'a pas d'enregistrements (et j'ai prévu plus large)
+If RCNTDFI<=5 : RCNTDFI = 10 : Endif
+Local Integer GRUNON([L]RCNTDFI), I1, I2, PDESVCR
+PDESVCR=19
+I2=0
+Read [SFI]First
+While fstat=0
+    I1=find([L]PDESVCR, [F:SFI]DESVCR(0..dim([F:SFI]DESVCR)-1))
+    If I1>0 & [F:SFI]GRUFLG(I1-1) = 2
+        [L]GRUNON(I2)=[F:SFI]SFINUM
+        I2+=1
+    Endif
+    #--CPO 91785 Eviter le cas où il y a un autre F par défaut...
+    #Read Next
+    Read [F:SFI] Next
+    #--/
+Wend
+
+# Issue 122003
+#For  [SDH] Where (evalue(CRITERE) & evalue (FILSUP)) With Nohint
+For  [SDH] Where (evalue(CRITERE) & evalue(CRITERE1) & evalue (FILSUP)) With Nohint
+# End issue 122003
+     Gosub SEL_SDHCOMPL
+     # --- écriture dans SWRKINV
+     If OK = 2
+        # --- vérification s'il y a qqch à facturer
+        # 40127 : Return status management
+        #OK=1 : Gosub VERIF_SDD
+        Gosub VERIF_SDD
+        # 40127
+        If OK = 2
+            # --> lock fichier entête livraison
+            SYMBOLE = "SDH"+[F:SDH]SDHNUM
+            Lock = SYMBOLE
+            If    fstat
+                  # modification en cours sur un autre poste
+                  Call ECR_TRACE("$SDELIVERY :"-[F:SDH]SDHNUM-mess(10,100,1),1) From GESECRAN
+                  OK=1
+            Endif
+            If OK=2 : Gosub CHARGESWI : Endif
+        Endif
+     Endif
+Next
+Return
+
+#-----------------------------------------------------------------------#
+#     Sélection complémentaires pour les entêtes livraison              #
+#-----------------------------------------------------------------------#
+$SEL_SDHCOMPL
+OK = 2
+# 108678 (LD:27/07/15)
+#If GINVREFDAT=2
+#   WREFDAT=[F:SDH]DLVDAT
+#Else
+#   WREFDAT=[F:SDH]SHIDAT
+#Endif
+#----------------------------------------------------------------------------------------#
+# Point d'entree pour modifier la date origine utilisée pour la sélection des livraisons #
+#----------------------------------------------------------------------------------------#
+Local Char WPE_CONTEXT : WPE_CONTEXT="SDH"
+Local Date WDLVDAT     : WDLVDAT=[F:SDH]DLVDAT
+Local Date WSHIDAT     : WSHIDAT=[F:SDH]SHIDAT
+Local Date WPE_REFDAT
+Gosub PE_MAJINVREFDAT
+WREFDAT=WPE_REFDAT
+# 108678 (LD:27/07/15)
+
+# --> sélection si date expe/liv <= date saisie
+If [M]SHIDAT <> [0/0/0]
+    If WREFDAT > [M]SHIDAT
+        OK=1 : Return
+    Endif
+Endif
+# Issue X3-160406 - 2019-10-11 by SR : In all cases, all Customers must be active :
+# No message in this case, just don't select this delivery
+Raz RES
+Call CTLBPCSTA([F:SDH]BPCORD,1,RES) From TRTVENCTL
+If RES = 1 : Raz GMESSAGE : OK=1 : Return : Endif
+Call CTLBPCSTA([F:SDH]BPCINV,2,RES) From TRTVENCTL
+If RES = 1 : Raz GMESSAGE : OK=1 : Return : Endif
+# End issue X3-160406
+
+# --> sélection cde soldée si 1 fature / commande soldée
+If [F:SDH]IME=2
+#   lecture entête commande
+    Read [SOH]SOH0 = [F:SDH]SOHNUM
+    If  fstat OK=1
+    Elsif [F:SOH]ORDSTA = 1 OK=1
+    Else Gosub VERIF_SDH
+    Endif
+    If OK=1 Return : Endif
+Endif
+WIME = num$([F:SDH]IME)
+If WIME="0" WIME="1" Endif
+If [F:SDH]IME = 5
+   # --> Traitement mode facturation = 1 facture par période
+   If [F:SDH]INVPER = 2 & [M]INVPERJ = 1 OK = 1 : Return : Endif
+   If [F:SDH]INVPER = 3 & [M]INVPERS = 1 OK = 1 : Return : Endif
+   If [F:SDH]INVPER = 4 & [M]INVPERC = 1 OK = 1 : Return : Endif
+   If [F:SDH]INVPER = 5 & [M]INVPERQ = 1 OK = 1 : Return : Endif
+   If [F:SDH]INVPER = 6 & [M]INVPERM = 1 OK = 1 : Return : Endif
+Endif
+# Pour rajouter des filtres sur les enregistrements à traiter
+GPOINT="AUTINVDSEL" : Gosub ENTREE From EXEFNC
+
+Return
+
+# 108678 (LD:27/07/15)
+#----------------------------------------------------------------------------------------#
+# Point d'entree pour modifier la date origine utilisée pour la sélection des livraisons #
+#----------------------------------------------------------------------------------------#
+$PE_MAJINVREFDAT
+
+Local Integer WPE_GINVREFDAT : Raz WPE_GINVREFDAT
+GPOINT="MAJINVREFDAT" : Gosub ENTREE From EXEFNC
+
+If find (WPE_GINVREFDAT, 1,2)
+    If WPE_GINVREFDAT=2
+       WPE_REFDAT=WDLVDAT
+    Else
+       WPE_REFDAT=WSHIDAT
+    Endif
+Else
+    If GINVREFDAT=2
+       WPE_REFDAT=WDLVDAT
+    Else
+       WPE_REFDAT=WSHIDAT
+    Endif
+Endif
+Return
+# 108678 (LD:27/07/15)
+
+#---------------------------------------------------------------------------------#
+# Si 1 facture/commande soldée                                                    #
+# --> Ttes les livraisons de la commande doivent se retrouver sur la même facture #
+#     --> Elles doivent être facturables donc validées                            #
+#     --> Elles doivent être à traiter : se retrouver dans le filtre de sélection #
+# (Pas de mixe des commandes sur les livraisons donc [F:SDH]SOHNUM est renseigné) #
+#---------------------------------------------------------------------------------#
+$VERIF_SDH
+#p Filter [SDH1] Where SOHNUM = [F:SOH]SOHNUM
+Filter [SDH1] Where BPCORD=[F:SOH]BPCORD & SOHNUM=[F:SOH]SOHNUM
+&             Order By Key SDH1
+For  [SDH1]
+    If [F:SDH1]CFMFLG=1 OK=1 : Break : Endif
+    If [F:SDH1]INVFLG=1
+        If [M]SHIDAT <> [0/0/0]
+#            If WREFDAT > [M]SHIDAT OK=1 : Break : Endif
+            # 108678 (LD:27/07/15)
+            #If GINVREFDAT=2
+            #   If [F:SDH1]DLVDAT > [M]SHIDAT OK=1 : Break : Endif
+            #Else
+            #   If [F:SDH1]SHIDAT > [M]SHIDAT OK=1 : Break : Endif
+            #Endif
+            #----------------------------------------------------------------------------------------#
+            # Point d'entree pour modifier la date origine utilisée pour la sélection des livraisons #
+            #----------------------------------------------------------------------------------------#
+            Local Char WPE_CONTEXT : WPE_CONTEXT="SDH1"
+            Local Date WDLVDAT     : WDLVDAT=[F:SDH1]DLVDAT
+            Local Date WSHIDAT     : WSHIDAT=[F:SDH1]SHIDAT
+            Local Date WPE_REFDAT
+            Gosub PE_MAJINVREFDAT
+            If WPE_REFDAT > [M]SHIDAT
+                OK=1 : Break
+            Endif
+            # 108678 (LD:27/07/15)
+        Endif
+        If [M]SDHNUMDEB <> ""
+            If [F:SDH1]SDHNUM < [M]SDHNUMDEB OK=1 : Break : Endif
+        Endif
+        If [M]SDHNUMFIN <> ""
+            If [F:SDH1]SDHNUM > [M]SDHNUMFIN OK=1 : Break : Endif
+        Endif
+    Endif
+Next
+Filter [SDH1]
+
+Return
+
+#-----------------------------------------------------------------------#
+#     Vérification s'il y a des lignes à facturer                       #
+#-----------------------------------------------------------------------#
+$VERIF_SDD
+For  [SDD]SDD0 Where SDHNUM = [F:SDH]SDHNUM
+   # -------------------------------------
+   # FGR 06/12/2011 : X3SUIVI71065 (début)
+   If func TRTPJT.IS_PJT_AVAILABLE([F:SDD]PJT, "[M:SIH4]DPJT", WMESS) = G_NON Then
+     #Call ECR_TRACE(mess(327,183,1) - [F:SDD]SDHNUM + "/" + num$([F:SDD]SDDLIN) - ":" - [F:SDD]PJT - mess(1044,196,1), 1) From GESECRAN
+     Call PJT_ADD_MSG([F:SDD]PJT, WMESS) From TRTPJT
+   Endif
+   # FGR 06/12/2011 : X3SUIVI71065 (fin)
+   # -------------------------------------
+
+   # 40127 : Return status management
+   # With RTNSTA Returned deliveries are now filtered in SEL_SDH
+#   #If (GDLVRTNCNO=1 & [F:SDD]QTYSTU > [F:SDD]RTNQTYSTU) | GDLVRTNCNO=2
+#   # Bug 46937
+#   # Si livraisons de prêt, on facture ce qui n'est pas retourné
+#   # Si livraisons normales et pas de facturation qté retournée (GDLVRTNCNO=1), on ne facture que ce qui n'est pas retourné
+#   # Si livraisons normales et facturation qté retournée (GDLVRTNCNO=2), on facture tout
+#   If ([F:SDD]QTYSTU>[F:SDD]RTNQTYSTU & ([F:SDH]LND=2 | GDLVRTNCNO=1)) |
+#&     ([F:SDH]LND=1 & GDLVRTNCNO=2)
+#        OK=2: Break
+#   Endif
+  # 40127
+#X3-121987 - we don't care if this order is on hold. Something was delivered so
+#            we need to invoice it
+#  If [F:SDD]SOHNUM<>""  # order holds
+#    Read [SOH]SOH0=[F:SDD]SOHNUM
+#    If !fstat
+#      If func MANHLDLIB.BLK_ALLOC([F:SOH]HLDSTA,[F:SOH]HLDCOD)
+#        OK=1 : Break
+#      Endif
+#    Endif
+#  Endif
+#X3-121987
+    # 189678 : [UR] Pack of new Entry points Distribution for Uruguay  - 2020-04-10 by LD
+    Local Integer WGPE_OK : WGPE_OK=2
+    # Add additional control on the delivery line
+    GPOINT="AUTINVDSELSDD" : Gosub ENTREE From EXEFNC
+    OK=WGPE_OK
+    If OK=1 : Break : Endif
+    # 189678 : [UR] Pack of new Entry points Distribution for Uruguay  - 2020-04-10 by LD
+Next
+
+# 189678 : [UR] Pack of new Entry points Distribution for Uruguay  - 2020-04-10 by LD
+If OK=1 Return : Endif
+# 189678 : [UR] Pack of new Entry points Distribution for Uruguay  - 2020-04-10 by LD
+
+# FGR 14/12/2011 : X3SUIVI71065 (début)
+  If dim(GPJTNBR) >= 0 and GPJTNBR > 0 Then
+    OK = 1
+    Call PJT_WRITE_MSG() From TRTPJT
+  Endif
+# FGR 14/12/2011 : X3SUIVI71065 (fin)
+Return
+
+
+#-----------------------------------------------------------------------#
+#     chargement dans le fichier de travail                             #
+#-----------------------------------------------------------------------#
+$CHARGESWI
+Local Integer WWEEK
+Local Date    WDAT
+
+Call DEBTRANS From GLOCK
+$CHGFIC
+GOK=1
+Trbegin [SWI]
+
+# -------------------> lecture entête livraison
+Readlock [SDH]SDH0 Curr
+
+If    fstat=1 : GOK=-1 : GLOCK="$SDELIVERY"+[F:SDH]SDHNUM : Goto ROL_CHGFIC
+Elsif fstat   : GOK=0  : Call RSTA("SDH",[F:SDH]SDHNUM) From GLOCK : Goto AB_TRT
+Endif
+
+Raz [F:SWI]
+[F:SWI]PRONUM  = adxuid(1)
+[F:SWI]SWIKEY  = [F:SDH]SALFCY
+[F:SWI]SWIKEY += "~"+[F:SDH]BPCINV                                    : # bug 22378
+
+[F:SWI]SWIKEY1 = WIME
+
+# Traitement 1 facture / commande ou 1 facture /commande soldée
+If WIME = "2" | WIME = "3"
+    [F:SWI]SWIKEY1 += "~"+[F:SDH]SOHNUM                               : # bug 22378
+Endif
+
+# Traitement 1 facture / client livré
+If WIME = "4"
+    [F:SWI]SWIKEY1 += "~"+[F:SDH]BPCORD                               : # bug 22378
+    [F:SWI]SWIKEY1 += "~"+[F:SDH]BPAADD                               : # bug 22378
+Endif
+
+# Traitement 1 facture / période
+If WIME = "5"
+    [F:SWI]SWIKEY1 += "~"+num$([F:SDH]INVPER)                         : # bug 22378
+    If [F:SDH]INVPER = 2
+#    ----  1 facture / jour
+        WDAT = WREFDAT
+    Elsif [F:SDH]INVPER = 3
+#    ----  1 facture / semaine  : Date = Premier jour de la semaine
+#      --  week donne le n° de semaine
+        WWEEK = week(WREFDAT)
+#      --  aweek donne la date du 1er jour de la semaine
+        WDAT = aweek(WWEEK, year(WREFDAT))
+    Elsif [F:SDH]INVPER = 4
+#     ---  1 facture / decade   : Date = 01/MM/AA ou 11/MM/AA ou 21/MM/AA
+        If day(WREFDAT) < 11
+            WDAT = WREFDAT - (day(WREFDAT) - 1)
+        Elsif day(WREFDAT) < 21
+            WDAT = WREFDAT - (day(WREFDAT) - 11)
+        Else
+            WDAT = WREFDAT - (day(WREFDAT) - 21)
+        Endif
+    Elsif [F:SDH]INVPER = 5
+#     ---  1 facture / quinzaine : Date = 01/MM/AA ou 16/MM/AA
+        If day(WREFDAT) < 16
+            WDAT = WREFDAT - (day(WREFDAT) - 1)
+        Else
+            WDAT = WREFDAT - (day(WREFDAT) - 16)
+        Endif
+    Elsif [F:SDH]INVPER = 6
+#     ---  1 facture / mois      : Date = 01/MM/AA
+        WDAT = WREFDAT - (day(WREFDAT) - 1)
+    Endif
+#   23/11/98
+#   Les livraisons avec périodicité à la demande seront regroupées ensembles
+    If [F:SDH]INVPER <> 1 [F:SWI]SWIKEY1 += "~"+WDAT : Endif          : # bug 22378
+Endif
+
+#If !find(WIME,"2","5")                                               : # bug 22378
+If !find(WIME,"2","3","4","5")                                        : # bug 22378
+    [F:SWI]SWIKEY1 += [F:SDH]BPCORD
+Endif
+
+#If WIME <> "2"                                                       : # bug 22378
+If !find(WIME,"2","3")                                                : # bug 22378
+    [F:SWI]SWIKEY1 += "~"+[F:SDH]CUR                                  : # bug 22378
+    [F:SWI]SWIKEY1 += "~"+num$([F:SDH]PRITYP)                         : # bug 22378
+
+    #--------------------------------------
+    # FGR 24/11/2011 : X3SUIVI71065 (début)
+    # 1°) Ca n'est plus le PJT de l'entête qui compte
+    #[F:SWI]SWIKEY1 += "~"+[F:SDH]PJT                                  : # bug 22378
+    If GPJTSNGDOC = G_OUI Then
+      # Si le PJT est unique par pièce il est discriminant : on le prend
+      [F:SWI]SWIKEY1 += "~"+[F:SDH]PJT
+    Else
+      # Sinon, il n'est pas discriminant : on l'ignore
+      [F:SWI]SWIKEY1 += "~"
+    Endif
+    # FGR 24/11/2011 : X3SUIVI71065 (fin)
+    #--------------------------------------
+
+    [F:SWI]SWIKEY1 += "~"+[F:SDH]BPCPYR                               : # bug 22378
+    [F:SWI]SWIKEY1 += "~"+[F:SDH]VACBPR                               : # bug 22378
+    [F:SWI]SWIKEY1 += "~"+[F:SDH]BPIEECNUM                            : # bug 22378
+    [F:SWI]SWIKEY1 += "~"+[F:SDH]EECICT                               : # bug 22378
+    [F:SWI]SWIKEY1 += "~"+num$([F:SDH]EECLOC)                         : # bug 22378
+Endif
+
+[F:SWI]NUM = [F:SDH]SDHNUM
+[F:SWI]LIN = 0
+[F:SWI]SEQ = 0
+
+#If WIME <> "2"                                                       : # bug 22378
+If !find(WIME,"2","3")                                                : # bug 22378
+    [F:SWI]SWIDATA   = [F:SDH]BPCGRU
+    [F:SWI]SWIDATA  += "~"+[F:SDH]PTE                                 : # bug 22378
+    [F:SWI]SWIDATA  += "~"+num$([F:SDH]BETFCY)                        : # bug 22378
+    [F:SWI]SWIDATA  += "~"+[F:SDH]ORIFCY                              : # bug 22378
+    [F:SWI]SWIDATA  += "~"+[F:SOH]PLISTC                              : # bug 22378
+    [F:SWI]SWIDATA  += "~"+toupper(vireblc([F:SDH]BPINAM(0),4))       : # bug 22378
+    [F:SWI]SWIDATA  += toupper(vireblc([F:SDH]BPIADDLIG(0),4))        : # bug 22378
+    [F:SWI]SWIDATA  += toupper(vireblc([F:SDH]BPIPOSCOD,4))           : # bug 22378
+    [F:SWI]SWIDATA  += toupper(vireblc([F:SDH]BPICTY,4))              : # bug 22378
+    [F:SWI]SWIDATA  += toupper(vireblc([F:SDH]BPISAT,4))              : # bug 22378
+    [F:SWI]SWILINNBR = [F:SDH]LINNBR
+Else
+    [F:SWI]SWILINNBR = [F:SOH]LINNBR
+Endif
+
+# ACA - Gestion de GRUFLG
+Local Integer I, J : I=0
+While [L]GRUNON(I)>0 and I<RCNTDFI-1
+    J=find([L]GRUNON(I), [F:SDH]INVDTA)
+    If J>0
+        [F:SWI]SWIDATA += "~" + vireblc( num$( [F:SDH]INVDTAAMT(J-1) ) ,4 )
+    Endif
+    I+=1
+Wend
+
+# ACA - Codes adresses client commande et facture
+[F:SWI]SWIDATA += [F:SDH]BPAINV
+
+# LTA - Sage sales tax USA
+If func AFNC.ACTIV("LTA")
+  [F:SWI]SWIDATA +="~"+[F:SDH]SSTENTCOD
+Endif
+
+# Pour rajouter des conditions de regroupements
+GPOINT="AUTINVDREG" : Gosub ENTREE From EXEFNC
+
+If [F:SWI]SWIDATA<>""                                                  : # bug 22378
+   Filter [SWI1] Where PRONUM=[F:SWI]PRONUM & SWIKEY=[F:SWI]SWIKEY & SWIKEY1=[F:SWI]SWIKEY1 &
+& SWIDATA=[F:SWI]SWIDATA                                               : # bug 22378
+   Read [SWI1] First                                                   : # bug 22378
+   If fstat                                                            : # bug 22378
+      WSWIKEYD +=1                                                     : # bug 22378
+      [F:SWI]SWIKEYD=WSWIKEYD                                          : # bug 22378
+     Else                                                              : # bug 22378
+      [F:SWI]SWIKEYD=[F:SWI1]SWIKEYD                                   : # bug 22378
+   Endif                                                               : # bug 22378
+   Filter [SWI1]                                                       : # bug 22378
+Endif                                                                  : # bug 22378
+
+Write [SWI]
+If fstat
+   GOK=0 : Call FSTA("SWI") From GLOCK : Goto AB_TRT
+Endif
+Commit
+Return
+
+#-----------------------------------------------------------------------#
+#     traitement : lecture du fichier de travail                        #
+#-----------------------------------------------------------------------#
+$TRT_SWI
+Local Integer WFINFAC
+
+#--> récup nb lignes factures autorisées par le code activité
+WSIHACV=0
+If   !clalev([F:ACV]) : Local File ACTIV [ACV] : Endif
+Read [ACV] CODACT = "SIH"
+If   !fstat : WSIHACV = [F:ACV]DIME : Endif
+If   WSIHACV = 0
+#    -- paramêtre non renseigné
+     GOK = 0 : Call ECR_TRACE("SIH "+mess(8,176,1),1) From GESECRAN : Return
+Endif
+Close Local File [ACV]
+
+# ------------------------------------------- #
+# Ouverture de SIH4                           #
+# Ouverture et chargement de SIHV             #
+# ------------------------------------------- #
+
+Local Mask SIH0 [SIH0] : Raz [M:SIH0]
+Local Mask SIH1 [SIH1] : Raz [M:SIH1]
+Local Mask SIH2 [SIH2] : Raz [M:SIH2]
+Local Mask SIH4 [SIH4] : Raz [M:SIH4]
+Gosub OUVRE_SIHX From TRTVENFACC
+
+Local Char SFIT_OBJ : SFIT_OBJ="SIH"
+#--CPO 106895
+#Gosub INIT_SFIT From SUBSFIT
+Local Char CPOSVGGREP(type(GREP)-10)
+CPOSVGGREP=GREP
+GREP="C"
+Gosub INIT_SFIT From SUBSFIT
+GREP=CPOSVGGREP
+#--/
+
+#--- Bug 22275 --- TS le 29.04.04 -------------------------
+# Pb de taille de clé suite aux corrections 19067 et 20251
+#----------------------------------------------------------
+#Filter [SWI] Where PRONUM=adxuid(1)
+#&            Order By Key CLE=SWIKEY;SWIKEY1;SWIDATA;NUM;LIN;SEQ
+#Filter [SWI] Where PRONUM=adxuid(1) Order By Key SWI0                : # bug 22378
+
+Filter [SWI] Where PRONUM=adxuid(1)
+&            Order By Key CLE=SWIKEY;SWIKEY1;SWIKEYD;NUM;LIN;SEQ      : # bug 22378
+
+For [SWI]
+    WIME = mid$([F:SWI]SWIKEY1,1,1)
+
+# ------       Traitement des ruptures       ------ #
+# -- > 1 facture / bl
+    If (WKEY <> [F:SWI]SWIKEY | WNUM <> [F:SWI]NUM |
+&      WDATA <> [F:SWI]SWIDATA) & WIME = "1"
+        WFINFAC = 2
+# -- > 1 facture / commande soldée, 1 facture / commande
+# -- > 1 facture / client livré, 1 facture / période
+    Elsif (WKEY <> [F:SWI]SWIKEY | WKEY1 <> [F:SWI]SWIKEY1 |
+&      WDATA <> [F:SWI]SWIDATA) & find(WIME, "2","3","4","5")
+        WFINFAC = 2
+    Else
+        WFINFAC = 1
+    Endif
+
+# --> Ctrl nbre ligne facture
+    If WIME <> "2" | (WKEY1 <> [F:SWI]SWIKEY1 & WIME = "2")
+        Gosub VERIF_LIN
+        If LINFLG = 0
+            WMESS="         "+mess(129,197,1)+" "+[F:SWI]NUM
+            Call ECR_TRACE(WMESS,1) From GESECRAN
+            Call ECR_TRACE(mess(66,192,1),0) From GESECRAN
+            Goto NXTSWI
+        Elsif LINFLG = 2
+            WFINFAC = 2
+        Endif
+    Endif
+
+# -- > Changement de livraison sur la même facture
+    If  (WNUM <> [F:SWI]NUM | WFINFAC = 2) & WNUM <> ""
+        If GOK=1
+           Gosub FIN_LIVRAISON
+           If GOK<1 : Goto NXTSWI : Endif
+        Endif
+    Endif
+    If WFINFAC = 2 & find (WIME,"2","3","4","5")
+#    ---- Changement de facture
+        If WKEY1 <> "" & GOK=1
+                      Gosub FIN_FACTURE
+                      If GOK<1 : Goto NXTSWI : Endif
+        Endif
+        Gosub DEB_FACTURE
+        If GOK<1 : Goto NXTSWI : Endif
+    Elsif WFINFAC = 2 & find(WIME, "1")
+#    ---- Changement de facture
+        If WNUM <> "" & GOK=1
+                     Gosub FIN_FACTURE
+                     If GOK<1 : Goto NXTSWI : Endif
+        Endif
+        Gosub DEB_FACTURE
+        If GOK<1 : Goto NXTSWI : Endif
+# -- > Changement de livraison sur la même facture
+    Elsif WNUM <> [F:SWI]NUM & WNUM <> ""
+        If GOK=1
+           Gosub DEB_LIVRAISON
+           If GOK<1 : Goto NXTSWI : Endif
+        Endif
+    Endif
+    #If GOK<1 : Goto NXTSWI : Endif
+# -- > Traitement du détail     ------------------------------
+    If GOK=1
+       Gosub TRT_DETAIL
+       If GOK<1 : Goto NXTSWI : Endif
+       WKEY  =[F:SWI]SWIKEY
+       WKEY1 =[F:SWI]SWIKEY1
+       WNUM  =[F:SWI]NUM
+       WDATA =[F:SWI]SWIDATA
+    Endif
+    $NXTSWI
+Next
+If GOK <> 0 & WNUM <> "" Gosub FIN_LIVRAISON: Gosub FIN_FACTURE : Endif
+Return
+
+# ------------------------------------------------------ #
+# Traitement d'une entête livraison sur une même facture #
+# ------------------------------------------------------ #
+$DEB_LIVRAISON
+# -------------------> lecture entête livraison
+Readlock [SDH]SDH0 = [F:SWI]NUM
+If  fstat=1
+    GOK=-1 : GLOCK="$SDELIVERY"+[F:SWI]NUM: Goto ROL_TRT
+Elsif fstat
+    GOK=0 : Call RSTA("SDH",[F:SWI]NUM) From GLOCK : Goto AB_TRT
+Endif
+
+# -------------------> alimentation des elements de facturation
+NBPOSTE = dim([F:SIV]INVDTA)
+# --> Initialisation des montants avec les livraisons
+Call ALIMFOOT2 (6,NBPOSTE,[F:SIH]CURTYP,[F:SDH]CUR,[F:SIV]CUR,"NON") From SUBSFIT
+
+[M:SIH2]=[F:SIV]
+Raz WNIVDLV
+
+# --> Remise à zéro de la pièce origine car on en a plusieurs
+Raz [F:SIV]SIHORINUM, [F:SIV]SIHORIDAT
+
+Return
+
+#-----------------------------------------------------------------------#
+# Traitement d'une fin livraison                                        #
+#-----------------------------------------------------------------------#
+$FIN_LIVRAISON
+
+WINVORN += 1
+Call MAJLIV(WINVORN) From TRTVENFAC
+If GOK = 0 Goto AB_TRT : Endif
+
+# --> Maj mouvement client (livré non facturé)
+Call  MAJMVC ([F:SDH]BPCORD, [F:SDH]CUR, [F:SDH]CHGTYP, 0, [F:SDH]SHIDAT, [F:SDH]SDHNUM, [F:SDH]SALFCY,
+&             0, WNIVDLV, "-", "D", "", [F:SDH]LND) From TRTBPMVT
+If GOK = 0 Goto AB_TRT : Endif
+Raz WNIVDLV
+Return
+
+
+# ----------------------------------------------------- #
+# Traitement du détail facture                          #
+# ----------------------------------------------------- #
+$TRT_DETAIL
+# --> boucle de lecture des détails livraison
+
+For  [SDD]SDD0 Where SDHNUM = [F:SDH]SDHNUM
+    # Bug 46937
+    # Si livraisons de prêt
+    # Si livraisons normales et pas de facturation qté retournée (GDLVRTNCNO=1)
+    # --> Ne pas prendre en compte les lignes complètement retournée
+    If ([F:SDH]LND=2 | GDLVRTNCNO=1) & [F:SDD]QTYSTU <= [F:SDD]RTNQTYSTU  Goto NEXT_SDD : Endif
+
+    Local Integer IJUMP
+    GPOINT="AUTINVDLIG" : Gosub ENTREE From EXEFNC
+    If IJUMP : Goto NEXT_SDD : Endif
+
+    Readlock [SDD]SDD0 Curr
+    If  fstat
+        GOK=0
+        Call RSTA("SDD",[F:SDH]SDHNUM-num$([F:SDD]SDDLIN)) From GLOCK
+        Gosub AB_TRT : Break
+    Endif
+#   --> Lecture détail commande
+    If  [F:SDD]SOHNUM<>"" & [F:SDD]SOPLIN<>0 & [F:SDD]SOQSEQ<>0
+        Readlock [SOQ]SOQ0=[F:SDD]SOHNUM;[F:SDD]SOPLIN;[F:SDD]SOQSEQ
+        If  fstat
+            GOK=0
+            Call RSTA("SOQ",[F:SDD]SOHNUM-num$([F:SDD]SOPLIN)-num$([F:SDD]SOQSEQ)) From GLOCK
+            Gosub AB_TRT : Break
+        Endif
+#       --> Lecture entête commande sauf si cde ouverte
+        If [F:SDD]SOHCAT <> 4
+            Readlock [SOH]SOH0=[F:SDD]SOHNUM
+            If  fstat
+                GOK=0
+                Call RSTA("SOH",[F:SDD]SOHNUM) From GLOCK
+                Gosub AB_TRT : Break
+            Endif
+            # Issue 121233
+            # 107888 : Scheduled invoices : New fields 'To invoice' - X3-15772 (LD:20/12/16)
+            Read [SOP]SOP0=[F:SDD]SOHNUM;[F:SDD]SOPLIN;[F:SDD]SOQSEQ
+            If  fstat
+                GOK=0
+                Call RSTA("SOP",[F:SDD]SOHNUM-num$([F:SDD]SOPLIN)-num$([F:SDD]SOQSEQ)) From GLOCK
+                Gosub AB_TRT : Break
+            Endif
+            # 107888 : Scheduled invoices : New fields 'To invoice' - X3-15772 (LD:20/12/16)
+            # End issue 121233
+        Endif
+    Endif
+
+    WSIHLIN = WSIHLIN+1
+    LIN     = LIN+1000
+#   --> création détail facture
+    Call ALISID(3, WSIHLIN, WTRANSAC) From TRTVENFAC
+    [M:SIH4]NBLIG += 1
+
+    Call CALC_COMREP() From TRTVENFAC
+
+    [F:SID]NUM = [F:SIV]NUM
+    [F:SID]SIDLIN = LIN
+
+    WAMTNOTLIN += [F:SID]AMTNOTLIN
+
+    If dim([F:SID]CPY)>0 : [F:SID]CPY=GSOCIETE : Endif
+
+    Write [SID]
+    If fstat
+       GOK=0 : Call FSTA("SID") From GLOCK : Gosub AB_TRT : Break
+    Endif
+
+#   --> maj détail livraison : Rien à mettre à jour
+
+#   --> Ecriture des comptes et sections de la ligne de facture -----#
+    Local    Char   TPLAN   (GLONCOA)(10) : # L'indice doit commencer à 0
+    Raz GTCOMPTE                          : # C'est une globale et l'indice doit commencer à 0
+#   --> Alimentation des comptes par évaluation de la pièce automatique -----#
+    Call INIT_ACC(WTRANSAC,"SID",0,TPLAN,GTCOMPTE) From TRTVENFAC
+#   --> Ecriture des sections de la ligne de facture
+    Call ENREG_ACCCCE(nolign-1,"[V]GTCOMPTE(","","[M:SIH4]CCE","SID",
+&                     0,[F:SID]NUM,[F:SID]SIDLIN,0,"","C") From TRTX3CPT
+    If GOK<1  Gosub AB_TRT : Break : Endif
+#   --> maj détail et entête commande  : Quantité facturée
+    If  [F:SDD]SOHNUM<>"" & [F:SDD]SOPLIN<>0 & [F:SDD]SOQSEQ<>0
+        Call MAJDETCDED () From TRTVENFAC
+        If GOK = 0 Gosub AB_TRT : Break : Endif
+    Endif
+
+#   --> cumul pour entête livraison
+    Call ALICUMSDH(WNIVDLV) From TRTVENFAC
+
+# --> nombre de lignes
+    [F:SIV]LINNBR += 1
+
+   # -------------------------------------
+   # FGR 22/11/2013 : X3SUIVI94641 (début)
+   If [F:SIV]LINNBR = 1 Then
+     If [F:SDD]SOHNUM <> "" Then
+       If [F:SOH]CUSORDREF <> "" Then
+         [F:SIV]INVREF = [F:SOH]CUSORDREF
+       Endif
+     Endif
+   Endif
+   # FGR 22/11/2013 : X3SUIVI94641 (fin)
+   # -------------------------------------
+
+    Local Char SVGGREP(type(GREP)-10)
+    SVGGREP=GREP
+    GREP="C"
+    Gosub SDH_SIH_PLUS From SUBSFIT
+    #If GERR <> 0 Then          # FGR 19/08/2014 : X3SUIVI100811
+    If GERR = 1 Then            # FGR 22/06/2015 : X3SUIVI109023
+      GOK = -1
+      Gosub AB_TRT
+      Break
+    Endif
+    # Issue X3-63861 - 2017-12-28 by CPO : Sales invoicing element transfer rule of a Direct invoice order, distribution rule ‘Amount pro rata’, not calculating the invoicing element correctly
+    #Call MAJ_SFIT_QTY("F", "SIV", [F:SID]SDHNUM, [F:SID]QTYSTU, [F:SID]AMTNOTLIN * [F:SID]QTY, [F:SID]DSPLINWEI, [F:SID]DSPLINVOL) From SUBSFIT
+    Call MAJ_SFIT_QTY("F", "SIV", [F:SID]SDHNUM, [F:SID]QTYSTU, [F:SID]AMTNOTLIN, [F:SID]DSPLINWEI, [F:SID]DSPLINVOL) From SUBSFIT
+    # End issue X3-63861
+    GREP=SVGGREP
+
+    WMESS="       "+mess(129,197,1)-":"-[F:SDD]SDHNUM-mess(80,197,1)-":"-[F:SDD]ITMREF-[F:SDD]ITMDES1
+    Call ECR_TRACE(WMESS, 0) From GESECRAN
+
+$NEXT_SDD
+Next
+Return
+
+
+#-----------------------------------------------------------------------#
+#     Traitement d'une entête facture                                   #
+#-----------------------------------------------------------------------#
+$DEB_FACTURE
+
+Call DEBTRANS From GLOCK
+$TRTENT
+GOK=1
+Trbegin [SDH],[SDD],[SIV],[SIH],[SID],[MVC],[LCM]
+Local Char CODCPT(GLONCAC)
+Raz LIN, WSIHLIN
+Raz [M:SIH4]
+# -------------------> lecture entête livraison
+Readlock [SDH]SDH0 = [F:SWI]NUM
+If  fstat=1
+    GOK=-1 : GLOCK="$SDELIVERY"+[F:SWI]NUM: Goto ROL_TRT
+Elsif fstat
+    GOK=0 : Call RSTA("SDH",[F:SWI]NUM) From GLOCK : Goto AB_TRT
+Endif
+
+# ------------------> lecture client facture
+Read [BPC]BPC0 = [F:SDH]BPCINV
+If  fstat
+    GOK=0 : Call RSTA("BPC",[F:SDH]BPCINV) From GLOCK : Goto AB_TRT
+Endif
+
+# ------------------> lecture tiers
+Read [BPR]BPR0 = [F:SDH]BPCINV
+If  fstat
+    GOK=0 : Call RSTA("BPR",[F:SDH]BPCINV) From GLOCK : Goto AB_TRT
+Endif
+
+If [F:SDH]BPINAM(0) <> ""
+    WBPINAM=[F:SDH]BPINAM(0)
+Else
+    If [F:BPC]BPCNUM<>[F:SDH]BPCINV
+        Read [BPC]BPC0 = [F:SDH]BPCINV
+        If fstat Raz [F:BPC] : Endif
+    Endif
+    WBPINAM=[F:BPC]BPCNAM
+Endif
+
+# --> alimentation entête
+Call ALISIV(3,[M:DIA]INVDAT) From TRTVENFAC
+Call ALISIH(3,[M:DIA]GTE, WRET) From TRTVENFAC
+
+# Issue X3-230574 - 20210412 by LD
+If WRET=2
+    GOK=0
+    WMESS=mess(129,197,1)-":"-[F:SDH]SDHNUM-mess(99,197,1)-":"-[F:SDH]BPCINV-WBPINAM
+    Call ECR_TRACE(WMESS, 0) From GESECRAN
+    # The control account is mandatory / Le compte collectif est obligatoire
+    WMESS=mess(604,192,1)
+    Call ECR_TRACE("         "+WMESS, 1) From GESECRAN
+    Goto AB_TRT
+Endif
+# End issue X3-230574 - 20210412 by LD
+
+# Issue X3-236019 - 2021-02-17 by MUARN : Must be done just after ALISIH
+If WRET = 1
+    GOK=0
+    WMESS=mess(129,197,1)-":"-[F:SDH]SDHNUM-mess(99,197,1)-":"-[F:SDH]BPCINV-WBPINAM
+    Call ECR_TRACE(WMESS, 0) From GESECRAN
+    Call INIT_COMPTE([F:BPC]BPCNUM,[F:SIH]CPY,"C",CODCPT) From CPTSUB
+    WMESS=mess(161,197,1)-[L]CODCPT-mess(162,197,1)-[F:SIH]BPRSAC
+    Call ECR_TRACE(WMESS, 0) From GESECRAN
+#    Tiers client non autorisé pour le compte collectif
+    WMESS=mess(112,192,1)
+    Call ECR_TRACE("         "+WMESS, 1) From GESECRAN
+    Goto AB_TRT
+Endif
+# End issue X3-236019
+
+# Issue X3-38450
+# Le cours de la devise doit être renseigné
+# Issue X3-64430
+#If [M:SIH2]RAT2=0
+If [M:SIH2]RAT1=0 | [M:SIH2]RAT2=0
+# End issue X3-64430
+    GOK=0
+    WMESS=mess(98,197,1)-":"-[F:SOH]SOHNUM-mess(99,197,1)-":"-[F:SOH]BPCINV-WBPINAM
+    Call ECR_TRACE(WMESS, 0) From GESECRAN
+    WMESS=mess(548,192,1)
+    Call ECR_TRACE("         "+WMESS, 1) From GESECRAN
+    Goto AB_TRT
+Endif
+# End issue X3-38450
+
+[F:SIV]SIVTYP=[M:DIA]SIVTYP
+[F:SIH]SIVTYP=[M:DIA]SIVTYP
+
+If KPOACT & GCURLEG = 'POR'
+  If func PORLEGLIB.VAL_BPC_CASHVAT ([F:SIH]BPR,[F:SIH]ACCDAT) = 2 : ISCASHVATDOC = 1 : Else : ISCASHVATDOC = 0 : Endif
+  If !ISCASHVATDOC & ISCASHVATTSV
+    #If not isCashVat and sivtyp isCashVat - trace error and skip invoice
+    Call ECR_TRACE([F:SIH]BPR-mess(111,119,1), 1) From GESECRAN
+    GOK=0 : Rollback : Return
+  Elsif ISCASHVATDOC
+    If CSHVATSIVTYPSTA > 0
+      #If SIVTYP isCashVat is empty or not valid - trace error and skip invoice
+      If CSHVATSIVTYPSTA = 1
+        Call ECR_TRACE("SIVTYPCVAT"-mess(141,105,1), 1) From GESECRAN
+      Else
+        Call ECR_TRACE([F:SIH]BPR-mess(111,119,1), 1) From GESECRAN
+      Endif
+      GOK=0 : Rollback : Return
+    Else
+      [F:SIV]SIVTYP = CSHVATSIVTYP
+      [F:SIH]SIVTYP = CSHVATSIVTYP
+    Endif
+  Endif
+Endif
+
+# Issue X3-236019 - 2021-02-17 by MUARN : Must be done just after ALISIH
+#If WRET = 1
+#    GOK=0
+#    WMESS=mess(129,197,1)-":"-[F:SDH]SDHNUM-mess(99,197,1)-":"-[F:SDH]BPCINV-WBPINAM
+#    Call ECR_TRACE(WMESS, 0) From GESECRAN
+#    Call INIT_COMPTE([F:BPC]BPCNUM,[F:SIH]CPY,"C",CODCPT) From CPTSUB
+#    WMESS=mess(161,197,1)-[L]CODCPT-mess(162,197,1)-[F:SIH]BPRSAC
+#    Call ECR_TRACE(WMESS, 0) From GESECRAN
+##    Tiers client non autorisé pour le compte collectif
+#    WMESS=mess(112,192,1)
+#    Call ECR_TRACE("         "+WMESS, 1) From GESECRAN
+#    Goto AB_TRT
+#Endif
+# End issue X3-236019
+
+Raz WTRANSAC, WIDENT, WJOURNAL
+
+# Récupération du type de pièce et du code journal
+#- X3Suivi 71937 Multi-législation -#
+#Read [TSV]TSV0=[F:SIV]SIVTYP
+Raz WRET
+Call LEC_TSV_LEG(GCURLEG,[F:SIV]SIVTYP,WRET) From TRTLECLEG
+If !WRET
+   WIDENT   = [F:TSV]GTE
+   WJOURNAL = [F:TSV]JOU
+   WTRANSAC = [F:TSV]COD
+   Read [GAU]GAU0=WTRANSAC
+   If fstat Raz WTRANSAC Endif
+Endif
+If WTRANSAC="" WTRANSAC="SIHI" Endif
+
+If WIDENT = "" Call EVALAUTO(WTRANSAC,"GTE",WIDENT) From TRTVENFAC Endif
+# 71937 : Multilégislation
+#Read [GTE]GTE0=WIDENT
+#If fstat Raz [F:GTE] Endif
+Local Integer WRET
+Call LEC_GTE_LEG(GCURLEG,WIDENT,WRET) From TRTLECLEG
+If WRET : Raz [F:GTE] : Endif
+# 71937
+
+# Contrôle sur le type de pièce
+Gosub CONTROLE_GTE From TRTVENFAC
+If GOK = 0 Goto AB_TRT Endif
+
+[F:SIH]GTE = WIDENT
+# Récupération des infos compteur à partir du type de pièce
+If [F:GTE]COU<>"" GCPT=[F:GTE]COU Endif
+
+If WJOURNAL = "" Call EVALAUTO(WTRANSAC,"JOU",WJOURNAL) From TRTVENFAC Endif
+If WJOURNAL = "" WJOURNAL = [F:GTE]DEFJOU Endif
+
+If GMODU(2)=2                :  # 105566 : Ajout test présence module compta
+    # 71937 : Multilégislation
+    #Read [JOU]JOU0=WJOURNAL
+    #If fstat
+    Local Integer WRET
+    Call LEC_JOU_LEG(GCURLEG,WJOURNAL,WRET) From TRTLECLEG
+    If WRET
+       Raz [F:JOU] : GOK=0 : Call RSTA("JOU",WJOURNAL) From GLOCK : Goto AB_TRT
+    Endif
+    # 71937
+    [F:SIH]JOU = WJOURNAL
+
+    # Contrôle sur le code journal
+    Gosub CONTROLE_JOU From TRTVENFAC
+    If GOK = 0 Goto AB_TRT Endif
+Else                        :  # 105566
+    [F:SIH]JOU = WJOURNAL   :  # 105566
+Endif                       :  # 105566
+
+# Récupération du compteur de facture
+If GLOCARGNUM
+    # ----------------------------------------------------------- #
+    #                 Localisation argentine                      #1
+    # Numérotation spécifique pour l'argentine                    #
+    # Appel du sous-prog NUMEROARG From SUBANMARG à la place      #
+    #       du sous-prog NUMERO From SUBANM standard              #
+    # Recherche du numéro                                         #
+    # Récupération du numéro CAI et de la date de validité CAI    #
+    # ----------------------------------------------------------- #
+    Local Char    WA_CAI
+    Local Date    WA_DATVLYCAI
+    Call NUMEROARG(GCPT,[F:SIV]SALFCY,GARGFACTYP,2,[F:SIV]INVDAT,[F:SIH]VAC,LNUM,WA_CAI,WA_DATVLYCAI,STAT) From SUBANMARG
+    If GOK<0 Goto ROL_TRT Endif
+    If STAT=0
+        [F:SIH]CAI=WA_CAI : [F:SIH]DATVLYCAI=WA_DATVLYCAI
+    Else
+        Local Char MESSA(80)
+        GMESSAGE=mess(104,117,1)-"("+GCPT+") : "
+        Gosub MESSAGE From SUBANMARG
+        GMESSAGE-=MESSA
+        Call ECR_TRACE ("          "+GMESSAGE,1) From GESECRAN : GOK=0 : Goto AB_TRT
+    Endif
+Else
+    Call NUMERO (GCPT,[F:SIV]SALFCY,[F:SIV]INVDAT,WJOURNAL,LNUM,STAT) From SUBANM
+    If GOK<0 Goto ROL_TRT Endif
+    If STAT<>0
+       Call ECR_TRACE (mess(60,199,1),1) From GESECRAN : GOK=0 : Goto AB_TRT
+    Else
+       # ----------------------------------------------------------- #
+       # Digital signature                                           #
+       # ----------------------------------------------------------- #
+       If func AFNC.ACTIV("DKS")
+           Local Char DKSORIG : DKSORIG = "SIV"
+           Local Integer DKSRET : DKSRET  = 1
+           Gosub DKS_INICRE_TRIGGER From DKSLIB
+           If DKSRET = 0 : Goto AB_TRT : Endif
+           # Issue X3-230307- 2021-01-27 by VAVIL : Trace error when running FUNAUTINVD - "Document  is not validated."
+           # Issue X3-222040- 2020-11-01 by VAVIL : [PT] QR code printed in Sales documents
+           #Local Integer QRSTAT
+           #Call GEN_QRCODE_INV([F:SIV]NUM, QRSTAT) From PORLEGQRCDOCLIB
+           # End issue X3-222040
+           # End issue X3-230307
+       Endif
+    Endif
+Endif
+
+# Lecture compteur pour test si chronologie activée
+If [F:ANM]CODNUM<>GCPT
+   Read [ANM]ANM0=GCPT
+   If fstat
+      Call RSTA("ANM",GCPT) From GLOCK : GOK=0 : Goto AB_TRT
+   Endif
+Endif
+
+# Issue 112108
+[F:SIV]NUM = LNUM
+[F:SIH]NUM = LNUM
+# End issue 112108
+
+If [F:ANM]CTLCHR=2
+   Gosub CTRL_CHRONOLOGIE From TRTVENFAC
+   If GOK=0 Goto AB_TRT Endif
+Endif
+
+# Législation Belge (exigence 82614) : VCS Sequencing number --str
+If func AFNC.ACTIV("KBE") Then
+ # Pour les factures et Notes de débit
+ If  find([F:SIH]INVTYP,1,3)>0 Then
+  Local Char MESSA(255)
+  Call BELSETVCS([F:SIH]FCY,[F:SIH]ACCDAT,[F:SIH]BELVCS,STAT,MESSA) From INVVCSLIB
+  If GOK<0
+   Goto AB_TRT
+  Elsif GOK<1 | STAT
+   GOK=0
+   If STAT
+    GMESSAGE=MESSA
+    Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+   Endif
+   Goto AB_TRT
+  Endif
+ Endif
+Endif
+#Localisation Belge (exigence 82614) --end
+
+# Issue 112108
+#[F:SIV]NUM = LNUM
+#[F:SIH]NUM = LNUM
+# End issue 112108
+
+# FGR 08/01/2014 : X3SUIVI95687 (début)
+  If func AFNC.ACTIV("SDD") Then
+    #--CPO 87923 Gestion des prélèvements SDD
+    #--On initialise et on contrôle le mandat
+    Raz WMESS_UMRNUM
+    Call INIT_CTL_UMRNUM([F:SIH]CPY,[F:SIH]BPRPAY,[F:SIH]PTE,[F:SIH]UMRNUM,WMESS_UMRNUM) From TRTVENSDD
+    If WMESS_UMRNUM<>""
+      Call ECR_TRACE(mess(55,198,1)-[F:SIH]NUM-":\"+WMESS_UMRNUM,-1) From GESECRAN
+    Endif
+    #--/
+  Endif
+# FGR 08/01/2014 : X3SUIVI95687 (fin)
+
+#--CPO 106895
+#Call NEW_SFIT ( "F","SIV",[F:SIV]CUR,[F:SIV]BPCINV,[F:SIV]BPCORD,[F:SIV]INVDAT ) From SUBSFIT
+CPOSVGGREP=GREP
+GREP="C"
+Call NEW_SFIT ( "F","SIV",[F:SIV]CUR,[F:SIV]BPCINV,[F:SIV]BPCORD,[F:SIV]INVDAT ) From SUBSFIT
+GREP=CPOSVGGREP
+#--/
+
+Call PJT_WRITE_MSG() From TRTPJT  # FGR 14/12/2011 : X3SUIVI71065
+
+WMESS=mess(122,197,1)-":"-[F:SIH]NUM-mess(99,197,1)-":"-[F:SIV]BPCINV-WBPINAM
+Call ECR_TRACE(WMESS, 0) From GESECRAN
+
+Raz WINVORN
+
+Raz WAMTNOTLIN
+Call PARAML([F:SIV]SALFCY,"SIVNULL",WPARAM) From ADOVAL      # FGR 28/07/2015 : X3SUIVI108078 : Plus Call PARAM (performances)
+GSIVNULL = val(WPARAM)
+
+Return
+
+
+#-----------------------------------------------------------------------#
+# Ecriture de l'entête facture                                          #
+#-----------------------------------------------------------------------#
+$FIN_FACTURE
+
+GPOINT="AUTINVDEND" : Gosub ENTREE From EXEFNC
+# Issue X3-111855 - 2019-02-20 by LD
+#If GOK=0: Goto AB_TRT : Endif :# X3-72082 (LCC 17/04/18) Problem with entry point AUTINVD
+If GOK=0
+   Rollback
+   Raz WKEY, WKEY1, WNUM, WDATA
+   Call PJT_WRITE_MSG() From TRTPJT  # FGR 14/12/2011 : X3SUIVI71065
+   WMESS =mess(17,107,1)
+   Call ECR_TRACE("         "+WMESS,0)From GESECRAN
+   Raz WMESS
+   GOK=1
+   Return
+Endif
+# Issue X3-111855 - 2019-02-20 by LD
+
+#--- Somme des lignes à 0 interdite
+If GSIVNULL=2 & WAMTNOTLIN=0
+   Call ECR_TRACE(mess(218,192,1)-":"-mess(91,106,1),1) From GESECRAN
+   Goto AB_TRT
+Endif
+
+nolign=1
+[M:SIH0]NUM=[F:SIV]NUM : [M:SIH2]=[F:SIV]   # TODAN-120319-Assign values to invoice mask header
+#[M:SIH2]=[F:SIV]
+
+# Bug 76201
+If [M:SIH1]PRITYP=2
+  # Vérification de la cohérence entre les montants HT Taxe et TTC
+  Gosub VERIF_COHERENCE_TOTAUX From TRTVENFACC
+  # Si différence, régularisation et répartition de la différence sur les lignes
+  # Raj de la base de taxe 1, du mnt HT, du mnt de taxe 1 des lignes
+  If WNBRCLC>1
+      nolign=1
+      Filter [SID] Where NUM = [F:SIH]NUM
+      For [SID]SID0
+          Readlock [SID]SID0 Curr
+          If    fstat=1 : GOK=-1 : GLOCK="$SINVOICED"+[F:SID]NUM+num$([F:SID]SIDLIN) : Break
+          Elsif fstat   : GOK=0  : Call RSTA("SID",[F:SID]NUM+num$([F:SID]SIDLIN)) From GLOCK : Break
+          Endif
+          [F:SID]BASTAXLIN(0)=[M:SIH4]BASTAXLIN1(nolign-1)
+          [F:SID]AMTNOTLIN   =[M:SIH4]AMTNOTLIN(nolign-1)
+          [F:SID]AMTTAXLIN(0)=[M:SIH4]AMTTAXLIN1(nolign-1)
+          # 102423 : Belgium Early discounts
+          # HT amount is modified : Discount amount must be recalculed
+          If GDEPMGTMOD=5 & [M:SIH2]DEPRAT<>0
+              [F:SID]AMTDEPLIN = arr([F:SID]AMTNOTLIN*[M:SIH2]DEPRAT/100,[F:TCU]CURRND)
+          Endif
+          # 102423
+          Rewrite [SID]
+          If fstat GOK=0 : Call FSTA("SID") From GLOCK : Break : Endif
+          nolign+=1
+      Next
+      Filter [SID]
+      If GOK<0 Goto ROL_TRT Endif
+      If GOK=0 Goto AB_TRT Endif
+  Endif
+Endif
+# Bug 76201
+
+# Spécificité USA
+# If GLOCUSATAX  # 106867.o
+If func AFNC.ACTIV("LTA")  & [F:CPY]SSTTAXACT = 2  # 106867.n
+    Local Char WKU_MAJ : WKU_MAJ="2"
+    Gosub CHARG_TABLEAUX From TRTVENFACC
+Endif
+
+# 101874 : V9 : Taxe code control
+#---- Paramètres complementaires contrôle des taxes
+# PARAM_T(0) : Flag contrôle des taxes             (1=Non/2=Oui)
+# PARAM_T(1) : Lecture de la trace par le sous-pro (1=Non avec msg/2=Oui avec msg/3=Non sans msg/4=Non sans msg)
+# PARAM_T(2) : Flag retour                         (1=KO/2=OK)
+Local    Char     PARAM_T (25) (0..10)
+PARAM_T(0)="2"      : # Contrôle des taxes lors de la création
+PARAM_T(1)="3"      : # Pas d'affichage du msg, pas de lecture de la trace
+PARAM_T(2)="0"
+Gosub CTLVAT From TRTVENFACC1
+If PARAM_T(2)="1" GOK=0 : Goto AB_TRT Endif
+# 101874
+
+# Calcul de la facture
+Global Integer G_CLCDSPLIN : G_CLCDSPLIN=1
+Gosub CAL_FACTURE From TRTVENFACC
+
+# Mise à jour de la Répartition des élements de facturation dans les tables des lignes
+If G_VALSFL>0
+    # 105502 : Pb recalcul de la répartition des élts de facturation sur les lignes
+#    If sum([M:SIHV]DDTANOT01(1..G_VALSFL),[M:SIHV]DDTANOT02(1..G_VALSFL),[M:SIHV]DDTANOT03(1..G_VALSFL))<>0 |
+#&      sum([M:SIHV]DDTANOT04(1..G_VALSFL),[M:SIHV]DDTANOT05(1..G_VALSFL),[M:SIHV]DDTANOT06(1..G_VALSFL))<>0 |
+#&      sum([M:SIHV]DDTANOT07(1..G_VALSFL),[M:SIHV]DDTANOT08(1..G_VALSFL),[M:SIHV]DDTANOT09(1..G_VALSFL))<>0
+    If sum([M:SIHV]DDTANOT01(0..G_VALSFL-1),[M:SIHV]DDTANOT02(0..G_VALSFL-1),[M:SIHV]DDTANOT03(0..G_VALSFL-1))<>0 |
+&      sum([M:SIHV]DDTANOT04(0..G_VALSFL-1),[M:SIHV]DDTANOT05(0..G_VALSFL-1),[M:SIHV]DDTANOT06(0..G_VALSFL-1))<>0 |
+&      sum([M:SIHV]DDTANOT07(0..G_VALSFL-1),[M:SIHV]DDTANOT08(0..G_VALSFL-1),[M:SIHV]DDTANOT09(0..G_VALSFL-1))<>0
+    # 105502
+        nolign=1
+        Filter [SID] Where NUM = [F:SIH]NUM
+        For [SID]SID0
+            Readlock [SID]SID0 Curr
+            If    fstat=1 : GOK=-1 : GLOCK="$SINVOICED"+[F:SID]NUM+num$([F:SID]SIDLIN) : Break
+            Elsif fstat   : GOK=0  : Call RSTA("SID",[F:SID]NUM+num$([F:SID]SIDLIN)) From GLOCK : Break
+            Endif
+            # --- Stockage a la ligne des elt de facturation
+            Call UPD_DSPLIN("SID",nolign-1) From TRTVENFACC
+            Rewrite [SID]
+            If fstat GOK=0 : Call FSTA("SID") From GLOCK : Break : Endif
+            nolign+=1
+        Next
+        Filter [SID]
+        If GOK<0 Goto ROL_TRT Endif
+        If GOK=0 Goto AB_TRT Endif
+    Endif
+Endif
+
+# Charger les montants de la facture dans SIH et SIV
+Gosub CHARGE_SIH From TRTVENFACC
+If dim(JLNONOK)>0 & JLNONOK
+   Call ECR_TRACE(GMESSAGE,1) From GESECRAN       : # Trop de codes taxe differents
+   Goto AB_TRT
+Endif
+
+# Issue X3-193068 - 2020-07-24 by MUARN : si total négatif message
+# if INVATI<0 message
+If [M:SIH1]INVSTA<>3
+  If GSIVNULL=2 & [M:SIHV]INVATI=0
+     GMESSAGE = mess(91,106,1)
+     Call ECR_TRACE(GMESSAGE,1) From GESECRAN
+     GOK=1   : Return
+  Endif
+  If[M:SIHV]INVATI<0
+     GMESSAGE = mess(216,191,1)
+     Call ECR_TRACE(GMESSAGE,0) From GESECRAN
+  Endif
+Endif
+# End issue X3-193068
+
+# SAM 110033: Swiss localization: calculate BVRNUMREF / PAYBAN
+If func AFNC.ACTIV("KSW") Then
+  Call CALC_BVRFIELDS([F:SIH]FCY, [F:SIH]INVTYP, [F:SIH]PTE, [F:SIH]BPRPAY, [F:SIH]CUR) From SUBSIHSWI
+  Call CREATE_SWIQRC([F:SIH]FCY, [F:SIH]INVTYP, [F:SIH]PTE, [F:SIH]BPRPAY, [F:SIH]CUR) From SUBSIHSWI
+  If not GOK : Return : Endif
+Endif
+# SAM 110033 END
+
+# Si plus d'une livraison sur la facture, réinitialiser la date écheance avec la date facture
+# (au cas où origine date échéance = date livraison)
+If WINVORN > 1 [F:SIH]STRDUDDAT = [F:SIV]INVDAT Endif
+Gosub MOD_DATE_ECHE From TRTVENFACC
+
+# affectation des acomptes
+If [F:SIV]INVTYP = 1
+    Call AFF_ACOMPTES (1) From TRTVENFACC
+    If GOK < 1 Goto AB_TRT Endif
+Endif
+
+# --> Stockage du 1er no facture
+If PNUM= "" : PNUM = LNUM : Endif
+# --> maj mouvement client (facturé non comptabilisé)
+Local Decimal WCOURS : WCOURS=0
+If [F:SIH]RATDIV(GTYPGEN-1)<>0 WCOURS=arr([F:SIH]RATMLT(GTYPGEN-1)/[F:SIH]RATDIV(GTYPGEN-1), 10^-GDECRCU) : Endif
+Call  MAJMVC ([F:SIV]BPCINV, [F:SIV]CUR, [F:SIH]CURTYP, WCOURS, [F:SIV]INVDAT, [F:SIV]NUM, [F:SIV]SALFCY,
+&   0, [F:SIH]AMTATI,"+","I","",0) From TRTBPMVT
+If GOK < 1 Goto AB_TRT Endif
+Raz WINVORN
+
+# Issue X3-195220 - 2020-08-13 by SR : Load FIY and PER in creation mode
+Gosub LOAD_FIY_PER From SUBSIHA
+
+# --> ecriture entête facture
+Raz [F:SIH]CREDATTIM, [F:SIH]UPDDATTIM  ## SAM 115938 (LC - 24/11/16)
+Write [SIH]
+If fstat GOK=0: Call FSTA("SIH") From GLOCK: Goto AB_TRT
+Else
+    Raz [F:SIV]CREDATTIM, [F:SIV]UPDDATTIM  ## SAM 115938 (LC - 24/11/16)
+    Write [SIV]
+    If fstat
+        GOK=0 : Call FSTA("SIV") From GLOCK : Goto AB_TRT
+    Else
+        NBINV += 1
+#        WMESS=mess(122,197,1)+" "+[F:SIH]NUM+" "+mess(99,197,1)+" "+[F:SIV]BPCINV
+#        Call ECR_TRACE(WMESS, 0) From GESECRAN
+        # ---> Recherche de toutes les lignes générées
+#        Filter [SID] Where NUM = [F:SIH]NUM
+#        For [SID]
+#            WMESS="       "+mess(129,197,1)+" "+[F:SID]SDHNUM+" "+mess(80,197,1)+" "+[F:SID]ITMREF
+#            Call ECR_TRACE(WMESS, 0) From GESECRAN
+#        Next
+#        Filter [SID]
+  Endif
+Endif
+
+#----------------------------------------------------------------#
+# Création des enregistrements sans SVCRVAT et SVCRFOOT          #
+#----------------------------------------------------------------#
+Call UPD_VALORISATION ("C","SIH") From TRTVENFACC
+If GOK < 1 Goto AB_TRT Endif
+
+#----------------------------------------------------------------#
+# Creation des enr. analytiques des elts de facturation          #
+#----------------------------------------------------------------#
+# ACA (2009-10) Lot S03
+# 81878 : Ajout borne pour ne pas trier le tableau complet
+#Sorta [M:SFIT]NBTRF Order By [M:SFIT]DAC([S]indice)
+Sorta [M:SFIT]NBTRF [M:SFIT]NBTRF Order By [M:SFIT]DAC([S]indice)
+# 81878
+#Call CHARG_CCE_MULTI(2,"[M:SFIT]VCRENT","[M:SFIT]DTA","[M:SIHV]XFNUM","[M:SIHV]SFICCE") From TRTX3CPT
+[M:SIHV]VCRTYP=4  : [M:SIHV]NUM=[F:SIV]NUM
+Gosub CREMOD_DIE_FOOT From SUBSIHV
+If GOK < 1 Goto AB_TRT Endif
+
+# Génération des échéances de paiement
+Call CRE_ECHEANCES From TRTVENFACC
+
+# Pour mettre à jour des tables annexes
+GPOINT="AUTINVDMAJ" : Gosub ENTREE From EXEFNC
+If GOK < 1 Goto AB_TRT Endif
+
+Commit
+
+If [M:DIA]PRNFLG=2 & [M:DIA]PRNNAM<>"" & [M:DIA]PRNDEN<>""
+  #----- Recherche du nouveau code état à partir du modèle -----#
+  If [F:BPC]BPCNUM<>[F:SIH]BPR
+    Read [BPC] BPC0=[F:SIH]BPR : If fstat  Raz [F:BPC] : Endif
+  Endif
+  If [F:BPC]TPMCOD<>""
+    If [F:TPM]TPMCOD<>[F:BPC]TPMCOD
+      Read [TPM] TPM0=[F:BPC]TPMCOD : If fstat  Raz [F:TPM] : Endif
+    Endif
+    If [F:TPM]SALINV<>""
+      WARP_RPTCOD(0)=[F:TPM]SALINV
+    Else
+      WARP_RPTCOD(0)=[M:DIA]PRNNAM
+    Endif
+  Else
+    WARP_RPTCOD(0)=[M:DIA]PRNNAM
+  Endif
+  #----- Nombre de copies -----#
+  WARP_NBRCPY=[F:SIV]COPNBR
+  #----- Ecriture AREPORTM et màj indicateur d'impression sur entête facture -----#
+  Call ALIM_ETAT(1,WARP_NBRCPY,WARP_RPTCOD,WARP_NUMREQ,WARP_NUMLIG,WARP_SEQREQ) From TRTX3ETA
+  #-----
+Endif
+
+# Issue 116637 - Move webservice calls to outside of the transaction
+If func AFNC.ACTIV("LTA") & [F:CPY]SSTTAXACT = 2
+  Local Integer SSTERR, ERR
+  Local Char    ERRMSG(250)
+  Local Char    SIHNUM(20)
+  If !clalev([F:TCU]) : Local File TABCUR [TCU] : Endif
+  If !clalev([F:DUD]) : Local File GACCDUDATE [DUD] : Endif
+
+  SIHNUM = [F:SIH]NUM
+
+  Gosub CAL_FACTURE From TRTVENFACC
+  If ERR
+    SSTERR = ERR
+    Call ECR_TRACE(ERRMSG, 1) From GESECRAN
+    Goto WEBSERVICE_ERROR
+  Endif
+
+  Call ALISIDTAX ([L]SIHNUM) From TRTTAXUSA
+
+  Call UPD_VALORISATION ("M","SIH") From TRTVENFACC
+
+  Trbegin [SIH], [SIV], [DUD] #CATUA X3-77369.n Add SIV, DUD
+
+  Readlock [SIH]SIH0 = [L]SIHNUM With lockwait=3
+  If fstat
+    Call FSTA("SIH") From GLOCK
+    Rollback : SSTERR = 1
+    Goto WEBSERVICE_ERROR
+  Endif
+
+  # Load the amounts into SIH from SIV
+  Gosub CHARGE_SIH From TRTVENFACC
+
+  # Update the tax changes made just now
+  Rewrite [SIH]
+  If fstat
+    Call FSTA("SIH") From GLOCK
+    Rollback : SSTERR = 1
+    Goto WEBSERVICE_ERROR
+  Else
+    #CATUA X3-74427.sn
+    #When update to sales invoices table (SINVOICE [SIH]) is complete with the correct AMTATI and AMTTAX values
+    #Perform the same update to open items table  (GACCDUDATE[DUD])
+    If [F:SIV]INVTYP <> 5
+      Local Integer MODFAC, MODECH
+      Raz MODFAC, MODECH
+      Call MODECHE(1,[F:SIH]NUM,[F:SIH]AMTATI,MODFAC,MODECH) From SUBBIH
+      If !GOK
+         Rollback : SSTERR = 1
+         Goto WEBSERVICE_ERROR
+      Endif
+
+      #CATUA X3-77369.sn
+      #Update the values for costing sales invoice SINVOICEV to properly handle prepayment amt + tax [SIV]INSATI
+      If [F:SIV]INVTYP = 1
+        Readlock [F:SIV]SIV0 = [L]SIHNUM With lockwait=3
+        If fstat
+          GOK=0: Call FSTA("SIV") From GLOCK
+        Else
+          Call AFF_ACOMPTES (1) From TRTVENFACC
+          Rewrite [SIV]
+          If fstat
+            GOK=0: Call FSTA("SIV") From GLOCK
+          Endif
+        Endif
+        If !GOK
+          Rollback : SSTERR = 1
+          Goto WEBSERVICE_ERROR
+        Endif
+      Endif
+      #CATUA X3-77369.en
+    Endif
+    #CATUA X3-74427.en
+    Commit
+  Endif
+Endif
+
+If func AFNC.ACTIV("SEPP") & func SEPPLIB.SEPP_DOC([F:SIH]PTE)
+  Local Integer SEERR, PAERR
+  Local Char    SEMESSAGE(250), PAMESSAGE(250)
+  Call TRANSFER(4,[F:SIV]SIHORINUM,5,[F:SIV]NUM,SEERR) From SEPPLIB
+
+  Call AUTH_CHK(5,[F:SIV]NUM,PAERR,PAMESSAGE) From SEPPLIB
+  If PAERR : Call ECR_TRACE(PAMESSAGE, 1) From GESECRAN : Endif
+  If [L]SEERR | [L]PAERR : Goto WEBSERVICE_ERROR : Endif
+
+Endif
+# End 116637
+
+Return
+
+$WEBSERVICE_ERROR
+
+  # Issue 116637 An error occurred with either SE or SST.
+  # Since those calls are outside of the transaction, can't just do a rollback
+  # Have to delete the invoice here
+  Local Integer OK
+  Local Char PARAM2(10)(1), SAVREP(1), DELSIHNUM(20), WSMESS(255)
+
+  # The deletion uses another screen of the same abbreviation.
+  # So create a copy of DIA and close it.  At the end - reopen
+  If !clalev([M:DIAP]) : Local Mask SAUTINVD [DIAP] : [M:DIAP] = [M:DIA] : Endif
+
+  Close Mask [DIA]
+
+  SAVREP=GREP : GREP="A" : DELSIHNUM = [F:SIH]NUM
+  [L]OK=-9 : Raz [L]PARAM2 : # Don't ask for confirmation
+  # TODAN-120319-Make sure the detail invoice file is open so we can delete the record
+  If clalev([F:SID1])=0 Local File SINVOICED [SID1] Endif
+  Call ANUCOD("SIH",DELSIHNUM,PARAM2,OK) From GOBJACT
+  GREP=SAVREP
+
+  # did we come from SST or SE?
+  If dim([L]SSTERR)>0 & [L]SSTERR
+    WSMESS = func AFNC.MES2(mess(524,192,1),mess(45,109,1),DELSIHNUM)
+  Else
+    WSMESS = func AFNC.MES2(mess(59,2092,1),mess(45,109,1),DELSIHNUM)
+  Endif
+  Call ECR_TRACE(WSMESS, 1) From GESECRAN
+
+  # Close the new DIA (if applicable), and re-open ours and copy back.
+  If clalev([M:DIA]) : Close Mask [DIA] : Endif
+  Local Mask SAUTINVD [DIA]
+  [M:DIA] = [M:DIAP]
+
+  Close Local File [SID1] # TODAN-120319
+
+Return
+
+# -------------------------------------- #
+#         Traitement des erreurs         #
+# -------------------------------------- #
+$ROL_CHGFIC
+Rollback
+Call ROLL From GLOCK
+If   GROLL
+     Goto ERR_TRT
+Else Goto CHGFIC
+Endif
+Return
+
+$ROL_TRT
+Rollback
+Call ROLL From GLOCK
+If   GROLL
+     Raz WKEY, WKEY1, WNUM, WDATA
+     Goto ERR_TRT
+Else Goto TRTENT
+Endif
+Return
+
+$AB_TRT
+Rollback
+Raz WKEY, WKEY1, WNUM, WDATA
+
+$ERR_TRT
+Call PJT_WRITE_MSG() From TRTPJT  # FGR 14/12/2011 : X3SUIVI71065
+WMESS =mess(17,107,1)
+Call ECR_TRACE("         "+WMESS,0)From GESECRAN
+Raz WMESS
+# Issue X3-111855 - 2019-02-20 by LD
+#GOK=1 :# X3-72082 (LCC 19/04/18) Problem with entry point AUTINVDEND
+# Issue X3-111855 - 2019-02-20 by LD
+Return
+
+#-----------------------------------------------------------------------#
+#     Verification si création des lignes possible                      #
+#-----------------------------------------------------------------------#
+$VERIF_LIN
+Local Char WSOHNUM(GLONVCR)
+# Issue X3-172271 - 2019-11-29 by SR : Save WSIHLIN value
+Local Integer WWSIHLIN : WWSIHLIN = WSIHLIN
+# If a rupture is detected and a new invoice will be create, raz WSIHLIN
+If WFINFAC = 2 : Raz WSIHLIN : Endif
+# End issue X3-172271
+
+WSDHLIN = 0
+LINFLG = 1
+
+If WIME = "2"
+    WSDHLIN = [F:SWI]SWILINNBR
+    If WSDHLIN > WSIHACV - WSIHLIN
+#   --> Le nb de ligne commande ne tient pas sur la facture : Pas de création possible
+        LINFLG = 0
+    Endif
+Else
+    WSDHLIN = [F:SWI]SWILINNBR
+    If WSDHLIN > WSIHACV - WSIHLIN
+#       --> Le nbre ligne livraison ne tient pas sur la facture en cours de création
+        If WIME = "1"
+#           Une facture / bl  : Pas de création possible
+            LINFLG = 0
+        Else
+#           Autres cas        :
+            If WSDHLIN > WSIHACV
+#           --> Le nbre ligne livraison ne tient pas sur une nouvelle facture
+                LINFLG = 0
+            Else
+#           --> Le nbre ligne livraison tient sur une nouvelle facture
+                LINFLG = 2
+            Endif
+        Endif
+    Endif
+Endif
+# Issue X3-172271 - 2019-11-29 by SR : Restore WSIHLIN value
+WSIHLIN = WWSIHLIN
+Return
+#######################################################################
+#                     ETIQUETTES                                      #
+#######################################################################
+$LEC_BPC
+If [F:BPC]BPCNUM<>[F:SDH]BPCORD
+    Read [BPC]BPC0=[F:SDH]BPCORD
+    If fstat Raz [F:BPC] : Endif
+Endif
+Return
+#######################################################################
+#                     ACTIONS CHAMPS                                  #
+#######################################################################
+
+########################################
+Subprog AM_SALFCY(VALEUR)
+Variable Char    VALEUR()
+#Call GETDEV(VALEUR) From DEVSUB
+# --> Chargement globales référenciels, comptes et sections de la société
+If GFCY<>VALEUR : GFCY=VALEUR : Gosub CHARG_PARAM Endif
+# --> Recherche Type de facture utilisateur
+Call PARAML(GFCY,"SIVTYP",GSIVTYP) From ADOVAL      # FGR 28/07/2015 : X3SUIVI108078 : Plus Call PARAM (performances)
+# --> Vérif.Type de facture utilisateur : Législation identique à la législation du site
+Gosub VERF_SIVTYP
+[M]SIVTYP=GSIVTYP : Affzo [M]SIVTYP
+
+End
+
+########################################
+Subprog C_INVDAT(VALEUR)
+Variable Date    VALEUR
+Local    Date    WINVDAT
+
+#--CPO 75310 Before doing the control...
+If GSOCIETE<>[M]CPY or GFCY<>[M]SALFCY
+  # --> Chargement globales référenciels, comptes et sections de la société
+  GFCY=[M]SALFCY : Gosub CHARG_PARAM
+  # --> Récupération des paramêtres de vente
+  Call GLOBVAR(GFCY,"VEN") From TRTX3
+Endif
+#--CPO
+
+WINVDAT=VALEUR
+If VALEUR <> [0/0/0] Gosub CTL_INVDAT Endif
+End
+
+$CTL_INVDAT
+If GMODU(2) <> 2 Return Endif
+
+# Issue X3-195220 - 2020-08-17 by SR : Already done in $OUVRE
+#Local Decimal    EXERCICE , PERIODE
+# Issue X3-232623 - 2021-01-25 by SR : Must be declared here when coming from C_INVDAT
+If dim(EXERCICE)<1
+  Local Decimal    EXERCICE , PERIODE
+Endif
+# End issue X3-232623
+If clalev([F:PER])=0 : Local File PERIOD [PER] : Endif
+
+For [PER]PER0 Where CPY=GSOCIETE & PERSTR<=WINVDAT & PEREND>=WINVDAT & LEDTYP=GTYPGEN
+  EXERCICE = [F:PER]FIYNUM
+  PERIODE  = [F:PER]PERNUM
+Next
+If EXERCICE=0 | PERIODE=0
+  GMESSAGE = mess(1,104,1) : # MSG=Date incorrecte
+  mkstat = 2 : Return
+Endif
+If clalev([F:FIY])=0 : Local File FISCALYEAR [FIY] : Endif
+Read [FIY]FIY0 = GSOCIETE;GTYPGEN;EXERCICE
+If fstat | [F:FIY]FIYSTA<>2
+  GMESSAGE = mess(20,101,1) : # MSG=Exercice non ouvert
+  mkstat = 2 : Return
+Endif
+If [F:PER]PERSTA<2
+  GMESSAGE = mess(35,101,1) : # MSG=Periode non ouverte
+  mkstat = 2 : Return
+Endif
+If [F:PER]PERSTA>2
+  GMESSAGE = mess(36,101,1) : # MSG=Période fermee
+  mkstat = 2 : Return
+Endif
+#Call CTLVLYDAT(VALEUR,[F:GTE]VLYSTR,[F:GTE]VLYEND) From CPTSUB
+#If mkstat : GMESSAGE = [F:GTE]TYP-GMESSAGE : Return : Endif
+
+# V6.2 : Certification
+#----- Contrôle date pour certification NF -----#
+Call CTLDAT_CNF(5,[M:DIA]SALFCY,[0/0/0],WINVDAT,"","") From CONTX3
+If mkstat  Return : Endif
+
+Return
+########################################
+# ----------------------------------- SDHNUMDEB ---------------------------------
+Subprog AM_SDHNUMDEB(VALEUR)
+Variable Char    VALEUR()
+If VALEUR <> "" : [M]SDHNUMFIN = VALEUR : Endif
+End
+########################################
+# ----------------------------------- SDHNUMFIN ---------------------------------
+Subprog S_SDHNUMFIN(VALEUR)
+Variable Char    VALEUR()
+Call SELECT("SDH","",VALEUR,"") From SELOBJ
+End
+########################################
+# ----------------------------------- BPCINVDEB ---------------------------------
+Subprog AM_BPCINVDEB(VALEUR)
+Variable Char    VALEUR()
+If VALEUR <> "" : [M]BPCINVFIN = VALEUR : Endif
+End
+########################################
+Subprog AP_PRNFLG(VALEUR)
+Variable Integer VALEUR
+If VALEUR = 1
+   Raz [M]PRNNAM, [M]PRNDEN, [M]PRNSRV, [M]PRNIMP
+   Diszo [M]PRNNAM, PRNDEN
+Else
+   If vireblc([M]PRNNAM,2)=""
+      Call INIT_ARP("SIH", [M:DIA]PRNNAM) From TRTVENIMP
+      Actzo [M]PRNNAM, PRNDEN
+   Endif
+Endif
+Affzo [M]PRNNAM, PRNDEN, PRNSRV, PRNIMP
+End
+########################################
+Subprog C_PRNNAM(VALEUR)
+Variable Char    VALEUR()
+Local    Char    AUTSIT(10)
+Local    Integer OK
+# Document obligatoire si impression facture
+If [M:DIA]PRNFLG = 2 & VALEUR = ""
+   GMESSAGE=mess(10,123,1) : mkstat = 2
+   End
+Endif
+End
+########################################
+Subprog C_PRNSRV(VALEUR)
+Variable Char    VALEUR()
+Gosub CTL_SRV From TRTVENIMP
+End
+########################################
+Subprog C_PRNIMP(VALEUR)
+Variable Char    VALEUR()
+# Imprimante obligatoire si impression
+If [M:DIA]PRNNAM <> "" & VALEUR = ""
+   GMESSAGE=mess(10,123,1) : mkstat = 2
+Endif
+End
+########################################
+$ERRBATCH
+Call ECR_TRACE(errmes$(errn)-num$(errl)-errm,1) From GESECRAN
+End
+##########################################################################
+Subprog C_PRNDEN(VALEUR)
+Variable Char    VALEUR()
+# Imprimante obligatoire si impression
+If [M:DIA]PRNNAM <> "" & VALEUR = ""
+   GMESSAGE=mess(10,123,1) : mkstat = 2
+Endif
+End
+
+##########################################################################
+Subprog AP_PRNDEN(VALEUR)
+Variable Char    VALEUR()
+Call INIT_SRV(VALEUR, [M]PRNSRV,[M]PRNIMP) From TRTVENIMP
+Affzo [M]PRNSRV, PRNIMP
+[M:DIA]PRTCOP=func TRTVENIMP.GET_NBRCPY_AIM(VALEUR)#Fq73266-Gbn
+End
+
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SAUTINVD) 18/04/2006 14:15:45 (JL)
+######################################################################################
+Subprog D_CPY(VALEUR)
+Variable Char    VALEUR()
+Call GETSOC (GFCYDEF(5)) From DEVSUB   : # init avec societe du site ventes par defaut
+VALEUR=GSOCIETE
+[M]SALFCY=GFCYDEF(5)
+End
+
+Subprog AM_CPY(VALEUR)
+Variable Char    VALEUR()
+GSOCIETE=VALEUR
+Raz [M]SALFCY
+End
+
+######################################################################################
+#--------------------------------------------------------------------------#
+# Chargement des paramètres avec GFCY = Site de la facture                 #
+# ------------------------------------------------------------------------ #
+# Chargement des globales référenciels, comptes et sections de la société  #
+# Chargement des paramètres de localisation                                #
+# ------------------------------------------------------------------------ #
+$CHARG_PARAM
+Local  Char     PARAM2(10)
+
+# --- Chargement des globales référenciels, comptes et sections de la société
+Call GETCPY(GFCY,"",0,"") From TRTX3CPT
+# --- Si changement société -----#
+If GSOC_UPDFLG
+    # --- Chargement des paramètres de localisation
+    # --- Numérotation Argentine -----#
+    If func AFNC.ACTIV("KAG")
+        Call PARAML(GFCY,"ARGNUM",PARAM2) From ADOVAL      # FGR 28/07/2015 : X3SUIVI108078 : Plus Call PARAM (performances)
+        GLOCARGNUM=val(PARAM2)
+        If GLOCARGNUM>0  GLOCARGNUM-=1 : Endif
+    Else
+        Raz GLOCARGNUM
+    Endif
+    # --- Utilisation systeme de taxe
+    Call LEC_CPY(GSOCIETE) From CPTLEC   # 106867.n
+#    If func AFNC.ACTIV("KUS")  # 106867.so
+#        Call PARAM(GFCY,"USATAX",PARAM2) From ADOVAL
+#        GLOCUSATAX=val(PARAM2)
+#        If GLOCUSATAX>0  GLOCUSATAX-=1 : Endif
+#    Else
+#      Raz GLOCUSATAX
+#    Endif  # 106867.eo
+    # --- Contrôle date documents
+    Call PARAML(GFCY,"CTLDATORI",PARAM2)    From ADOVAL      # FGR 28/07/2015 : X3SUIVI108078 : Plus Call PARAM (performances)
+    GCTLDATORI=val(PARAM2)  : If GCTLDATORI=0   GCTLDATORI=2  : Endif
+
+    # FGR 24/11/2011 : X3SUIVI71065
+    GPJTSNGDOC = func TRTPJT.GET_PARAM_PJTSNGDOC(GFCY)
+Endif
+
+Return
+
+#-----------------------------------------------#
+# Contrôle de la législation du type de facture #
+#-----------------------------------------------#
+$VERF_SIVTYP
+# Issue X3-218177/241574 - 2021-04-27 by MUARN : need to check always, for exemple if defined at folder
+#If [F:TSV]SIVTYP<>GSIVTYP & GSIVTYP<>""
+If GSIVTYP <> ""
+    #- X3Suivi 71937 Multi-législation -#
+    #Read [TSV]TSV0 = GSIVTYP
+    Local Integer WRET
+    Call LEC_TSV_LEG(GCURLEG,GSIVTYP,WRET) From TRTLECLEG
+    # Issue X3-218177/241574 - 2021-04-27 by MUARN : need to raz GSIVTYP too
+    #If WRET : Raz [F:TSV] : Endif
+    If WRET : Raz [F:TSV] : Raz GSIVTYP : Endif
+Endif
+# Issue X3-218177/241574 - 2021-04-27 by MUARN : need to be done before
+#If [F:TSV]LEG<>GCURLEG & GCURLEG<>"" & [F:TSV]LEG<>""
+#    Raz GSIVTYP
+#Endif
+
+# Issue X3-218177/241577 - 2021-04-27 by MUARN : read table invoice type
+If GSIVTYP = ""
+  Local Char  WKFILROLE(250)
+  Local Integer WSORTIR
+  Local Integer  WRETCTL
+
+  #--- Existe-il des filtres sur les rôles ?
+  Call FILROLE("TSV",WKFILROLE) From SUBARL
+  If WKFILROLE="" : WKFILROLE = "1=1" : Endif
+
+  Link [TSV] With [FGR]FGR0=[F:TSV]GFY;GCURFCY As [KTSV]
+
+  While WSORTIR=0
+
+    If instr(1,WKFILROLE,"[F:TSV]GFY")>0
+      Filter [KTSV] Where [TSV]INVTYP=1 & ([FGR]FCY=GCURFCY) & ([TSV]LEG="" | [TSV]LEG=GCURLEG)
+&                       & evalue(WKFILROLE)
+&          Order By Key CLE=[F:TSV]SIVTYP Asc; [F:TSV]LEG Desc
+
+    Else
+      Filter [KTSV] Where [TSV]INVTYP=1 & ([TSV]GFY="" | [FGR]FCY=GCURFCY) & ([TSV]LEG="" | [TSV]LEG=GCURLEG)
+&                       & evalue(WKFILROLE)
+&          Order By Key CLE=[F:TSV]SIVTYP Asc; [F:TSV]LEG Desc
+    Endif
+
+    For [KTSV]CLE
+        Call CTL_ML_CONSISTENCY("TSV", "NON",[F:KTSV]SIVTYP,[F:KTSV]LEG,AVOID.ACHAR,GCURFCY,GCURLEG,WRETCTL,AVOID.ACHAR) From TRTVENCTL
+        If WRETCTL=0
+          GSIVTYP = [F:TSV]SIVTYP
+          WSORTIR=1
+          Break
+        Endif
+    Next
+
+  Wend
+
+  Filter [KTSV]
+Endif
+# End issue X3-218177/241577
+
+Return
+######################################################################################
+## Etiquette ajoutée par le superviseur (écran SAUTINVD) 03/06/2013 14:29:44 (CPO)
+######################################################################################
+Subprog C_SIVTYP(VALEUR)
+Variable Char    VALEUR()
+#--CPO 71937 T757 Contrôle de cohérence
+GSIVTYP=VALEUR
+
+  #85803 RICAR 2014/05/20 - Portuguese legal requirements - BEGIN
+  If func AFNC.ACTIV("KPO") & GCURLEG = "POR"
+    Call VAL_SIVTYP(VALEUR) From PORLEGLIB
+    Call VAL_AUTINV(VALEUR) From PORLEGLIB
+  Endif
+  #85803 RICAR 2014/05/20 - Portuguese legal requirements - END
+
+End
+######################################################################################

@@ -42,3 +42,29 @@ INNER JOIN
     ITMCOST ITC_A ON ITC_A.STOFCY_0 = ITF.STOFCY_0 AND ITC_A.ITMREF_0 = ITM.ITMREF_0 AND %1% >= ITC_A.ITCSTRDAT_0 AND %1% <= ITC_A.ITCENDDAT_0 AND ITC_A.CSTTYP_0 = 2
 WHERE 
     ITM.ITMSTA_0 = %2%
+
+
+
+-- Size in bytes
+SELECT 
+    SUM(a.total_pages) * 8 * 1024 AS [Total Size in Bytes]
+FROM 
+    sys.tables t
+    INNER JOIN sys.indexes i ON t.OBJECT_ID = i.object_id
+    INNER JOIN sys.partitions p ON i.object_id = p.OBJECT_ID AND i.index_id = p.index_id
+    INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+WHERE 
+    t.name = 'YourTableName';
+
+-- Size in megabytes
+SELECT 
+    SUM(a.total_pages) * 8 / 1024 AS [Total Size in MB]
+FROM 
+    sys.tables t
+    INNER JOIN sys.indexes i ON t.OBJECT_ID = i.object_id
+    INNER JOIN sys.partitions p ON i.object_id = p.OBJECT_ID AND i.index_id = p.index_id
+    INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+WHERE 
+    t.name = 'YourTableName';
+
+    
