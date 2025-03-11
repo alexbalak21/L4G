@@ -1,0 +1,1595 @@
+﻿#<AdxTL>@(#)1.0.0.0 $Revision$  #!!!!DISCLAIMER V12P21 P Base DO NOT COPY OR USE THIS FILE IN ANY X3 FOLDER OR SUB FOLDER!!!!
+# Issue X3-133800 - 2019-04-08 by UB : Total is wrong when the update is cancelled
+# Issue X3-38657 - 2017-08-17 by MWA : perf : MODECHE - need DEPMGTMOD
+# Issue X3-53003 - 2017-08-17 by BEFOU : PYH1 : Key does not exist in this table
+# Issue X3-65940 - 2017-12-11 by Bader: new sorting criteria "BP name" and "Invoice number" (CHX_FILTRE, TAB_PREC, TAB_SUIV, SAI_CRITERE)
+#*X3-112211  SMO  Implement control when reading parameters managed by activity code
+# X3-164326 2019-10-30 Bader DEBUT: check if a lock on one of the included sites exists from paypropal. If yes > ask if user wants to load anyway
+
+## Options
+#  E -> Modification échéances
+#  B -> Modification relance
+#  T -> Modification tiers payeur / payé
+
+## GBIDI2
+#  1 -> Saisie des échéances
+#  2 -> Gestion des échéances (avec saisie de critères)
+
+## GFLAG  -> ecran de saisie
+## GBIDC2 -> autorisations
+
+GBIDI2   = 2
+Local Char PARAM(10)(1..2) , VALEUR(10)
+Call TRAITE_CHAR(VALEUR,PARAM,"FMECH","MODECHE","DMECH",4,"") From GTRAITE
+End
+
+######################################################################
+## Action du programme principal
+######################################################################
+$ACTION
+Case ACTION
+ When "INIT"          : Gosub INIT
+ When "OUVRE_BOITE"   : Gosub OUVRE_BOITE
+ When "CONTROLE"      : Gosub CONTROLE
+ When "SORTIE"        : Gosub SORTIE
+ When "TERMINE"       : Gosub TERMINE
+
+ When Default
+  Case BOITE
+   When "DMECH"         : Gosub PARAM
+   When Default         : Gosub BOITE
+  Endcase
+Endcase
+Return
+
+######################################################################
+## Actions de la fenêtre paramètres
+######################################################################
+$PARAM
+Case ACTION
+ When "DEBUT"
+  If [M]CRI = "1=1" : Raz [M]CRI : Endif
+  Affzo : Gosub GRISE
+ When "SETBOUT"
+  ETABOU(GVALI) = 1  :# OK
+  ETABOU(GBFIN) = 1  :# Fin
+  ETABOU(GSPE1) = 1  :# Mémo
+  ETABOU(GSPE2) = 1  :# Rappel
+ When "BOUTON"
+  Case BOUT
+   When "M" :
+   When "R"
+    Affzo : Gosub GRISE
+  Endcase
+ When "OK"
+  FIN = 1
+  GOK = 1   : # Pour enchaîner
+ When "END"
+  FIN = 1
+  GOK = 0   : # Pour s'arrêter
+Endcase
+Return
+
+$GRISE
+If [M]ALLFCY=2 : Grizo FCY : Else : Actzo FCY : Endif
+If [M]ALLSAC=2
+ Grizo GRPSAC,SAC
+Else
+ Actzo GRPSAC
+ If [M]GRPSAC<>"" : Grizo SAC : Else : Actzo SAC : Endif
+Endif
+If [M]ALLBPR=2 : Grizo BPRDEB,BPRFIN : Else : Actzo BPRDEB,BPRFIN : Endif
+If [M]ALLPYRBPR=2 : Grizo PYRBPRDEB,PYRBPRFIN : Else : Actzo PYRBPRDEB,PYRBPRFIN : Endif
+If [M]ALLPAM=2 : Grizo PAM : Else : Actzo PAM : Endif
+If [M]ALLCUR=2
+ Grizo GRPCUR,CUR
+Else
+ Actzo GRPCUR
+ If [M]GRPCUR<>"" : Grizo CUR : Else : Actzo CUR : Endif
+Endif
+If [M]DEPDAT<>[0/0/0] : Grizo DEPNBJ : Else : Actzo DEPNBJ : Endif
+If GFLAG<>"" :
+ [M]ECRAN=GFLAG : Affzo ECRAN :  Grizo ECRAN
+Else
+ Actzo ECRAN
+Endif
+Return
+
+#######################################
+## Début de traitement
+#######################################
+$INIT
+Gosub OUVRE
+If GERREUR : GERREUR = 0 : FIN = 1  : End : Endif
+GOK = 1
+Return
+
+$OUVRE_BOITE
+If BOITE="DMECH"
+ Call LECMEMO("STD","[M:DDM]","ddm") From GMEMO
+Endif
+Return
+
+#######################################
+## Contrôle de l'écran de paramètre
+#######################################
+$CONTROLE
+If GOK=0 : FIN = 1 : Endif
+[M:DDM]PRESELECT = GBIDI2
+## Recherche du niveau de Bon à payer
+If [F:AUS]USR<>GUSER
+ Call LECTURE("AUS",GUSER,"") From CONTOBJ
+Endif
+Local Char LLEVPAZ(3)
+Call PARAMUTIL("NIVBONPAYE",LLEVPAZ,"","") From SUBAUS
+[M:DDM]NIVBAP=val(LLEVPAZ)
+
+## Commandes client et fournisseur
+Call PARAML([M:DDM]CPY,"BPCORDTYP",GDIV(0)) From ADOVAL
+Call PARAML([M:DDM]CPY,"BPSORDTYP",GDIV(1)) From ADOVAL
+If GFLAG=""
+ If GOK=2 & GFONCTION="MODECHE2"
+  GFLAG = ""
+  Call SELECT("GDS","",GFLAG,"") From SELOBJ
+  If GFLAG<>""
+   BOITE = "WDUD"+GFLAG
+  Endif
+ Else
+  If [M:DDM]ECRAN<>""
+   BOITE = "WDUD"+[M:DDM]ECRAN
+  Else
+   BOITE = "WDUDSTD"
+  Endif
+ Endif
+Else
+ BOITE = "WDUD"+GFLAG
+Endif
+GOK = 1
+Return
+
+######################################################################
+## Fin ou bouton critères
+######################################################################
+$TERMINE
+If GOK=2 : # Bouton critères
+ SAI = 1
+Endif
+Return
+
+$SORTIE
+Return
+
+
+######################################################################
+## Ouverture des fichiers
+######################################################################
+$OUVRE
+Onerrgo ERREUR From CONTROLE
+
+If clalev([F:DUD])=0  : Local File GACCDUDATE [DUD]  : Endif
+If clalev([F:DUD2])=0 : Local File GACCDUDATE [DUD2] : Endif
+If clalev([F:GSC])=0  : Local File GRPSAC     [GSC]  : Endif
+If clalev([F:GCU])=0  : Local File GRPCUR     [GCU]  : Endif
+If clalev([F:GTE])=0  : Local File GTYPACCENT [GTE]  : Endif
+If clalev([F:PYD])=0  : Local File PAYMENTD   [PYD]  : Endif
+If clalev([F:CPY])=0  : Local File COMPANY    [CPY]  : Endif
+If clalev([F:TCU])=0  : Local File TABCUR     [TCU]  : Endif
+If clalev([F:BPR])=0  : Local File BPARTNER   [BPR]  : Endif
+If clalev([F:BPC])=0  : Local File BPCUSTOMER [BPC]  : Endif
+If clalev([F:BPS])=0  : Local File BPSUPPLIER [BPS]  : Endif
+If clalev([F:DAE])=0  : Local File GACCENTRYD [DAE]  : Endif
+If clalev([F:HAE])=0  : Local File GACCENTRY  [HAE]  : Endif
+If clalev([F:AUS])=0  : Local File AUTILIS    [AUS]  : Endif
+If clalev([F:FCY])=0  : Local File FACILITY   [FCY]  : Endif
+If clalev([F:GAC])=0  : Local File GACCOUNT   [GAC]  : Endif
+If clalev([F:ADI])=0  : Local File ATABDIV    [ADI]  : Endif
+If clalev([F:AXX])=0  : Local File ATEXTRA    [AXX]  : Endif
+If clalev([F:GDS])=0  : Local File GDUDSCR    [GDS]  : Endif
+If clalev([F:ACV])=0  : Local File ACTIV      [ACV]  : Endif
+If clalev([F:TAM])=0  : Local File TABPAM     [TAM]  : Endif
+
+Local Mask   DUDATMGT1 [DDM] , DUDATMGT2 [DDM2]
+Onerrgo
+If dim([M:DDM2]BPR)<1
+ GMESSAGE = "NBLTAB<1"
+ GERREUR = 1
+ GERR = 1
+Endif
+Close Local Mask [DDM2]
+
+#Issue X3-67108 by MRDAB
+Local Integer TOTLTI     ## Sum of all lead times
+#Issue X3-67108 end
+Return
+
+######################################################################
+## Actions de la fenêtre principale
+######################################################################
+$BOITE
+Case ACTION
+ When "DEBUT"           : Gosub DEBUT
+ When "APRES_MODIF"     : Gosub APRES_MODIF
+ When "SETBOUT"         : Gosub SETBOUT
+ When "ENR"             : Gosub ENREGISTRER
+ When "ABA"             : Gosub ABANDON
+ When "FIN"             : Gosub FIN
+ When "SUI"             : Gosub SUIVANT
+ When "PRE"             : Gosub PRECEDENT
+ When "BOUTON"          : Gosub SAI_CRITERE
+Endcase
+Return
+
+$DEBUT
+#Déclaration
+Local Integer OK , I , IND , NBLTAB , REGLIG , CRIT2 , CRIT3 , NOL , MODDAT, VERROU , PBLOCK , ODUDSTA
+Local Char    CRITERE(255) , CRITERE2(255), CRITGRPSAC(GLONSAC)(1..99) , CRITGRPCUR(GLONCUR)(1..30) , REG(GLONVCR)
+&           , CLE1(15) , CLE2(15)(1..1) , SYMBOLE(35), OTYP(GLONGTE), OCOA(GLONCOA), XPARAM(10)
+
+Local Integer FLGHDU
+
+Local Decimal T_NBDUD, T_TTCDEV, T_REGDEF, T_REGPRO, T_DUDCLE
+Local Decimal OPAYCUR, OPAYLOC, OTMPCUR, OTMPLOC
+
+Local Char     LPAM(10)
+Local Char     LLIBPAM(10)
+Local Char     LDPTCOD(10)
+Local Char     LLIBDPT(10)
+Local Integer  CALL_PT
+CALL_PT = find('MODECHE',GENTSTD(1..GNBENTREE))
+
+# X3-164326 2019-10-30 Bader begin
+Local Integer LCK_OK
+LCK_OK = 1
+VERROU = 1
+Gosub CHECK_PAYPROP_LOCK
+If LCK_OK = 0
+#  Call YESNO("A payment proposal for the site"-[F:FCY]FCY-"is in progress on another workstation. Do you want to continue?",LCK_OK) From GESECRAN
+  Call YESNO(mess(30,100,1)-"("+mess(24,15,1)-"/"-mess(12,105,1)-[F:FCY]FCY+")."-mess(205,100,1),LCK_OK) From GESECRAN
+  If LCK_OK <> 2
+    GERR = 1 : FIN = 1
+    Return
+  Endif
+Endif
+# X3-164326 2019-10-30 Bader end
+
+NBLTAB = dim([M:SAI1]BPR)
+If [M:DDM]PRESELECT=2   :# ----> display criteria
+ Case [M:DDM]TRI
+  When 1 : Local Date CRIT1
+  When 2 : Local Char CRIT1(20)
+# Jira X3-65940 add sorting criteria BP name and invoice number
+  When 3 : Local Char CRIT1(GLONNAM)
+  When 4 : Local Char CRIT1(GLONVCR)
+# Jira X3-65940 end
+ Endcase
+ NOL=0 : [M:DDM]K=0
+ Gosub CHX_FILTRE
+ If !GERREUR
+  Gosub LECTURE
+  If [M:SAI1]NB>0 & PBLOCK
+   OK=2
+   Call AVERTIR(mess(139,121,1),OK) From GESECRAN
+   # Des échéances sont en cours de visualisation et n'ont pu être chargées
+  Endif
+ Endif
+ Filter [DUD]
+ If dim(GSDDMGT)>0 & dim([M:SAI1]UMRNUM)>0
+  #X3-112211
+  #Call PARAM(GSOCIETE,"SDDMGT",XPARAM) From ADOVAL
+  If func AFNC.ACTIV("SDD")
+    Call PARAM(GSOCIETE,"SDDMGT",XPARAM) From ADOVAL
+    GSDDMGT=val(XPARAM)
+  Endif
+  #END X3-112211
+  If GSDDMGT<>2
+   Chgfmt [M:SAI1]UMRNUM With "-K:"+num$(type([M:SAI1]UMRNUM)-10)
+  Endif
+ Endif
+Else                    :# ----> Saisie directe d'échéances
+ Raz [M:SAI1]
+ # Gestion des Echéances/agios
+ If dim([M:SAI1]DEPDAT)>0 : [M:SAI1]DEPDAT = datesyst : Endif
+Endif
+
+#Issue X3-140050 by MRDAB
+If dim([M:SAI1]DELAY) > 0 and COUZON = ""
+  Gosub DECLARE_LATE_CHARGES_VARS From SUBDDM2
+  For I=0 To dim([M:SAI1]DELAY) - 1
+    nolign = I + 1
+    [L]TEMP_DUDDAT = [M:SAI1]DUDDAT(nolign-1)
+    Gosub FORMAT_LINES
+  Next
+Endif
+#Issue X3-140050 end
+
+Affzo
+Return
+
+
+# X3-164326 2019-10-30 Bader begin
+# Checks if a lock from PAYPROPAL exists on one of the included sites. If yes > LCK_OK = 0 (LCK_OK needs to be declared in calling function)
+$CHECK_PAYPROP_LOCK
+Local Char    TSYMBOLE(50)(1..GNBSITE)
+Local Integer NBLOCK
+If [M:DDM]ALLFCY<>2
+ If GUSRFCY(1)="\" | find([M:DDM]FCY,GUSRFCY(1..GNBAUZ))
+  NBLOCK=1
+  TSYMBOLE(NBLOCK) = "PAYPROPAL\"+[M:DDM]FCY
+  Lock =TSYMBOLE(NBLOCK) With lockwait=0
+  If fstat
+    LCK_OK = 0
+    [F:FCY]FCY = [M:DDM]FCY # for message
+  Else
+    Unlock =TSYMBOLE(NBLOCK)
+  Endif
+ Endif
+Else
+ For [FCY]FCY0 Where LEGCPY=[M:DDM]CPY
+  If GUSRFCY(1)="\" | find([F:FCY]FCY,GUSRFCY(1..GNBAUZ))
+   NBLOCK+=1
+   TSYMBOLE(NBLOCK) = "PAYPROPAL\"+[F:FCY]FCY
+   Lock =TSYMBOLE(NBLOCK) With lockwait=0
+   If fstat
+      LCK_OK = 0
+      Break
+    Else
+      Unlock =TSYMBOLE(NBLOCK)
+   Endif
+  Endif
+ Next
+Endif
+Return
+# X3-164326 2019-10-30 Bader end
+
+
+$SETBOUT
+Call LEC_TCU(GSYSCUR) From CPTLEC
+If [M:DDM]PRESELECT=2
+ If [M:SAI1]NB=0 & !VERROU
+  GMESSAGE = mess(30,100,1)     # Opération en cours sur un autre poste
+  GERR = 1 : FIN = 1
+ Elsif [M:SAI1]NB=0
+  GMESSAGE = mess(99,100,1)    # Pas de fiche sélectionnée
+  GERR = 1 : FIN = 1
+ Else
+  If [M:DDM]SUITE=1 : ETABOU(GSUIV) = 1  : Endif
+  If [M:DDM]AVANT=1 : ETABOU(GPREC) = 1  : Endif
+ Endif
+Endif
+
+If GFONCTION="MODECHE2" & GFLAG<>""
+ ETABOU(GSPE1) = 0
+Endif
+ETABOU(GJOIN) = 0 :# Pièce jointe
+ETABOU(GCOMM) = 0 :# Commentaire
+
+Return
+
+$APRES_MODIF
+REP="M"
+# X3-167994 2019-12-13 Bader begin revert change of JOJAC: now handled in C_NB of SUBDDM2
+##JOJAC - X3-159085 - 2019-09-25 - START
+#If dim(SPLIT) > 0
+#  zonsui = "[M]DEP("+num$(nolign)+")"
+#  Kill SPLIT
+#Endif
+##JOJAC - X3-159085 - 2019-09-25 - END
+# X3-167994 2019-12-13 Bader end
+Return
+
+$PRECEDENT
+REP = ""
+If [M:DDM]AVANT=1
+ Gosub TAB_PREC
+ Affzo
+Else
+ GERR = 2
+ GMESSAGE = mess(11,100,1) : # Début/Fin de fichier
+Endif
+Return
+
+$SUIVANT
+REP = ""
+If [M:DDM]SUITE=1
+ Gosub TAB_SUIV
+ Affzo
+Else
+ GERR = 2
+ GMESSAGE = mess(11,100,1) : # Début/Fin de fichier
+Endif
+Return
+
+####################################################################
+
+$ENREGISTRER
+Call DEBTRANS From GLOCK
+Gosub TR1
+If GOK<1 : [L]OK = 0 : Endif
+REP = ""
+Return
+
+$TR1
+GOK=1
+Trbegin [DUD2]
+ For I=0 To [M:SAI1]NB-1
+# Modification échéance
+  Readlock [F:DUD2]DUD1 = [M:SAI1]ACCNUM(I);[M:SAI1]DUDLIG(I)
+  If fstat=1
+   GOK = -1 : GLOCK="$GACCDUDATE"-num$([M:SAI1]ACCNUM(I))
+&            -num$([M:SAI1]DUDLIG(I)) : Break
+  Elsif fstat
+   GOK = 0 : Call RSTA("DUD2",num$([M:SAI1]ACCNUM(I))
+&            -num$([M:SAI1]DUDLIG(I))) From GLOCK : Break
+  Endif
+
+  # Modification date d'échéance de l'écriture
+  [L]MODDAT = ([F:DUD2]DUDDAT<>[M:SAI1]DUDDAT(I))
+  [L]OTYP = [F:DUD2]TYP
+  [L]ODUDSTA = [F:DUD2]DUDSTA
+  [L]OPAYCUR = [F:DUD2]PAYCUR
+  [L]OPAYLOC = [F:DUD2]PAYLOC
+  [L]OTMPCUR = [F:DUD2]TMPCUR
+  [L]OTMPLOC = [F:DUD2]TMPLOC
+
+## Si l'on est ici, il n'y a pas eu modification du montant
+  nolign = I+1
+  [F:DUD2] = [M:SAI1]
+  [F:DUD2]TYP    = [L]OTYP
+  [F:DUD2]DUDSTA = [L]ODUDSTA
+  [F:DUD2]PAYCUR = [L]OPAYCUR
+  [F:DUD2]PAYLOC = [L]OPAYLOC
+  [F:DUD2]TMPCUR = [L]OTMPCUR
+  [F:DUD2]TMPLOC = [L]OTMPLOC
+
+  [F:DUD2]DUDDAT = [M:SAI1]DUDDAT(I)
+  [F:DUD2]PAM    = [M:SAI1]PAM(I)
+  [F:DUD2]DPTCOD = [M:SAI1]DPTCOD(I)
+  [F:DUD2]FLGFUP = [M:SAI1]FLGFUP(I)
+  [F:DUD2]LEVFUP = [M:SAI1]LEVFUP(I)
+  [F:DUD2]BPRPAY = [M:SAI1]BPRPAY(I)
+  [F:DUD2]BPAPAY = [M:SAI1]BPAPAY(I)
+  [F:DUD2]SOI    = [M:SAI1]SOI(I)
+  [F:DUD2]FLGPAZ = [M:SAI1]FLGPAZ(I)
+  Call SLDECH("DUD2")
+  Local Decimal EXERCICE, PERIODE
+  Call GETPERSOC([F:DUD2]CPY,GTYPGEN,[F:DUD2]DUDDAT,EXERCICE,PERIODE) From CPTSUB
+  [F:DUD2]FIY = EXERCICE
+  [F:DUD2]PER = PERIODE
+  Rewrite [DUD2]
+  If fstat
+   GOK = 0 : Call FSTA("DUD2") From GLOCK : Break
+  Endif
+  ## Historisation des échéances
+  Call LEC_ACV("HDU",FLGHDU) From CPTLEC
+  If FLGHDU
+   Call LEC_HAE([M:SAI1]TYP(I), [M:SAI1]NUM(I)) From CPTLEC
+   Call HISTOECH("DUD2",1,[F:HAE]ACCDAT)
+  Endif
+
+  If [L]MODDAT
+   Readlock [F:HAE]HAE0=[M:SAI1]TYP(I);[M:SAI1]NUM(I)
+   If fstat=1
+    GOK = -1 : GLOCK = "$GACCENTRY"-[M:SAI1]TYP(I)-[M:SAI1]NUM(I)
+    Break
+   Elsif !fstat
+    [F:HAE]DUDDAT = [M:SAI1]DUDDAT(I)
+    For [F:DUD2]DUD0 Where TYP=[M:SAI1]TYP(I) & NUM=[M:SAI1]NUM(I)
+&                    & (LIG<>[M:SAI1]LIG(I) or DUDLIG<>[M:SAI1]DUDLIG(I))
+     If [F:DUD2]DUDDAT>[F:HAE]DUDDAT
+      [F:HAE]DUDDAT = [F:DUD2]DUDDAT
+     Endif
+    Next
+    Rewrite [HAE]
+    If fstat
+     GOK = 0 : Call FSTA("HAE") From GLOCK : Break
+    Endif
+   Endif
+  Endif
+
+  If [L]CALL_PT
+   GPOINT = "ECHEANCE" : Gosub ENTREE From EXEFNC
+  Endif
+ Next I
+ If    GOK<0 : Goto ROL_TR1
+ Elsif GOK=0 : Goto AB_TR1
+ Endif
+Commit
+GOK = 1
+Return
+
+$AB_TR1
+Rollback
+Return
+
+$ROL_TR1
+Rollback
+Call ROLL From GLOCK
+If GROLL : Return : Else : Goto TR1 : Endif
+
+$ABANDON
+# Relecture des échéances
+#Raz [M:SAI1]
+If [M:DDM]PRESELECT=2
+ Case [M:DDM]K
+  When 0 : NOL = 0
+  When 1 : NOL = NBLTAB-1
+ Endcase
+ Call DELOCK("HAE") From GLOCK
+ Gosub CHX_FILTRE
+ Gosub LECTURE
+ Filter [DUD]
+Else
+ I = 0
+ For NOL=0 To [M:SAI1]NB-1
+  Read [F:DUD]DUD1 = [M:SAI1]ACCNUM(NOL);[M:SAI1]DUDLIG(NOL)
+  If fstat=0
+   Gosub CHARGECH
+   nolign = I+1
+   Gosub CHARGECT
+   [M:SAI1] = [F:DUD]
+   If [F:DUD]TYP="*SO"
+    [M:SAI1]TYP(NOL) = GDIV(0)
+   Elsif [F:DUD]TYP="*PO"
+    [M:SAI1]TYP(NOL) = GDIV(1)
+   Endif
+   [M:SAI1]REG(NOL)    = [L]REG
+   [M:SAI1]REGLIG(NOL) = [L]REGLIG
+   I += 1
+  Endif
+ Next
+ [M:SAI1]NB = I
+Endif
+Affzo
+REP = ""
+Return
+
+$CHARGE_LIG
+nolign = NOL+1
+[F:DUD] = [F:DUD2] : Gosub CHARGECT
+[M:SAI1] = [F:DUD2]
+Case [F:DUD2]TYP
+ When "*SO" : [M:SAI1]TYP(NOL) = GDIV(0)
+ When "*PO" : [M:SAI1]TYP(NOL) = GDIV(1)
+Endcase
+
+# Issue X3-126645 by MRDAB/MANOW
+Call PARAM([M:SAI1]CPY(nolign-1),"IDNINTNOT",[L]IDNINTNOT) From ADOVAL
+Call PARAM([M:SAI1]CPY(nolign-1),"IDNINVTYP",[L]IDNINVTYP) From ADOVAL
+Call PARAM([M:SAI1]CPY(nolign-1),"IDNTDAEXE",[L]IDNTDAEXE) From ADOVAL
+# Issue X3-126645 end
+
+If [M:SAI1]PAM(NOL)<>"" & varmode([M:SAI1]ZPAM)<>3
+ If [F:DUD2]PAM<>[L]LPAM
+  Call LEC_TAM(GCURLEG, [M:SAI1]PAM(NOL)) From CPTLEC
+  Call LECTEXTRA([M:SAI1]ZPAM(NOL),"TABPAM","SHOAXX",[M:SAI1]PAM(NOL),GCURLEG) From ATEXTRA
+  [L]LPAM=[F:DUD2]PAM
+  [L]LLIBPAM=[M:SAI1]ZPAM(NOL)
+ Else
+  [M:SAI1]ZPAM(NOL)=[L]LLIBPAM
+ Endif
+Endif
+
+If [M:SAI1]DPTCOD(NOL)<>"" & varmode([M:SAI1]ZDPTCOD)<>3
+ If [F:DUD2]DPTCOD<>[L]LDPTCOD
+  Call LEC_ADI("315",[M:SAI1]DPTCOD(NOL)) From CPTLEC
+  Call LECTEXTRA([M:SAI1]ZDPTCOD(NOL),"ATABDIV","SHODES","315",[M:SAI1]DPTCOD(NOL)) From ATEXTRA
+  [L]LDPTCOD=[F:DUD2]DPTCOD
+  [L]LLIBDPT=[M:SAI1]ZDPTCOD(NOL)
+ Else
+  [M:SAI1]ZDPTCOD(NOL)=[L]LLIBDPT
+ Endif
+Endif
+
+If [M:SAI1]BPR(NOL)<>"" & varmode([M:SAI1]LIBBPR)<>3
+ Call LEC_BPR([M:SAI1]BPR(NOL)) From CPTLEC
+ [M:SAI1]LIBBPR(NOL) = [F:BPR]BPRNAM
+Endif
+
+If [M:SAI1]BPRPAY(NOL)<>"" & varmode([M:SAI1]LIBBPRPAY)<>3
+ Call LEC_BPR([M:SAI1]BPRPAY(NOL)) From CPTLEC
+ [M:SAI1]LIBBPRPAY(NOL) = [F:BPR]BPRNAM
+Endif
+
+# Gestion des Echéances/agios, calul du taux et du montant escompte
+
+If varmode([M:SAI1]AMTDEP)<>3
+ Raz [M:SAI1]DEPNBJ
+ #Issue X3-69259 by MRDAB
+ Local Integer TOTLTI
+ Local Decimal AMT
+ #Issue X3-141310 by MRDAB
+ Local Char WITH_IDN(5)
+ Local Integer DELAY : Raz [L]DELAY
+ #Issue X3-141310 end
+
+ AMT=[M:SAI1]AMTCUR(NOL)-[M:SAI1]PAYCUR(NOL)-[M:SAI1]TMPCUR(NOL)
+ # Issue X3-126645 by MRDAB/MANOW
+ If [F:DUD2]FLGCLE = 1
+  Call ESC_AGIO_NEW([M:SAI1]DEP(NOL),[M:SAI1]DEPDAT,[F:DUD2]DUDDAT,[M:SAI1]DEPNBJ,AMT,[M:SAI1]CUR(NOL),
+&                   [M:SAI1]AMTDEP(NOL),[F:DUD2]ACCNUM,[F:DUD2]NUM,[F:DUD2]LIG,[F:DUD2]DUDLIG,[L]TOTLTI,GCURLEG,[F:DUD2]TYP,[L]IDNTDAEXE,[L]IDNINTNOT,[L]IDNINVTYP,0,[L]WITH_IDN,[L]DELAY)
+ Endif
+ # Issue X3-126645 end
+#Issue X3-69259 end
+
+#Issue X3-141310 by MRDAB
+If dim([M:SAI1]DELAY) > 0 and [F:DUD2]FLGCLE = 1
+  Local Integer LINE : [L]LINE = [L]NOL
+  [M:SAI1]DELAY(NOL) = [L]DELAY
+  Gosub DELAY_DAYS_STYLE
+Endif
+#Issue X3-141310 end
+
+Endif
+
+Local Char REG(GLONVCR)
+Local Integer REGLIG
+[F:DUD] = [F:DUD2]
+Gosub CHARGECH From MODECHE
+Return
+
+####################################################################
+
+$TAB_PREC
+If [M:SAI1]NB>0
+ Case [M:DDM]TRI
+  When 1 : [L]CRIT1 = [M:SAI1]DUDDAT(0)
+  When 2 : [L]CRIT1 = [M:SAI1]BPRPAY(0)
+# Jira X3-65940 add sorting criteria BP name and invoice number
+  When 3 : [L]CRIT1 = [M:SAI1]LIBBPRPAY(0)
+  When 4 : [L]CRIT1 = [M:SAI1]NUM(0)
+# Jira X3-65940 end
+ Endcase
+ [L]CRIT2 = [M:SAI1]ACCNUM(0)
+ [L]CRIT3 = [M:SAI1]DUDLIG(0)-1
+Else
+ Case [M:DDM]TRI
+  When 1 : [L]CRIT1 = GHIDATE
+  When 2 : [L]CRIT1 = "ZZZZZZZZZZ"
+# Jira X3-65940 add sorting criteria BP name and invoice number
+  When 3 : [L]CRIT1 = "ZZZZZZZZZZ"
+  When 4 : [L]CRIT1 = "ZZZZZZZZZZ"
+# Jira X3-65940 end
+ Endcase
+ [L]CRIT2 = 99999999
+ [L]CRIT3 = 99999999
+Endif
+[M:DDM]AVANT = 0 : [M:DDM]SUITE = 1
+Call DELOCK("HAE") From GLOCK
+Gosub OUV_DESC
+If !GERREUR
+ NOL = NBLTAB-1
+ Gosub LECTURE
+Endif
+Filter [DUD]
+Return
+
+$TAB_SUIV
+If [M:SAI1]NB>0
+ Case [M:DDM]TRI
+  When 1 : [L]CRIT1 = [M:SAI1]DUDDAT([M:SAI1]NB-1)
+  When 2 : [L]CRIT1 = [M:SAI1]BPRPAY([M:SAI1]NB-1)
+# Jira X3-65940 add sorting criteria BP name and invoice number
+  When 3 : [L]CRIT1 = [M:SAI1]LIBBPRPAY([M:SAI1]NB-1)
+  When 4 : [L]CRIT1 = [M:SAI1]NUM([M:SAI1]NB-1)
+# Jira X3-65940 end
+ Endcase
+ [L]CRIT2 = [M:SAI1]ACCNUM([M:SAI1]NB-1)
+ [L]CRIT3 = [M:SAI1]DUDLIG([M:SAI1]NB-1)+1
+Else       : Raz [L]CRIT1,CRIT2,CRIT3
+Endif
+[M:DDM]SUITE = 0 : [M:DDM]AVANT = 1
+Call DELOCK("HAE") From GLOCK
+Gosub OUV_ASC
+If !GERREUR
+ NOL = 0
+ Gosub LECTURE
+Endif
+Filter [DUD]
+Return
+
+$OUV_ASC
+# aller au tableau suivant
+If [M:DDM]K=1
+ [M:DDM]K = 0
+Endif
+Gosub CHX_FILTRE
+Return
+
+$OUV_DESC
+# retour au tableau precedent
+If [M:DDM]K = 0
+ [M:DDM]K = 1
+Endif
+Gosub CHX_FILTRE
+Return
+
+####################################################################
+
+$CHX_FILTRE
+Filter [DUD]
+
+CRITERE  = ""
+CRITERE2 = ""
+
+# Visu échéances soldées
+If [M:DDM]DUDCLE<>2
+ CRITERE= "FLGCLE=1"
+Endif
+
+If [M:DDM]ALLSAC<>2
+ If [M:DDM]GRPSAC<>""
+  Call LECMAINPLAN(1,[M:DDM]CPY,OCOA) From CPTDIV
+  Filter [GSC] Where [F:GSC]COA=OCOA & [F:GSC]GRU=[M:DDM]GRPSAC
+  Raz [L]CRITGRPSAC
+  For [F:GSC]GSC0
+   I+=1 : [L]CRITGRPSAC(I) = [F:GSC]SAC
+  Next
+  Filter [GSC]
+  CRITERE -= "& find(SAC,[L]CRITGRPSAC)"
+ Else
+  CRITERE -= "& SAC='"+[M:DDM]SAC+"'"
+ Endif
+Endif
+
+If [M:DDM]DUDDATDEB<>[0/0/0]
+ CRITERE -= "& DUDDAT>=["+format$(GFMD,[M:DDM]DUDDATDEB)+"]"
+Endif
+If [M:DDM]DUDDATFIN<>[0/0/0]
+ CRITERE -= "& DUDDAT<=["+format$(GFMD,[M:DDM]DUDDATFIN)+"]"
+Endif
+CRITERE -= "& CPY='"+[M:DDM]CPY+"'"
+If [M:DDM]ALLFCY<>2
+ CRITERE -= "& FCY='"+[M:DDM]FCY+"'"
+Endif
+If [M:DDM]ALLBPR<>2
+ If [M:DDM]BPRDEB<>"" & [M:DDM]BPRDEB=[M:DDM]BPRFIN
+  CRITERE2 -= "& BPR='"+[M:DDM]BPRDEB+"'"
+ Else
+  If [M:DDM]BPRDEB<>""
+   CRITERE2 -= "& BPR>='"+[M:DDM]BPRDEB+"'"
+  Endif
+  If [M:DDM]BPRFIN<>""
+   CRITERE2 -= "& BPR<='"+[M:DDM]BPRFIN+"'"
+  Endif
+ Endif
+Endif
+If [M:DDM]ALLPYRBPR<>2
+ If [M:DDM]PYRBPRDEB<>"" & [M:DDM]PYRBPRDEB=[M:DDM]PYRBPRFIN
+  CRITERE2 -= "& BPRPAY='"+[M:DDM]PYRBPRDEB+"'"
+ Else
+  If [M:DDM]PYRBPRDEB<>""
+   CRITERE2 -= "& BPRPAY>='"+[M:DDM]PYRBPRDEB+"'"
+  Endif
+  If [M:DDM]PYRBPRFIN<>""
+   CRITERE2 -= "& BPRPAY<='"+[M:DDM]PYRBPRFIN+"'"
+  Endif
+ Endif
+Endif
+If [M:DDM]ALLPAM<>2
+ CRITERE -= "& PAM='"+[M:DDM]PAM+"'"
+Endif
+If [M:DDM]ALLCUR<>2
+ If [M:DDM]GRPCUR<>""
+  If [F:GCU]GRP<>[M:DDM]GRPCUR
+   Call LEC_GCU([M:DDM]GRPCUR) From CPTLEC
+  Endif
+  Raz [L]CRITGRPCUR
+  For I = 1 To [F:GCU]NBRCUR
+   [L]CRITGRPCUR(I) = [F:GCU]CUR(I-1)
+  Next
+  CRITERE -= "& find(CUR,[L]CRITGRPCUR)"
+ Else
+  CRITERE -= '& CUR="'+[M:DDM]CUR+'"'
+ Endif
+Endif
+# demande 52913
+If [M:DDM]FUPLEVZERO=2
+ CRITERE2 -= "& LEVFUP=0"
+Else
+ If [M:DDM]FUPLEVSTR>0
+  CRITERE2 -= "& LEVFUP>="+num$([M:DDM]FUPLEVSTR)
+ Endif
+ If [M:DDM]FUPLEVEND>0
+  CRITERE2 -= "& LEVFUP<="+num$([M:DDM]FUPLEVEND)
+ Endif
+Endif
+
+If [M:DDM]FLGPAZSTR>1
+ CRITERE2 -= "& FLGPAZ>="+num$([M:DDM]FLGPAZSTR)
+Endif
+If [M:DDM]FLGPAZEND<len(mess(0,510,1))
+ CRITERE2 -= "& FLGPAZ<="+num$([M:DDM]FLGPAZEND)
+Endif
+If [M:DDM]FUPFLG<>3 : #  Indéterminé
+ CRITERE2 -= "& FLGFUP="+num$([M:DDM]FUPFLG)
+Endif
+If [M:DDM]ACFOU=1
+ CRITERE2 -= "& TYP<>'*PO'"
+Endif
+If [M:DDM]ACCLI=1
+ CRITERE2 -= "& TYP<>'*SO'"
+Endif
+If [M:DDM]FACTOR<>2
+ CRITERE2 -= "& BPRFCT=''"
+Endif
+
+If left$(CRITERE,2)=" &"
+ CRITERE = right$(CRITERE,4)
+Elsif CRITERE=""
+ CRITERE = "1=1"
+Endif
+If left$(CRITERE2,2)=" &"
+ CRITERE2 = right$(CRITERE2,4)
+Elsif CRITERE2=""
+ CRITERE2 = "1=1"
+Endif
+If [M:DDM]CRI=""
+ [M:DDM]CRI = "1=1"
+Endif
+
+If [L]CALL_PT
+ GPOINT = "CRITERE" : Gosub ENTREE From EXEFNC
+Endif
+
+GERREUR = 0
+Onerrgo ERREUR
+
+If [M:DDM]K=0 : # Sens normal ou habituel
+ ## Optimisation recherche des échéances non soldées FLGCLE=1
+ Case [M:DDM]TRI
+  When 1  :# Par date d'échéance
+   Filter [DUD] Where evalue(CRITERE) & evalue(CRITERE2) & evalue([M:DDM]CRI)
+&               Order By Key CLE=DUDDAT;ACCNUM;DUDLIG;FLGCLE
+  When 2  :# Par tiers
+
+   Filter [DUD] Where evalue(CRITERE) & evalue(CRITERE2) & evalue([M:DDM]CRI)
+&               Order By Key CLE=BPRPAY;ACCNUM;DUDLIG;FLGCLE
+# Jira X3-65940 add sorting criteria BP name and invoice number
+  When 3  :# by BP name
+   Link [DUD] With [BPR]BPR0=[F:DUD]BPRPAY As [LDUD]
+&               Where evalue(CRITERE) & evalue(CRITERE2) & evalue([M:DDM]CRI)
+&               Order By Key CLE=[F:BPR]BPRNAM;[F:DUD]ACCNUM;[F:DUD]DUDLIG;[F:DUD]FLGCLE
+  When 4  :# by invoice number
+   Filter [DUD] Where evalue(CRITERE) & evalue(CRITERE2) & evalue([M:DDM]CRI)
+&               Order By Key CLE=NUM;ACCNUM;DUDLIG;FLGCLE
+# Jira X3-65940 end
+ Endcase
+Elsif [M:DDM]K=1 : # Sens pas normal
+ Case [M:DDM]TRI
+  When 1  :# Par date d'échéance
+   Filter [DUD] Where evalue(CRITERE) & evalue(CRITERE2) & evalue([M:DDM]CRI)
+&               Order By Key CLE=DUDDAT Desc;ACCNUM Desc;DUDLIG Desc;FLGCLE Desc
+  When 2  :# Par tiers
+   Filter [DUD] Where evalue(CRITERE) & evalue(CRITERE2) & evalue([M:DDM]CRI)
+&               Order By Key CLE=BPRPAY Desc;ACCNUM Desc;DUDLIG Desc;FLGCLE Desc
+# Jira X3-65940 add sorting criteria BP name and invoice number
+  When 3  :# By BP name
+   Link [DUD] With [BPR]BPR0=[F:DUD]BPRPAY As [LDUD]
+&               Where evalue(CRITERE) & evalue(CRITERE2) & evalue([M:DDM]CRI)
+&               Order By Key CLE=[F:BPR]BPRNAM Desc;[F:DUD]ACCNUM Desc;[F:DUD]DUDLIG Desc;[F:DUD]FLGCLE Desc
+  When 4  :# By invoice number
+   Filter [DUD] Where evalue(CRITERE) & evalue(CRITERE2) & evalue([M:DDM]CRI)
+&               Order By Key CLE=NUM Desc;ACCNUM Desc;DUDLIG Desc;FLGCLE Desc
+# Jira X3-65940 end
+ Endcase
+Endif
+Onerrgo
+
+If [F:GDS]COD<>[M:DDM]ECRAN
+ Call LECTURE("GDS",[M:DDM]ECRAN,"") From CONTOBJ
+Endif
+
+If clalev([F:SIH])=0 : Local File SINVOICE [SIH] : Endif
+If clalev([F:PIH])=0 : Local File PINVOICE [PIH] : Endif
+
+## On pourra faire le link lorsque le bug moteur n°64277 sera corrogé (vu avec DS)
+##Link [DUD] With [GTE]GTE0 = [F:DUD]TYP As [LNK]
+
+Call LEC_CPY([M:DDM]CPY) From CPTLEC
+
+# Le bloc "Total Sélection" se calcule une seule fois dès les critères saisis
+# (inutile de le raffraichir via les boutons suivants/précédents)
+# Jira X3-65940 add sorting criteria BP name and invoice number
+#If (([M:DDM]TRI=1 & CRIT1 = [0/0/0]) | ([M:DDM]TRI=2 & CRIT1 = "")) & CRIT2=0 & CRIT3=0
+If (([M:DDM]TRI=1 & CRIT1 = [0/0/0]) | (find([M:DDM]TRI,2,3,4) & CRIT1 = "")) & CRIT2=0 & CRIT3=0
+# Jira X3-65940 end
+ Raz T_NBDUD,T_TTCDEV,T_REGDEF,T_REGPRO,T_DUDCLE
+ If [F:GDS]TOTDUD=2
+# Jira X3-65940 add sorting criteria BP name and invoice number
+#  For [DUD]CLE Where Key >= CRIT1;CRIT2;CRIT3
+  If [M:DDM]TRI = 3
+    For [LDUD]CLE Where Key >= CRIT1;CRIT2;CRIT3
+      Gosub CHECK_DUD
+    Next
+  Else
+  For [DUD]CLE Where Key >= CRIT1;CRIT2;CRIT3
+    Gosub CHECK_DUD
+  Next
+  Endif
+# Jira X3-65940 add sorting criteria BP name and invoice number
+ Endif
+Endif
+Return
+
+# Jira X3-65940 add sorting criteria BP name and invoice number
+# Extracted from CHX_FILTRE because called twice now (either from loop over DUD or linked LDUD)
+$CHECK_DUD
+   [L]OK=0
+   If [F:DUD]TYP<>"*SO" & [F:DUD]TYP<>"*PO"
+    Call LEC_GTE_LEG([F:CPY]LEG,[F:DUD]TYP) From CPTLEC
+    If [F:GTE]DUDDATFLG=2
+     If [M:DDM]DUDVAL=2
+      If [F:DUD]DUDSTA=2
+       [L]OK = 1
+      Endif
+     Else
+      [L]OK = 1
+     Endif
+    Endif
+   Else
+    [L]OK = 1
+   Endif
+   If [L]OK and [L]CALL_PT
+    GPOINT = "CONTROLE" : Gosub ENTREE From EXEFNC
+   Endif
+   If [L]OK
+    T_NBDUD  += 1
+    T_TTCDEV += ([F:DUD]AMTLOC*[F:DUD]SNS)
+    T_REGDEF += [F:DUD]PAYLOC*[F:DUD]SNS
+    T_REGPRO += [F:DUD]TMPLOC*[F:DUD]SNS
+    T_DUDCLE += (([F:DUD]AMTLOC-[F:DUD]PAYLOC-[F:DUD]TMPLOC)*[F:DUD]SNS)
+    If [F:DUD]DUDSTA=2
+     If [F:DUD]BPRTYP=1 & [DUD]SNS=-1 : # Avoirs clients
+      Read [SIH]SIH0 = [F:DUD]NUM
+      If !fstat
+       If [F:SIH]INVNUM<>""
+        T_REGDEF -= [F:DUD]PAYLOC*[F:DUD]SNS
+       Endif
+      Endif
+     Elsif [F:DUD]BPRTYP=2 & [F:DUD]SNS=1 : # Avoirs fournisseurs
+      Read [PIH]PIH0 = [F:DUD]NUM
+      If !fstat & [F:PIH]INVNUM<>""
+       T_REGDEF -= [F:DUD]PAYLOC*[F:DUD]SNS
+      Endif
+     Endif
+    Endif
+   Endif
+Return
+# Jira X3-65940 end
+
+#######
+$ERREUR
+#######
+GERREUR=errn
+Case GERREUR
+ When 29
+  Close Local File : # Pour pouvoir ouvrir le fichier message
+  Call ERREUR(mess(127,100,1)+"\"+mess(128,100,1)) From GESECRAN
+  #### Trop de fichiers ouverts
+  Gosub OUVRE
+ When 42
+  Call ERREUR(mess(127,100,1)+"\"+mess(146,100,1)) From GESECRAN
+  ####    (Trop de masques ouverts)
+ When Default
+  Call ERREUR(mess(127,100,1)+"\"+errmes$(GERREUR)+"\|"+errm+"|"
+&             +"\CRITERE ="-CRITERE+"\CRITERE2 ="-CRITERE2+"\[M]CRI ="-[M:DDM]CRI) From GESECRAN
+Endcase
+Resume
+#######
+
+$LECTURE
+# Jira X3-65940 add sorting criteria BP name and invoice number
+Local Integer DOBREAK
+# Jira X3-65940 end
+GSOCIETE = [M:DDM]CPY
+Call LEC_CPY([M:DDM]CPY) From CPTLEC
+Call LECMAINPLAN(1,[M:DDM]CPY,OCOA) From CPTDIV
+
+Raz [M:SAI1]
+
+## Gestion des escomptes/agios
+If dim([M:SAI1]DEPDAT)>0
+ [M:SAI1]DEPDAT = datesyst
+ If dim([M:DDM]DEPDAT)>0 : [M:SAI1]DEPDAT = [M:DDM]DEPDAT : Endif
+Endif
+If dim([M:SAI1]DEPNBJ)>0
+ [M:SAI1]DEPNBJ = 0
+ If dim([M:DDM]DEPNBJ)>0 : [M:SAI1]DEPNBJ = [M:DDM]DEPNBJ : Endif
+Endif
+
+IND = 0
+VERROU = 1
+PBLOCK = 0
+
+# Jira X3-65940 add sorting criteria BP name and invoice number
+#For [DUD]CLE Where Key >=CRIT1;CRIT2;CRIT3
+If [M:DDM]TRI = 3
+  For [LDUD] Where Key >=CRIT1;CRIT2;CRIT3
+    Gosub HANDLE_DUD
+    If DOBREAK = 1 : Break : Endif
+  Next # For [LDUD]
+Else
+  For [DUD] Where Key >=CRIT1;CRIT2;CRIT3
+    Gosub HANDLE_DUD
+    If DOBREAK = 1 : Break : Endif
+  Next # For [DUD]
+Endif
+# Jira X3-65940 end
+
+Case [M:DDM]K
+ When 0
+  If NOL<NBLTAB
+   Dela NOL, NBLTAB-NOL [M:SAI1]NB
+  Else
+   NOL = NBLTAB
+  Endif
+ When 1
+  If NOL>-1
+   Dela 0,NOL+1 [M:SAI1]NB
+   NOL = NBLTAB-NOL-1
+  Else
+   NOL = NBLTAB
+  Endif
+Endcase
+[M:SAI1]NB = NOL
+
+If [F:GDS]COD<>[M:DDM]ECRAN
+ Call LECTURE("GDS",[M:DDM]ECRAN,"") From CONTOBJ
+Endif
+If [F:GDS]TOTDUD=2
+ [M:SAI1]NBDUD   = T_NBDUD
+ [M:SAI1]TTTCDEV = T_TTCDEV
+ [M:SAI1]TREGDEF = T_REGDEF
+ [M:SAI1]TREGPRO = T_REGPRO
+ [M:SAI1]TDUDCLE = T_DUDCLE
+ [M:SAI1]TCUR    = [F:CPY]ACCCUR
+Endif
+Return
+
+# Jira X3-65940 add sorting criteria BP name and invoice number
+# Extracted from LECTURE because called twice now (either from loop over DUD or linked LDUD)
+$HANDLE_DUD
+ [L]DOBREAK = 0
+ [L]OK=0
+ If [F:DUD]TYP<>"*SO" & [F:DUD]TYP<>"*PO"
+  Call LEC_GTE_LEG([F:CPY]LEG,[F:DUD]TYP) From CPTLEC
+  If [F:GTE]DUDDATFLG=2
+   If [M:DDM]DUDVAL=2
+    If [F:DUD]DUDSTA=2
+     [L]OK = 1
+    Endif
+   Else
+    [L]OK = 1
+   Endif
+  Endif
+ Else
+  [L]OK = 1
+ Endif
+ If [L]OK & [M:DDM]ALLSAC<>2
+  [L]OK = 0
+  If [M:DDM]GRPSAC<>""
+   Filter [F:GSC] Where [F:GSC]COA=OCOA & [F:GSC]GRU=[M:DDM]GRPSAC
+   For [F:GSC]GSC0
+    If [F:GSC]SAC = [F:DUD]SAC : OK=1 : Break : Endif
+   Next
+   Filter [GSC]
+  Else
+   If [M:DDM]SAC = [F:DUD]SAC : OK=1 : Endif
+  Endif
+ Endif
+ If [L]OK
+  SYMBOLE = "HAE"+num$([F:DUD]NUM)+"\"+num$([F:DUD]TYP)
+  Lock =SYMBOLE With lockwait=0
+  If fstat
+   [L]OK = 0 : VERROU = 0 : PBLOCK = 1
+  Else
+   If [F:DUD]TYP<>"*SO" & [F:DUD]TYP<>"*PO" & [F:DUD]TYP<>""
+    Call LEC_HAE([F:DUD]TYP, [F:DUD]NUM) From CPTLEC
+    If !fstat & [F:HAE]CAT = 5 : [L]OK=0 : Endif
+   Endif
+  Endif
+ Endif
+ If [L]OK and [L]CALL_PT
+  GPOINT = "CONTROLE" : Gosub ENTREE From EXEFNC
+ Endif
+ If [L]OK
+  IND = NOL+1
+  If NOL<NBLTAB & NOL>-1
+   Gosub CHARGECH
+   nolign = NOL+1
+   Gosub CHARGECT
+   [M:SAI1] = [F:DUD]
+   If [F:DUD]TYP="*SO"
+    [M:SAI1]TYP(NOL)=GDIV(0)
+   Elsif [F:DUD]TYP="*PO"
+    [M:SAI1]TYP(NOL)=GDIV(1)
+   Endif
+   [M:SAI1]ACCCUR(NOL) = [F:CPY]ACCCUR
+   [M:SAI1]REG(NOL)    = [L]REG
+   [M:SAI1]REGLIG(NOL) = [L]REGLIG
+
+   If [M:SAI1]PAM(NOL)<>"" & varmode([M:SAI1]ZPAM)<>3
+    If [F:DUD]PAM<>[L]LPAM
+     Call LEC_TAM(GCURLEG, [M:SAI1]PAM(NOL)) From CPTLEC
+     Call LECTEXTRA([M:SAI1]ZPAM(NOL),"TABPAM","SHOAXX",[M:SAI1]PAM(NOL),GCURLEG) From ATEXTRA
+     [L]LPAM=[F:DUD]PAM
+     [L]LLIBPAM=[M:SAI1]ZPAM(NOL)
+    Else
+     [M:SAI1]ZPAM(NOL)=[L]LLIBPAM
+    Endif
+   Endif
+
+   If [M:SAI1]DPTCOD(NOL)<>"" & varmode([M:SAI1]ZDPTCOD)<>3
+    If [F:DUD]DPTCOD<>[L]LDPTCOD
+     Call LEC_ADI("315",[M:SAI1]DPTCOD(NOL)) From CPTLEC
+     Call LECTEXTRA([M:SAI1]ZDPTCOD(NOL),"ATABDIV","SHODES","315",[M:SAI1]DPTCOD(NOL)) From ATEXTRA
+     [L]LDPTCOD=[F:DUD]DPTCOD
+     [L]LLIBDPT=[M:SAI1]ZDPTCOD(NOL)
+    Else
+     [M:SAI1]ZDPTCOD(NOL)=[L]LLIBDPT
+    Endif
+   Endif
+
+   If [M:SAI1]BPR(NOL)<>"" & varmode([M:SAI1]LIBBPR)<>3
+    Call LEC_BPR([M:SAI1]BPR(NOL)) From CPTLEC
+    [M:SAI1]LIBBPR(NOL) = [F:BPR]BPRNAM
+   Endif
+
+   If [M:SAI1]BPRPAY(NOL)<>"" & varmode([M:SAI1]LIBBPRPAY)<>3
+    Call LEC_BPR([M:SAI1]BPRPAY(NOL)) From CPTLEC
+    [M:SAI1]LIBBPRPAY(NOL) = [F:BPR]BPRNAM
+   Endif
+
+   [M:SAI1]DUDCLECUR(NOL) = [M:SAI1]AMTCUR(NOL)-[M:SAI1]PAYCUR(NOL)-[M:SAI1]TMPCUR(NOL)
+   [M:SAI1]DUDCLELOC(NOL) = [M:SAI1]AMTLOC(NOL)-[M:SAI1]PAYLOC(NOL)-[M:SAI1]TMPLOC(NOL)
+
+   If varmode([M:SAI1]AMTDEP)<>3
+    Local Decimal AMT
+    #Issue X3-67108 by MRDAB
+    Local Integer TOTLTI
+    Local Date REFDATE
+    #Issue X3-67108 end
+    #Issue X3-126644 by MRDAB/MANOW
+    Local Tinyint LDEPNBJ
+    Local Char IDNTDAEXE(1), IDNINTNOT(1), IDNINVTYP(GLONGTE), WITH_IDN(5)
+    Local Integer DELAY : Raz [L]DELAY
+
+    Call PARAM([F:DUD]CPY,"IDNINTNOT",[L]IDNINTNOT) From ADOVAL
+    Call PARAM([F:DUD]CPY,"IDNINVTYP",[L]IDNINVTYP) From ADOVAL
+    Call PARAM([F:DUD]CPY,"IDNTDAEXE",[L]IDNTDAEXE) From ADOVAL
+    #Issue X3-126644 end
+
+    AMT=[M:SAI1]AMTCUR(NOL)-[M:SAI1]PAYCUR(NOL)-[M:SAI1]TMPCUR(NOL)
+    #Issue X3-67108 by MRDAB
+    If [M:SAI1]DEPDAT<>[00/00/00]
+     Raz [M:SAI1]DEPNBJ
+     [L]REFDATE = [M:SAI1]DEPDAT
+     [L]LDEPNBJ = 0
+    Else
+     If !clalev([F:TDA2]) : Local File TABDEPAGIO [TDA2] : Endif
+     Filter [F:TDA2] Where [F:TDA2]DEP = [M:SAI1]DEP(NOL) and ([F:TDA2]LEG = GCURLEG | [F:TDA2]LEG = "")
+     Read [F:TDA2]TDA0 First
+     If !fstat
+      If [F:TDA2]CLCMOD > 1 and [M:SAI1]DEPNBJ > 0
+       [L]REFDATE = [F:DUD]DUDDAT + [M:SAI1]DEPNBJ
+      Endif
+     Else
+      #Issue X3-140050 by MRDAB
+      [L]REFDATE = [F:DUD]DUDDAT + [M:SAI1]DEPNBJ
+      #Issue X3-140050 end
+     Endif
+     Filter [F:TDA2]
+     LogicClose File [TDA2]
+     [L]LDEPNBJ = 1
+    Endif
+    #Issue X3-126644 by MRDAB/MANOW
+    If [F:DUD]FLGCLE = 1
+      Call ESC_AGIO_NEW([M:SAI1]DEP(NOL),[L]REFDATE,[F:DUD]DUDDAT,[M:SAI1]DEPNBJ,AMT,[M:SAI1]CUR(NOL),
+&                       [M:SAI1]AMTDEP(NOL),[F:DUD]ACCNUM,[F:DUD]NUM,[F:DUD]LIG,[F:DUD]DUDLIG,[L]TOTLTI,
+&                       GCURLEG,[F:DUD]TYP,[L]IDNTDAEXE,[L]IDNINTNOT,[L]IDNINVTYP,[L]LDEPNBJ,[L]WITH_IDN,[L]DELAY)
+    Endif
+    #Issue X3-126644 end
+    #Issue X3-67108 end
+
+    #Issue X3-141310 by MRDAB
+    If dim([M:SAI1]DELAY) > 0 and [F:DUD]FLGCLE = 1
+      [M:SAI1]DELAY(NOL) = [L]DELAY
+    Endif
+    #Issue X3-141310 end
+   Endif
+   If [M:SAI1]SAC(NOL)<>""
+    [M:SAI1]COA(NOL)=OCOA
+    If [M:SAI1]COA(NOL)<>[F:GAC]COA | [M:SAI1]SAC(NOL)<>[F:GAC]ACC
+     Read [GAC]GAC1 = [M:SAI1]COA(NOL);[M:SAI1]SAC(NOL)
+    Endif
+    [M:SAI1]ACCSAC(NOL) = [F:GAC]ACC
+   Endif
+   NOL += (1-[M:DDM]K*2)  :# NOL+=1 (K=0) ou NOL-=1 (K=1)
+  Endif
+# Jira X3-65940 add sorting criteria BP name and invoice number
+#  If ![M:DDM]K & IND>NBLTAB : NOL = IND-1 : [M:DDM]SUITE = 1 : Break
+#  Elsif [M:DDM]K & IND-1<0  : NOL = IND-1 : [M:DDM]AVANT = 1 : Break
+  If ![M:DDM]K & IND>NBLTAB : NOL = IND-1 : [M:DDM]SUITE = 1 : [L]DOBREAK = 1
+  Elsif [M:DDM]K & IND-1<0  : NOL = IND-1 : [M:DDM]AVANT = 1 : [L]DOBREAK = 1
+# Jira X3-65940 end
+  Endif
+ Endif
+Return
+
+
+$CHARGECH
+## Liens sur autres tables au chargement du masque
+
+# Société
+Call LEC_CPY([F:DUD]CPY) From CPTLEC
+GCURLEG = [F:CPY]LEG
+
+# Règlements
+Raz REG, REGLIG
+If find([F:DUD]FLGCLE,2,4)>0
+ # Lecture des reglements
+ # X3-38657
+ # Filter [PYD] Where DUDNUM=[F:DUD]ACCNUM & DUDLIG=[F:DUD]DUDLIG
+ #&             Order By Key CLE=DUDNUM;DUDLIG
+ # Read [F:PYD]CLE First
+ Filter [PYD] Where DUDNUM=[F:DUD]ACCNUM & DUDLIG=[F:DUD]DUDLIG
+&             Order By Key PYD1(2) # Issue X3-53003 - 2017-08-17 by BEFOU : Wrong indew ( PYH1 )
+ Read [F:PYD] First
+ If fstat = 0
+  [L]REG = [F:PYD]NUM : [L]REGLIG = [F:PYD]LIN
+ Endif
+ Filter [PYD]
+Endif
+# Issue X3-133800 : To start the sum again, we need to erase any present value
+Raz [M:SAI1]MNTTOTCUR(NOL), [M:SAI1]TMPTOTCUR(NOL), [M:SAI1]PAYTOTCUR(NOL)
+## Totaux ligne de pièce
+For [F:DUD2]DUD1 Where ACCNUM=[F:DUD]ACCNUM
+ [M:SAI1]MNTTOTCUR(NOL) += [F:DUD2]AMTCUR                 :# Montant
+ [M:SAI1]TMPTOTCUR(NOL) += [F:DUD2]TMPCUR                 :# Montant
+ [M:SAI1]PAYTOTCUR(NOL) += [F:DUD2]PAYCUR                 :# Montant
+Next
+Return
+
+$CHARGECT
+If [F:DUD]TYP<>"*SO" & [F:DUD]TYP<>"*PO" & [F:DUD]TYP<>""
+ Call LEC_HAE([F:DUD]TYP, [F:DUD]NUM) From CPTLEC
+ If !fstat
+  [M:SAI1] = [F:HAE]
+ Endif
+Endif
+Return
+
+####################################################################
+
+$SAI_CRITERE
+Gosub ABORT From GSAISIE
+If [L]OK
+ FIN = 1 : GOK = 2
+Endif
+Return
+
+Case [M:DDM]TRI
+ When 1 : Local Date CRIT1
+ When 2 : Local Char CRIT1(20)
+# Jira X3-65940 add sorting criteria BP name and invoice number
+ When 3 : Local Char CRIT1(GLONNAM)
+ When 4 : Local Char CRIT1(GLONVCR)
+# Jira X3-65940 end
+Endcase
+Raz [L]CRIT1 : Raz [L]CRIT2 : Raz [L]CRIT3
+[M:DDM]AVANT = 0 : [M:DDM]SUITE = 0
+NOL = 0 : IND = 0 : [M:DDM]K = 0
+Gosub CHX_FILTRE
+If !GERREUR
+ Call DELOCK("HAE") From GLOCK
+ Gosub LECTURE
+ If [M:SAI1]NB=0
+  Call ERREUR(mess(99,100,1)) From GESECRAN
+ Endif
+ [L]SAVREP = ""
+Endif
+Filter [DUD]
+Return
+
+####################################################################
+$FIN
+Local Integer SAVOK
+SAVOK = GOK
+Call DEBTRANS From GLOCK
+Trbegin [DUD]
+ Call DELOCK("HAE") From GLOCK
+Commit
+Filter [DUD]
+GOK = SAVOK
+[M:DDM]SUITE = 0
+[M:DDM]AVANT = 0
+Return
+
+####################################################################
+## Calcul du montant escompté : gestion des échéances/agios.
+Subprog ESC_AGIO(DEP,DATREF,DATPCE,DELAI,AMT,DEV,AMTDEP,ACCNUM,DUDLIG)
+Value    Char    DEP        ## Code d'escompte/agio
+Value    Char    DEV        ## Devise, utilisé pour l'arrondi du montant
+Value    Integer DELAI      ## Nombre de jours entre la date de référence et la date de pièce (=échéance)
+Value    Decimal AMT        ## Montant
+Value    Date    DATREF     ## Date de référence (date saisie ou date du jour)
+Value    Date    DATPCE     ## Date de la pièce  (date de l'échéance)
+Value    Integer ACCNUM     ##
+Value    Integer DUDLIG     #  Référence de l'échéance
+Variable Decimal AMTDEP     ## Montant de l'escompte / agio
+
+Local    Decimal TAUX       ## Taux d'escompte/agio
+Raz AMTDEP, TAUX
+Call ESC_AGIO(DEP,AMT,DATREF,DATPCE,DELAI,TAUX,AMTDEP,ACCNUM,DUDLIG) From TRTDIV
+Call LEC_TCU(DEV) From CPTLEC
+AMTDEP = arr(AMTDEP,[F:TCU]CURRND)
+If TAUX<0 : # Escompte
+ If AMTDEP<0 : AMTDEP*=-1 : Endif        # Escompte positif (au niveau du calcul du solde d'une échéance)
+Elsif TAUX>0 : # Agio
+ If AMTDEP>0 : AMTDEP*=-1 : Endif        # Agio négatif (au niveau du calcul du solde d'une échéance)
+Endif
+
+# Si les échéances sont négatives, on inverse
+If AMT<0 : AMTDEP*=-1 : Endif
+End
+
+#######################################################################################
+## Expected Early Discount/Late Charge calculation for simulations in MODECHE function
+#######################################################################################
+Subprog ESC_AGIO_NEW(DEP,DATREF,DATPCE,DELAI,AMT,DEV,AMTDEP,ACCNUM,DUDNUM,LIG,DUDLIG,TOTLTI,LEG,DUDTYP,P_IDNTDAEXE,P_IDNINTNOT,P_IDNINVTYP,P_DEPNBJ,P_WITH_IDN,P_DELAY)
+Value    Char     DEP          ## Early Discount/Late Charge Code
+Value    Char     DEV          ## Currency, used for the rounding of the amount
+Value    Integer  DELAI        ## Lead Time - the number of days between the ref date and due date
+Value    Decimal  AMT          ## Open Item Amount to be paid
+Value    Date     DATREF       ## Reference date
+Value    Date     DATPCE       ## Due date
+Value    Integer  ACCNUM       ## Account number ACCNUM + DUDLIG : allow to identify the Open Item if we need to read the invoice
+Value    Char     DUDNUM       ## Open item number
+Value    Shortint LIG          ## Open item line number
+Value    Integer  DUDLIG       ## Due date number ACCNUM + DUDLIG : allow to identify the Open Item if we need to read the invoice
+Variable Decimal  AMTDEP       ## Expected Early Discount/Late Charge Amount
+Variable Integer  TOTLTI       ## Sum of all lead times
+Value    Char     LEG          ## Early Discount/Late Charge Legislation
+Value    Char     DUDTYP       ## Type of open item [F:DUD]TYP
+Value    Char     P_IDNTDAEXE  ## Value of IDNTDAEXE parameter for the given company
+Value    Char     P_IDNINTNOT  ## Value of IDNINTNOT parameter for the given company
+Value    Char     P_IDNINVTYP  ## Value of IDNINVTYP parameter for the given company
+Value    Tinyint  P_DEPNBJ     ## Flag indicating if the function is called from MODECHE with field DEPNBJ not empty - exception for simulation purposes
+Variable Char     P_WITH_IDN   ## Flag indicating if there is already Interest note generated
+Variable Integer  P_DELAY      ## Days delay
+
+Local Decimal TAUX, TMPDEP_CTR
+Local Char WITH_INTEREST
+Local Date OLD_DATPCE : [L]OLD_DATPCE = DATPCE
+
+#Issue X3-141310 by MRDAB
+Local Char    OPT(1)         : # Value of the DATDEP Parameter
+Local Date    REFDATDEPMOD
+#Issue X3-141310 end
+
+#Issue X3-67108 by MRDAB
+Raz AMTDEP
+
+If P_IDNTDAEXE = "2" and (P_IDNINTNOT = "2" or DUDTYP <> P_IDNINVTYP) and !P_DEPNBJ
+  Call IDN_PROCESSED(DUDTYP,DUDNUM,LIG,DUDLIG,DATPCE,[L]TMPDEP_CTR,[L]WITH_INTEREST) From IDNGENCTL
+  P_WITH_IDN = [L]WITH_INTEREST
+  Call CALC_LATE_CHARGE_EARLY_DISC(DEP, LEG, AMT, DATPCE, DATREF, AMTDEP, DELAI, ACCNUM,
+&                                DUDLIG, TOTLTI, TAUX) From SUBTDA
+  If DATPCE > DATREF and DATPCE <> [L]OLD_DATPCE
+    AMTDEP = 0
+  Endif
+Else
+  If P_IDNINTNOT <> "1" or DUDTYP <> P_IDNINVTYP
+    Call CALC_LATE_CHARGE_EARLY_DISC(DEP, LEG, AMT, DATPCE, DATREF, AMTDEP, DELAI, ACCNUM,
+&                                    DUDLIG, TOTLTI, TAUX) From SUBTDA
+  Endif
+Endif
+
+Call LECTURE("TCU",DEV,"") From CONTOBJ #Issue X3-122745 - 2019-03-14 by VAVIL : round late charge value accordingly to the rounding field value from currency table
+AMTDEP = arr(AMTDEP,[F:TCU]CURRND) #AMTDEP = ar2(AMTDEP)
+AMTDEP = abs(AMTDEP)
+
+If DATPCE < DATREF or DELAI > 0
+  AMTDEP*=-1
+Endif
+#Issue X3-67108 end
+
+#Issue X3-141310 by MRDAB
+P_DELAY = DELAI
+If (P_WITH_IDN <> "" or (DUDTYP = P_IDNINVTYP and P_IDNINTNOT = "1")) and DATREF <> [00/00/00] : # X3-148827 - refrence cannot be empty - otherwise it is number of days and we do not proceed this part
+  P_DELAY = DATREF - [L]OLD_DATPCE
+Endif
+
+If DEP = "" and DATREF <= DATPCE and find(GFONCTION,"MODECHE","MODECHE2")
+  [L]OPT = num$(fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVCPY, [F:DUD]CPY, "DATDEP"))
+  [L]REFDATDEPMOD = func PAYDEPLIB3.GETREFERENCEDATE([L]DATPCE,[F:DUD]BPRTYP,[F:DUD]TYP,[F:DUD]NUM,[L]OPT)
+  P_DELAY = DATREF - [L]REFDATDEPMOD
+Endif
+#Issue X3-141310 by MRDAB
+
+End
+
+## Optimisation recherche des échéances non soldées...
+## Si l'échéance est soldée définitivement  FLGCLE=2
+## Si l'échéance est soldée temporairement  FLGCLE=4
+## Sinon FLGCLE=1.
+Subprog SLDECH (CLASSE)
+Value Char CLASSE()
+Local Char CHAMP(20)
+Local Char AMT(20),AMTL(20)
+Local Char PAY(20),PAYL(20)
+Local Char TMP(20),TMPL(20)
+If CLASSE="" : End : Endif
+CHAMP="["+CLASSE+"]FLGCLE"
+AMT="["+CLASSE+"]AMTCUR"
+PAY="["+CLASSE+"]PAYCUR"
+TMP="["+CLASSE+"]TMPCUR"
+If evalue(AMT)<>0
+ If (evalue(AMT) = evalue(PAY))
+  Assign CHAMP With 2
+ Elsif (evalue(AMT) = evalue(PAY)+evalue(TMP))
+  Assign CHAMP With 4
+ Else
+  Assign CHAMP With 1
+ Endif
+Else
+ AMTL="["+CLASSE+"]AMTLOC"
+ PAYL="["+CLASSE+"]PAYLOC"
+ TMPL="["+CLASSE+"]TMPLOC"
+ If (evalue(AMTL) = evalue(PAYL))
+  Assign CHAMP With 2
+ Elsif (evalue(AMTL) = evalue(PAYL)+evalue(TMPL))
+  Assign CHAMP With 4
+ Else
+  Assign CHAMP With 1
+ Endif
+Endif
+End
+
+## Historique des échéances.
+Subprog HISTOECH (CLASSE,TYPCHG,DATEVT)
+Value Char    CLASSE ()
+Value Integer TYPCHG    :#Type de changement 1=création ou modif    2=suppression
+Value Date    DATEVT
+
+If clalev([F:ACV])=0  : Local File ACTIV      [ACV]  : Endif
+Local Integer FLGHDU
+Call LEC_ACV("HDU",FLGHDU) From CPTLEC
+If FLGHDU
+
+ If clalev ([F:DUDH])=0 : Local File GACCDUDATE [DUDH] : Endif
+ If clalev ([F:HDU])=0  : Local File HISTODUD   [HDU]  : Endif
+
+ Local Char CHAMP1(20)
+ Local Char CHAMP2(20)
+ Local Integer CL1,CL2
+ Local Integer NBFLD, IFLD
+ Local Char    FLDNAM(GLONAVA)
+
+ CHAMP1="["+CLASSE+"]ACCNUM"
+ CHAMP2="["+CLASSE+"]DUDLIG"
+ CL1= evalue(CHAMP1)
+ CL2= evalue(CHAMP2)
+ Read [DUDH]DUD1=CL1;CL2
+ If fstat=0
+  If TYPCHG<>2
+   Local Integer FLGOK
+   # Vérifie si la modification concerne un des champs présent sous HISTODUD
+   Filter [HDU] Where ACCNUM=CL1 & DUDLIG=CL2
+   Read [HDU]HDU0 Last Hint Key HDU1
+   If fstat
+    # En création
+    FLGOK=0
+   Else
+    # En modification
+    FLGOK=1
+    NBFLD = clanbs([F:HDU],1)
+    For IFLD=1 To NBFLD
+     FLDNAM = clavar([F:HDU],IFLD)
+     If !find(FLDNAM,"CREUSR","CREDAT","NUMHDU","DATEVT","FLGEVT","CREDATTIM","UPDDATTIM","AUUID","UPDUSR","UPDDAT")
+      If evalue("[F:DUDH]"+FLDNAM)<>evalue("[F:HDU]"+FLDNAM)
+       FLGOK=0 : Break
+      Endif
+     Endif
+    Next
+   Endif
+  Filter [HDU]
+ Endif
+ If TYPCHG=2 | !FLGOK
+  Raz [HDU]
+  [F:HDU]=[F:DUDH]
+  If TYPCHG=2 :[F:HDU]FLGCLE=3 : Endif    :#Suppression d'échéances
+   If dim([F:HDU]FLGEVT)>0 &  dim(GHDUFLG)>0 : [F:HDU]FLGEVT=GHDUFLG : Endif
+   [F:HDU]NUMHDU=uniqid([HDU])
+   [F:HDU]CREDAT= date$
+   [F:HDU]CREUSR= GUSER
+   If dim([F:HDU]DATEVT)>0 : [F:HDU]DATEVT=[L]DATEVT : Endif
+   GPOINT = "BEFWRIHDU" : Gosub ENTREE From EXEFNC
+   Write [HDU]
+   If fstat
+    GOK = 0 : Call FSTA("HDU") From GLOCK
+    Endif
+   Endif
+  Endif
+ Endif
+End
+
+## Historique des échéances supprimées
+Subprog HISTOSUPPR (CRITECH)
+Value Char CRITECH ()
+
+If func AFNC.ACTIV("HDU")
+ If clalev ([F:DUDH])=0 : Local File GACCDUDATE [DUDH] : Endif
+ If clalev ([F:HDU])=0  : Local File HISTODUD   [HDU]  : Endif
+ If CRITECH="" : CRITECH="1=1" : Endif
+ For [DUDH] Where evalue (CRITECH)
+  Raz [HDU]
+  [F:HDU]=[F:DUDH]
+  [F:HDU]FLGCLE=3
+  [F:HDU]NUMHDU=uniqid([HDU])
+  [F:HDU]CREDAT= date$
+  [F:HDU]CREUSR= GUSER
+  Write [HDU]
+  If fstat
+   GOK = 0 : Call FSTA("HDU") From GLOCK
+  Endif
+ Next
+Endif
+End
+
+## Ajout d'une clé unique sous GACCDUDATE
+Subprog KEYDUD(ABR)
+Value Char ABR()
+If ABR="" : End : Endif
+Local Char C1, C2, C3, C4
+
+C1 = "["+ABR+"]ACCNUM"
+C2 = "["+ABR+"]DUDLIG"
+C3 = "["+ABR+"]NUMDUD"
+
+C4 = num$(evalue(C1))+"/"+num$(evalue(C2))
+Assign C3 With C4
+End
+####################################################
+#Issue X3-140050 by MRDAB
+$DELAY_DAYS_STYLE
+
+Chgstl [M:SAI1]DELAY([L]LINE) With ""
+If [L]WITH_IDN <> ""
+  Chgstl [M:SAI1]DELAY([L]LINE) With "TDBBLU"
+Elsif [L]DELAY <= 0
+  Chgstl [M:SAI1]DELAY([L]LINE) With "TDBRED"
+Endif
+Affzo [M:SAI1]DELAY([L]LINE)
+
+Return
+####################################################
+$FORMAT_LINES
+
+[L]WITH_INTEREST = ""
+Call IDN_PROCESSED([M:SAI1]TYP(nolign-1),[M:SAI1]NUM(nolign-1),[M:SAI1]LIG(nolign-1),[M:SAI1]DUDLIG(nolign-1),
+&                  [L]TEMP_DUDDAT,[L]TMPDEP_CTR,[L]WITH_INTEREST) From IDNGENCTL
+
+# To check if the open item is closed or not
+Read [F:DUD]DUD1 = [M:SAI1]ACCNUM(nolign-1);[M:SAI1]DUDLIG(nolign-1)
+
+Chgstl [M:SAI1]DELAY(nolign-1) With ""
+If [F:DUD]FLGCLE = 1
+  Actzo  [M:SAI1]DUDDAT(nolign-1)
+  Actzo  [M:SAI1]AMTCUR(nolign-1)
+  Actzo  [M:SAI1]DEP(nolign-1)
+  If [L]WITH_INTEREST <> ""
+    Diszo  [M:SAI1]DUDDAT(nolign-1)
+    Diszo  [M:SAI1]AMTCUR(nolign-1)
+    Diszo  [M:SAI1]DEP(nolign-1)
+    If dim([M:SAI1]DELAY) > 0
+      Chgstl [M:SAI1]DELAY(nolign-1) With "TDBBLU"
+    Endif
+  Elsif [M:SAI1]DELAY(nolign-1) <= 0 and dim([M:SAI1]DELAY) > 0
+    Chgstl [M:SAI1]DELAY(nolign-1) With "TDBRED"
+  Endif
+Endif
+Affzo [M:SAI1]DELAY(nolign-1)
+
+Return
+#Issue X3-140050 end
